@@ -1,3 +1,4 @@
+import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import {
   CuboidCollider,
@@ -14,17 +15,25 @@ import {
   type ForwardedRef,
 } from 'react'
 import * as THREE from 'three'
+import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { useKeyboard } from '../hooks/useKeyboard'
-import { isOnRoad } from '@game/roadSpatial'
+import {
+  isOnRoad,
+  minDistToRoadNetwork,
+  SIDEWALK_WIDTH,
+} from '@game/roadSpatial'
 
 const MAX_FORWARD = 14
 const MAX_REVERSE = 5
 const ACCEL = 28
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
-const OFFROAD_SPEED_FACTOR = 0.3
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+/** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
+const RIDER_PLACEHOLDER_GLTF =
+  'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb'
 
 const SPAWN: [number, number, number] = [0, 0.32, 0]
 
@@ -84,34 +93,28 @@ const matVest = {
   roughness: 0.8,
 } as const
 
-const matHelmet = {
-  color: '#f3f4f6',
-  metalness: 0.2,
-  roughness: 0.45,
-} as const
+function RiderHumanoid() {
+  const { scene } = useGLTF(RIDER_PLACEHOLDER_GLTF)
+  const riderRoot = useMemo(() => {
+    // scene.clone(true) leaves SkinnedMesh hands bound to the original armature — they stay behind.
+    const root = cloneSkinnedScene(scene)
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && /torso/i.test(obj.name)) {
+        obj.material = new THREE.MeshStandardMaterial({ ...matVest })
+        obj.castShadow = true
+      }
+    })
+    return root
+  }, [scene])
 
-function RiderMesh() {
   return (
-    <group position={[0, 0.72, 0.25]}>
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <capsuleGeometry args={[0.13, 0.28, 8, 14]} />
-        <meshStandardMaterial color="#78350f" roughness={0.9} />
-      </mesh>
-      <mesh position={[0, 0.6, 0]} castShadow>
-        <boxGeometry args={[0.42, 0.42, 0.28]} />
-        <meshStandardMaterial {...matVest} />
-      </mesh>
-      <mesh position={[0, 0.98, -0.03]} castShadow>
-        <sphereGeometry args={[0.17, 18, 14]} />
-        <meshStandardMaterial color="#8d5524" roughness={0.85} />
-      </mesh>
-      <mesh position={[0, 1, -0.03]} castShadow>
-        <sphereGeometry args={[0.19, 18, 14]} />
-        <meshStandardMaterial {...matHelmet} />
-      </mesh>
+    <group position={[0, 0.72, 0.28]} rotation={[0, Math.PI, 0]}>
+      <primitive object={riderRoot} scale={0.22} />
     </group>
   )
 }
+
+useGLTF.preload(RIDER_PLACEHOLDER_GLTF)
 
 function Wheel({ z }: { z: number }) {
   return (
@@ -362,6 +365,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     const dt = Math.min(delta, 0.05)
 
+    const t = body.translation()
+
     const steer =
       (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
     const throttle =
@@ -393,7 +398,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     speed.current = THREE.MathUtils.clamp(
       speed.current,
       -MAX_REVERSE,
-      isOffroad ? MAX_FORWARD * OFFROAD_SPEED_FACTOR : MAX_FORWARD,
+      MAX_FORWARD,
     )
 
     quat.setFromAxisAngle(Y_AXIS, yaw.current)
@@ -412,8 +417,9 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       true,
     )
 
-    const t = body.translation()
-    const nextOffroad = !isOnRoad(t.x, t.z)
+    const nextOffroad =
+      !isOnRoad(t.x, t.z) &&
+      minDistToRoadNetwork(t.x, t.z) > SIDEWALK_WIDTH + 1e-3
     if (nextOffroad !== offroadRef.current) {
       offroadRef.current = nextOffroad
       setIsOffroad(nextOffroad)
@@ -441,7 +447,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       <CuboidCollider args={[0.48, 0.36, 1.05]} position={[0, 0.35, 0]} />
       <group>
         <BodaBikeModel />
-        <RiderMesh />
+        <RiderHumanoid />
         {isOffroad ? (
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0.95, 1.1, 24]} />
