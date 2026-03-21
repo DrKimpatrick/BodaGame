@@ -453,8 +453,12 @@ function footprintClearOfTarmac(
 }
 
 function CityMapContent() {
-  const [mapeeraMap, stanbicMap] = useTexture(
-    ['/textures/mapeera.jpg', '/textures/stanbic_bank.jpg'],
+  const [mapeeraMap, stanbicMap, grassFieldMap] = useTexture(
+    [
+      '/textures/mapeera.jpg',
+      '/textures/stanbic_bank.jpg',
+      '/textures/grass-vector-seamless.jpg',
+    ],
     (loaded) => {
       configureFacadeTexture(loaded[0])
       const st = loaded[1]
@@ -462,6 +466,14 @@ function CityMapContent() {
       st.wrapT = THREE.ClampToEdgeWrapping
       st.repeat.set(5, 1)
       st.colorSpace = THREE.SRGBColorSpace
+      const grass = loaded[2]
+      grass.wrapS = grass.wrapT = THREE.RepeatWrapping
+      grass.colorSpace = THREE.SRGBColorSpace
+      const groundSpan = CITY_TOTAL + 80
+      const tile = 14
+      grass.repeat.set(groundSpan / tile, groundSpan / tile)
+      grass.center.set(0.5, 0.5)
+      grass.rotation = -Math.PI / 2
     },
   )
 
@@ -504,6 +516,17 @@ function CityMapContent() {
         metalness: 0.02,
       }),
     [],
+  )
+
+  const groundMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: grassFieldMap,
+        color: '#ffffff',
+        roughness: 0.94,
+        metalness: 0.02,
+      }),
+    [grassFieldMap],
   )
 
   const [mx, mz] = LANDMARK_MAPEERA
@@ -625,9 +648,8 @@ function CityMapContent() {
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat}>
         <planeGeometry args={[CITY_TOTAL + 80, CITY_TOTAL + 80]} />
-        <meshStandardMaterial color="#2a231e" roughness={0.94} metalness={0.02} />
       </mesh>
 
       <RoadNetwork />

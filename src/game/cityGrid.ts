@@ -1,7 +1,8 @@
 /** 10×10 blocks, roads between (11 strips each way). Origin = central intersection. */
 export const NUM_BLOCKS = 10
 export const ROAD_W = 4
-export const BLOCK = 14
+/** Building plot / straight road run between intersections (segment length = BLOCK + ROAD_W). */
+export const BLOCK = 24
 export const CITY_TOTAL = NUM_BLOCKS * BLOCK + (NUM_BLOCKS + 1) * ROAD_W
 export const CITY_START = -CITY_TOTAL / 2
 
