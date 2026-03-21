@@ -29,6 +29,107 @@ const SHOULDER_W = 0.11
 const DASH_LEN = 2.2
 const DASH_GAP = 2.8
 const WORN_RATIO = 0.4
+/** Half-width of the overlapping road square at each crossing (ROAD_W / 2). */
+const INTERSECTION_HALF = HALF
+/** Extra gap so dashes / shoulders don’t bleed into the junction. */
+const MARK_PAD = 0.1
+/** Radius of outer white corner fillet (matches reference: rounded junction corners). */
+const CORNER_FILLET_R = 0.92
+
+const STRIP_CENTERS_X = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterX(k))
+const STRIP_CENTERS_Z = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterZ(k))
+
+const shoulderLineMat = new THREE.MeshBasicMaterial({
+  color: '#ffffff',
+  toneMapped: false,
+})
+
+const cornerFilletMat = new THREE.MeshBasicMaterial({
+  color: '#ffffff',
+  toneMapped: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
+})
+
+function dashOverlapsIntersectionAlongZ(z: number): boolean {
+  const ext = INTERSECTION_HALF + DASH_LEN / 2 + MARK_PAD
+  return STRIP_CENTERS_Z.some((iz) => Math.abs(z - iz) < ext)
+}
+
+function dashOverlapsIntersectionAlongX(x: number): boolean {
+  const ext = INTERSECTION_HALF + DASH_LEN / 2 + MARK_PAD
+  return STRIP_CENTERS_X.some((ix) => Math.abs(x - ix) < ext)
+}
+
+/** Straight shoulder runs along Z between intersection boxes (for N–S strips). */
+function verticalShoulderZRanges(): [number, number][] {
+  const sorted = [...STRIP_CENTERS_Z].sort((a, b) => a - b)
+  const out: [number, number][] = []
+  let zLo = Z0
+  for (const iz of sorted) {
+    const zHi = iz - INTERSECTION_HALF - MARK_PAD * 0.5
+    if (zHi - zLo > 0.2) out.push([zLo, zHi])
+    zLo = iz + INTERSECTION_HALF + MARK_PAD * 0.5
+  }
+  if (Z1 - zLo > 0.2) out.push([zLo, Z1])
+  return out
+}
+
+/** Straight shoulder runs along X between intersection boxes (for E–W strips). */
+function horizontalShoulderXRanges(): [number, number][] {
+  const sorted = [...STRIP_CENTERS_X].sort((a, b) => a - b)
+  const out: [number, number][] = []
+  let xLo = X0
+  for (const ix of sorted) {
+    const xHi = ix - INTERSECTION_HALF - MARK_PAD * 0.5
+    if (xHi - xLo > 0.2) out.push([xLo, xHi])
+    xLo = ix + INTERSECTION_HALF + MARK_PAD * 0.5
+  }
+  if (X1 - xLo > 0.2) out.push([xLo, X1])
+  return out
+}
+
+const VERTICAL_SHOULDER_Z_RANGES = verticalShoulderZRanges()
+const HORIZONTAL_SHOULDER_X_RANGES = horizontalShoulderXRanges()
+
+/** Quarter-ring white fillets at the four outer corners of each intersection. */
+function IntersectionCornerFillets() {
+  const filletInner = Math.max(0.06, CORNER_FILLET_R - SHOULDER_W)
+  const segs = 14
+  const elems: ReactElement[] = []
+  let key = 0
+  for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
+    const ix = roadStripCenterX(vi)
+    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
+      const iz = roadStripCenterZ(hj)
+      const corners: { ox: number; oz: number; thetaStart: number }[] = [
+        { ox: ix + INTERSECTION_HALF - CORNER_FILLET_R, oz: iz + INTERSECTION_HALF - CORNER_FILLET_R, thetaStart: 0 },
+        { ox: ix - INTERSECTION_HALF + CORNER_FILLET_R, oz: iz + INTERSECTION_HALF - CORNER_FILLET_R, thetaStart: Math.PI / 2 },
+        { ox: ix - INTERSECTION_HALF + CORNER_FILLET_R, oz: iz - INTERSECTION_HALF + CORNER_FILLET_R, thetaStart: Math.PI },
+        {
+          ox: ix + INTERSECTION_HALF - CORNER_FILLET_R,
+          oz: iz - INTERSECTION_HALF + CORNER_FILLET_R,
+          thetaStart: (3 * Math.PI) / 2,
+        },
+      ]
+      for (let c = 0; c < 4; c++) {
+        const { ox, oz, thetaStart } = corners[c]!
+        elems.push(
+          <mesh
+            key={`fillet-${key++}`}
+            position={[ox, LINE_Y, oz]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            material={cornerFilletMat}
+          >
+            <ringGeometry args={[filletInner, CORNER_FILLET_R, segs, 1, thetaStart, Math.PI / 2]} />
+          </mesh>,
+        )
+      }
+    }
+  }
+  return <group>{elems}</group>
+}
 
 /** High-contrast old tarmac: #1a1a1a + subtle grain (normal-style noise in albedo). */
 function createOldTarmacTexture() {
@@ -227,16 +328,18 @@ function VerticalRoadStrip({
     let z = Z0 + DASH_LEN / 2
     let i = 0
     while (z < Z1 - DASH_LEN / 2) {
-      items.push(
-        <mesh
-          key={`d-${i}`}
-          position={[cx, LINE_Y, z]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <planeGeometry args={[0.16, DASH_LEN]} />
-          <meshBasicMaterial color="#ffffff" toneMapped={false} />
-        </mesh>,
-      )
+      if (!dashOverlapsIntersectionAlongZ(z)) {
+        items.push(
+          <mesh
+            key={`d-${i}`}
+            position={[cx, LINE_Y, z]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            material={shoulderLineMat}
+          >
+            <planeGeometry args={[0.16, DASH_LEN]} />
+          </mesh>,
+        )
+      }
       z += period
       i++
     }
@@ -259,17 +362,26 @@ function VerticalRoadStrip({
     [cx, stripIndex, tarmacMat, wornMat],
   )
 
+  const xLeft = cx - HALF + SHOULDER_INSET
+  const xRight = cx + HALF - SHOULDER_INSET
+
   return (
     <group>
       {roadSegments}
-      <mesh position={[cx - HALF + SHOULDER_INSET, LINE_Y, midZ]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[SHOULDER_W, CITY_TOTAL]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
-      </mesh>
-      <mesh position={[cx + HALF - SHOULDER_INSET, LINE_Y, midZ]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[SHOULDER_W, CITY_TOTAL]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
-      </mesh>
+      {VERTICAL_SHOULDER_Z_RANGES.map(([za, zb], si) => {
+        const len = zb - za
+        const zm = (za + zb) / 2
+        return (
+          <group key={`vs-${stripIndex}-${si}`}>
+            <mesh position={[xLeft, LINE_Y, zm]} rotation={[-Math.PI / 2, 0, 0]} material={shoulderLineMat}>
+              <planeGeometry args={[SHOULDER_W, len]} />
+            </mesh>
+            <mesh position={[xRight, LINE_Y, zm]} rotation={[-Math.PI / 2, 0, 0]} material={shoulderLineMat}>
+              <planeGeometry args={[SHOULDER_W, len]} />
+            </mesh>
+          </group>
+        )
+      })}
       {dashes}
       <mesh position={[cx + HALF + SIDEWALK_WIDTH / 2, 0.022, midZ]} receiveShadow>
         <boxGeometry args={[SIDEWALK_WIDTH, 0.028, CITY_TOTAL]} />
@@ -300,16 +412,18 @@ function HorizontalRoadStrip({
     let x = X0 + DASH_LEN / 2
     let i = 0
     while (x < X1 - DASH_LEN / 2) {
-      items.push(
-        <mesh
-          key={`hd-${i}`}
-          position={[x, LINE_Y, cz]}
-          rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-        >
-          <planeGeometry args={[0.16, DASH_LEN]} />
-          <meshBasicMaterial color="#ffffff" toneMapped={false} />
-        </mesh>,
-      )
+      if (!dashOverlapsIntersectionAlongX(x)) {
+        items.push(
+          <mesh
+            key={`hd-${i}`}
+            position={[x, LINE_Y, cz]}
+            rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+            material={shoulderLineMat}
+          >
+            <planeGeometry args={[0.16, DASH_LEN]} />
+          </mesh>,
+        )
+      }
       x += period
       i++
     }
@@ -332,17 +446,26 @@ function HorizontalRoadStrip({
     [cz, stripIndex, tarmacMat, wornMat],
   )
 
+  const zSouth = cz - HALF + SHOULDER_INSET
+  const zNorth = cz + HALF - SHOULDER_INSET
+
   return (
     <group>
       {roadSegments}
-      <mesh position={[midX, LINE_Y, cz - HALF + SHOULDER_INSET]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
-        <planeGeometry args={[SHOULDER_W, CITY_TOTAL]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
-      </mesh>
-      <mesh position={[midX, LINE_Y, cz + HALF - SHOULDER_INSET]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
-        <planeGeometry args={[SHOULDER_W, CITY_TOTAL]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
-      </mesh>
+      {HORIZONTAL_SHOULDER_X_RANGES.map(([xa, xb], si) => {
+        const len = xb - xa
+        const xm = (xa + xb) / 2
+        return (
+          <group key={`hs-${stripIndex}-${si}`}>
+            <mesh position={[xm, LINE_Y, zSouth]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={shoulderLineMat}>
+              <planeGeometry args={[SHOULDER_W, len]} />
+            </mesh>
+            <mesh position={[xm, LINE_Y, zNorth]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={shoulderLineMat}>
+              <planeGeometry args={[SHOULDER_W, len]} />
+            </mesh>
+          </group>
+        )
+      })}
       {dashes}
       <mesh position={[midX, 0.022, cz + HALF + SIDEWALK_WIDTH / 2]} receiveShadow>
         <boxGeometry args={[CITY_TOTAL, 0.028, SIDEWALK_WIDTH]} />
@@ -453,6 +576,7 @@ export function RoadNetwork() {
     <group>
       {vertical}
       {horizontal}
+      <IntersectionCornerFillets />
       {speedHumps}
       {zebraCrossings}
     </group>
