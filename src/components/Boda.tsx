@@ -18,18 +18,23 @@ import * as THREE from 'three'
 import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
+import { useGameStore } from '../store/useGameStore'
 import { BikeExhaust } from './BikeExhaust'
-import {
-  isOnRoad,
-  minDistToRoadNetwork,
-  SIDEWALK_WIDTH,
-} from '@game/roadSpatial'
+import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
 
 const MAX_FORWARD = 14
 const MAX_REVERSE = 5
 const ACCEL = 28
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
+/**
+ * Off-limits / shoulder / deep grass: much higher top speed and thrust than
+ * on tarmac (arcade “open field” feel — still never hard-zeroed).
+ */
+const OFFROAD_DRAG_PER_S = 1.25
+const OFFROAD_ACCEL_SCALE = 1.65
+const OFFROAD_SPEED_CAP = 36
+const OFFROAD_REVERSE_SCALE = 0.95
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
@@ -89,10 +94,13 @@ const matGlass = {
   emissiveIntensity: 0.15,
 } as const
 
+/** High-viz reflector vest */
 const matVest = {
   color: '#facc15',
-  metalness: 0.03,
-  roughness: 0.8,
+  emissive: '#ca8a04',
+  emissiveIntensity: 0.22,
+  metalness: 0.04,
+  roughness: 0.55,
 } as const
 
 function RiderHumanoid() {
@@ -356,6 +364,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const lastReportedKmh = useRef(-1)
   const [isOffroad, setIsOffroad] = useState(false)
   const offroadRef = useRef(false)
+  const visualRef = useRef<THREE.Group>(null)
+  const bankSmoothed = useRef(0)
+  const pitchSmoothed = useRef(0)
+  const enginePhase = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -369,40 +381,59 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const dt = Math.min(delta, 0.05)
 
     const t = body.translation()
+    const drivable = isDrivableSurface(t.x, t.z)
 
     const steer =
       (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
     const throttle =
       (keys.current.forward ? 1 : 0) - (keys.current.back ? 1 : 0)
 
-    const moving = Math.abs(speed.current) > 0.08
+    const speedAbsEarly = Math.abs(speed.current)
+    const moving = speedAbsEarly > 0.08
     if (moving || steer !== 0) {
-      const turnScale = THREE.MathUtils.clamp(
-        Math.abs(speed.current) / MAX_FORWARD,
+      let turnScale = THREE.MathUtils.clamp(
+        speedAbsEarly / MAX_FORWARD,
         0.35,
         1,
       )
+      /** Pivot in place when nearly stopped so you can turn off a wall / shoulder. */
+      if (speedAbsEarly < 0.2 && steer !== 0) {
+        turnScale = 1
+      }
       yaw.current += steer * TURN_SPEED * turnScale * dt
     }
 
-    speed.current += throttle * ACCEL * dt
+    const fuelLeft = useGameStore.getState().fuel
 
-    const drag = Math.exp(-FRICTION * dt)
-    if (throttle === 0) {
-      speed.current *= drag
+    if (drivable) {
+      if (fuelLeft > 0) {
+        speed.current += throttle * ACCEL * dt
+
+        const drag = Math.exp(-FRICTION * dt)
+        if (throttle === 0) {
+          speed.current *= drag
+        } else {
+          speed.current *= Math.exp(-(FRICTION * 0.15) * dt)
+        }
+      } else {
+        const drag = Math.exp(-FRICTION * 1.2 * dt)
+        speed.current *= drag
+        if (Math.abs(speed.current) < 0.06) speed.current = 0
+      }
     } else {
-      speed.current *= Math.exp(-(FRICTION * 0.15) * dt)
+      speed.current *= Math.exp(-OFFROAD_DRAG_PER_S * dt)
+      if (fuelLeft > 0 && throttle !== 0) {
+        speed.current += throttle * ACCEL * OFFROAD_ACCEL_SCALE * dt
+      }
     }
 
     if (Math.abs(speed.current) < 0.02 && throttle === 0) {
       speed.current = 0
     }
 
-    speed.current = THREE.MathUtils.clamp(
-      speed.current,
-      -MAX_REVERSE,
-      MAX_FORWARD,
-    )
+    const capFwd = drivable ? MAX_FORWARD : OFFROAD_SPEED_CAP
+    const capRev = drivable ? MAX_REVERSE : MAX_REVERSE * OFFROAD_REVERSE_SCALE
+    speed.current = THREE.MathUtils.clamp(speed.current, -capRev, capFwd)
 
     quat.setFromAxisAngle(Y_AXIS, yaw.current)
     body.setRotation(
@@ -420,19 +451,48 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       true,
     )
 
-    const nextOffroad =
-      !isOnRoad(t.x, t.z) &&
-      minDistToRoadNetwork(t.x, t.z) > SIDEWALK_WIDTH + 1e-3
+    const nextOffroad = isDeepOffRoad(t.x, t.z)
     if (nextOffroad !== offroadRef.current) {
       offroadRef.current = nextOffroad
       setIsOffroad(nextOffroad)
       onOffroadChange?.(nextOffroad)
     }
 
-    const kmh = Math.round(Math.abs(speed.current) * 3.6)
+    const speedAbs = Math.abs(speed.current)
+    const speed01 = THREE.MathUtils.clamp(speedAbs / MAX_FORWARD, 0, 1)
+    const targetBank =
+      -steer * speed01 * 0.42 +
+      (speedAbs < 0.06 ? Math.sin(enginePhase.current) * 0.012 : 0)
+    enginePhase.current += dt * 88
+
+    const braking = throttle <= 0 && speed.current > 0.35
+    const accelerating = throttle > 0 && speed.current >= 0
+    const targetPitch =
+      (braking ? -0.11 : 0) * speed01 +
+      (accelerating ? 0.06 * throttle * speed01 : 0)
+
+    const smooth = 1 - Math.exp(-12 * dt)
+    bankSmoothed.current += (targetBank - bankSmoothed.current) * smooth
+    pitchSmoothed.current += (targetPitch - pitchSmoothed.current) * smooth
+
+    const g = visualRef.current
+    if (g) {
+      g.rotation.z = bankSmoothed.current
+      g.rotation.x = pitchSmoothed.current
+    }
+
+    const kmh = Math.round(speedAbs * 3.6)
     if (kmh !== lastReportedKmh.current) {
       lastReportedKmh.current = kmh
       onSpeedKmhChange?.(kmh)
+    }
+
+    if (drivable && speedAbs > 0.04) {
+      const burn = speedAbs * 0.35 * dt
+      const f = useGameStore.getState().fuel
+      if (f > 0) {
+        useGameStore.getState().setFuel(Math.max(0, f - burn))
+      }
     }
   })
 
@@ -443,14 +503,25 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       colliders={false}
       enabledRotations={[false, true, false]}
       enabledTranslations={[true, false, true]}
-      linearDamping={0.35}
+      linearDamping={0.22}
       angularDamping={2.5}
       mass={2.8}
     >
       <CuboidCollider args={[0.48, 0.36, 1.05]} position={[0, 0.35, 0]} />
-      <group>
+      <group ref={visualRef}>
         <BodaBikeModel />
         <RiderHumanoid />
+        <spotLight
+          position={[0, 0.62, -0.35]}
+          angle={0.5}
+          penumbra={0.42}
+          intensity={2.8}
+          distance={38}
+          color="#fff4e0"
+          castShadow
+          shadow-mapSize={[512, 512]}
+          shadow-bias={-0.0001}
+        />
         {isOffroad ? (
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0.95, 1.1, 24]} />

@@ -41,10 +41,6 @@ export function Hud() {
         </p>
       </div>
 
-      <div className="absolute right-4 top-4 rounded-lg bg-black/55 px-4 py-3 ring-1 ring-zinc-600/50 backdrop-blur-sm">
-        <StatBar label="Fuel" value={fuel} fillClass="bg-sky-400" />
-      </div>
-
       <div className="absolute bottom-4 left-4 rounded-lg bg-black/55 px-4 py-3 ring-1 ring-zinc-600/50 backdrop-blur-sm">
         <StatBar
           label="Condition"
@@ -53,11 +49,21 @@ export function Hud() {
         />
       </div>
 
-      <div className="absolute bottom-4 right-4 rounded-md border border-white/20 bg-black/60 px-4 py-2 text-right font-mono text-sm text-amber-200 shadow-lg backdrop-blur-sm">
-        <div className="text-xs uppercase tracking-wide text-amber-100/80">
-          Speed
+      <div className="absolute bottom-4 right-4 flex min-w-[200px] flex-col gap-3 rounded-lg border border-white/15 bg-black/65 px-4 py-3 text-right shadow-lg backdrop-blur-md">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+            Speedometer
+          </div>
+          <div className="mt-0.5 font-mono tabular-nums">
+            <span className="text-3xl font-bold tracking-tight text-amber-300">
+              {speedKmh}
+            </span>
+            <span className="ml-1 text-sm font-medium text-amber-200/90">
+              KM/H
+            </span>
+          </div>
         </div>
-        <div className="text-lg font-semibold leading-tight">{speedKmh} KM/H</div>
+        <StatBar label="Fuel" value={fuel} fillClass="bg-sky-400" />
       </div>
     </div>
   )

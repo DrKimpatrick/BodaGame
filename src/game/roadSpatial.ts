@@ -18,6 +18,8 @@ const XMAX = CITY_START + CITY_TOTAL
 const ZMIN = CITY_START
 const ZMAX = CITY_START + CITY_TOTAL
 const HALF_W = ROAD_W / 2
+/** Include strip edges (float error) so the lane test doesn’t flicker false. */
+const LANE_EDGE_EPS = 0.1
 
 function distPointToRect(
   x: number,
@@ -54,19 +56,35 @@ export function minDistToRoadNetwork(x: number, z: number): number {
 
 /** True if the point lies on any road surface (driving lane). */
 export function isOnRoad(x: number, z: number): boolean {
+  const half = HALF_W + LANE_EDGE_EPS
   for (let k = 0; k <= NUM_BLOCKS; k++) {
     const cx = roadStripCenterX(k)
-    if (Math.abs(x - cx) < HALF_W && z >= ZMIN && z <= ZMAX) {
+    if (Math.abs(x - cx) <= half && z >= ZMIN && z <= ZMAX) {
       return true
     }
   }
   for (let k = 0; k <= NUM_BLOCKS; k++) {
     const cz = roadStripCenterZ(k)
-    if (Math.abs(z - cz) < HALF_W && x >= XMIN && x <= XMAX) {
+    if (Math.abs(z - cz) <= half && x >= XMIN && x <= XMAX) {
       return true
     }
   }
   return false
+}
+
+/**
+ * Where the bike is allowed to move: tarmac lane plus murram shoulder.
+ * Uses the rigid-body center only — wider than `isOnRoad` so you don’t get
+ * stuck after a slight offset, turn, or scrape.
+ */
+export function isDrivableSurface(x: number, z: number): boolean {
+  if (isOnRoad(x, z)) return true
+  return minDistToRoadNetwork(x, z) <= SIDEWALK_WIDTH + 0.65
+}
+
+/** Far from any road — HUD warning only. */
+export function isDeepOffRoad(x: number, z: number): boolean {
+  return minDistToRoadNetwork(x, z) > SIDEWALK_WIDTH + 1.1
 }
 
 /** Safe for trees: not on road and ≥ GREEN_ZONE_DISTANCE from road edge. */

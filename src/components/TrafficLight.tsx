@@ -8,7 +8,7 @@ const DURATION_MS: Record<Phase, number> = {
   red: 10_000,
   redYellow: 2_000,
   green: 10_000,
-  yellow: 3_000,
+  yellow: 2_000,
 }
 
 const C = {
