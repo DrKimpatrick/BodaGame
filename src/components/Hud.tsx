@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   approxMetersForFuelPoints,
   formatDistanceShort,
@@ -38,8 +31,9 @@ function fuelLowLevel(fuel: number): 'ok' | 'low' | 'critical' {
   return 'ok'
 }
 
-/** Display sweep 0–max km/h (needle pegs above). */
-const SPEEDO_MAX_KMH = 140
+/** Tenor post: torque / Audi RS6 RPM-style gauge (GIF — not synced to in-game speed). */
+const TENOR_SPEEDO_POST_ID = '15773332'
+const TENOR_SPEEDO_ASPECT = 1.50943
 
 /** Car-style fuel pump lamp (stroke icon). */
 function FuelPumpIcon({ className }: { className?: string }) {
@@ -74,232 +68,34 @@ function FuelPumpIcon({ className }: { className?: string }) {
   )
 }
 
-function polarToSvg(cx: number, cy: number, r: number, deg: number) {
-  const rad = (deg * Math.PI) / 180
-  return {
-    x: cx + r * Math.cos(rad),
-    y: cy - r * Math.sin(rad),
-  }
-}
-
-/** Map speed → needle angle (deg), same convention as polarToSvg. */
-function speedToNeedleDeg(speedKmh: number, startDeg: number, sweep: number) {
-  const clamped = Math.min(
-    Math.max(0, speedKmh),
-    SPEEDO_MAX_KMH * 1.08,
-  )
-  const t = Math.min(clamped / SPEEDO_MAX_KMH, 1)
-  return startDeg + t * sweep
-}
-
 /**
- * Semicircular speedometer with damped needle (lags on accel, settles faster on decel).
+ * Same Tenor clip as
+ * `data-postid="15773332"` / https://tenor.com/view/torque-audi-rs6-rpm-meter-gif-15773332
+ * Iframe embed works reliably with React (Tenor’s embed.js usually runs before the HUD mounts).
+ * The GIF is decorative; actual speed is the digits below.
  */
-function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
-  const uid = useId().replace(/:/g, '')
-  const rimGradId = `speedo-rim-${uid}`
-
-  const cx = 100
-  const cy = 88
-  const rOuter = 72
-  const rTicks = 62
-  const rNeedle = 56
-  const startDeg = -135
-  const endDeg = 45
-  const sweep = endDeg - startDeg
-  const hubR = 5
-
-  const targetRef = useRef(speedKmh)
-  const displayRef = useRef(speedKmh)
-  const [smoothKmh, setSmoothKmh] = useState(speedKmh)
-
-  targetRef.current = speedKmh
-
-  useEffect(() => {
-    let frame = 0
-    let last = performance.now()
-
-    const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.08)
-      last = now
-
-      const target = targetRef.current
-      let cur = displayRef.current
-      const diff = target - cur
-
-      // Inertia-like: slower to climb, quicker to fall (mechanical gauge feel).
-      const rising = diff > 0
-      const tauSec = rising ? 0.26 : 0.11
-      const k = 1 - Math.exp(-dt / tauSec)
-      cur += diff * k
-      if (Math.abs(diff) < 0.08) cur = target
-
-      displayRef.current = cur
-      setSmoothKmh(cur)
-      frame = requestAnimationFrame(tick)
-    }
-
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  const needleDeg = speedToNeedleDeg(smoothKmh, startDeg, sweep)
-  const tip = polarToSvg(cx, cy, rNeedle, needleDeg)
-  const mid = polarToSvg(cx, cy, rNeedle * 0.42, needleDeg)
-  const baseL = polarToSvg(cx, cy, 7, needleDeg + 90)
-  const baseR = polarToSvg(cx, cy, 7, needleDeg - 90)
-
-  const majorEvery = 20
-  const majors: number[] = []
-  for (let v = 0; v <= SPEEDO_MAX_KMH; v += majorEvery) {
-    majors.push(v)
-  }
-
-  const arcPath = (r: number, a0: number, a1: number) => {
-    const p0 = polarToSvg(cx, cy, r, a0)
-    const p1 = polarToSvg(cx, cy, r, a1)
-    const large = Math.abs(a1 - a0) > 180 ? 1 : 0
-    return `M ${p0.x} ${p0.y} A ${r} ${r} 0 ${large} 1 ${p1.x} ${p1.y}`
-  }
-
-  const zoneRedStart = startDeg + (100 / SPEEDO_MAX_KMH) * sweep
-  const zoneAmberStart = startDeg + (80 / SPEEDO_MAX_KMH) * sweep
-
-  const displayDigits = Math.round(smoothKmh)
-
+function TenorSpeedometerEmbed({ speedKmh }: { speedKmh: number }) {
   return (
     <div
-      className="pointer-events-none relative w-[min(100vw-2rem,168px)] shrink-0 select-none pb-6"
-      role="img"
-      aria-label={`Speed ${speedKmh} kilometres per hour`}
+      className="pointer-events-none flex w-[min(184px,100vw-3rem)] shrink-0 flex-col items-center gap-1.5"
+      aria-label={`Speed ${speedKmh} kilometres per hour. Gauge animation is a Tenor clip.`}
     >
-      <div className="text-center text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">
-        Speed
-      </div>
-      <svg
-        viewBox="0 0 200 96"
-        className="mt-0.5 h-[96px] w-full drop-shadow-[0_4px_14px_rgba(0,0,0,0.5)]"
-        aria-hidden
+      <div
+        className="w-full overflow-hidden rounded-lg bg-black ring-1 ring-white/20"
+        style={{ aspectRatio: `${TENOR_SPEEDO_ASPECT} / 1` }}
       >
-        <defs>
-          <linearGradient id={rimGradId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#52525b" />
-            <stop offset="40%" stopColor="#27272a" />
-            <stop offset="100%" stopColor="#3f3f46" />
-          </linearGradient>
-          <linearGradient id={`needle-${uid}`} x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#fef08a" />
-            <stop offset="45%" stopColor="#fbbf24" />
-            <stop offset="100%" stopColor="#b45309" />
-          </linearGradient>
-        </defs>
-
-        <path
-          d={arcPath(rOuter + 3, startDeg, endDeg)}
-          fill="none"
-          stroke={`url(#${rimGradId})`}
-          strokeWidth="5"
-          strokeLinecap="round"
+        <iframe
+          title="Torque / RPM gauge (Tenor)"
+          src={`https://tenor.com/embed/${TENOR_SPEEDO_POST_ID}`}
+          className="h-full w-full border-0"
+          allow="autoplay; fullscreen; encrypted-media"
+          loading="lazy"
+          referrerPolicy="strict-origin-when-cross-origin"
         />
-        <path
-          d={arcPath(rOuter, startDeg, endDeg)}
-          fill="none"
-          stroke="#27272a"
-          strokeWidth="2"
-        />
-        <path
-          d={arcPath(rOuter - 6, startDeg, zoneAmberStart)}
-          fill="none"
-          stroke="#14532d"
-          strokeWidth="8"
-          strokeLinecap="butt"
-          opacity="0.75"
-        />
-        <path
-          d={arcPath(rOuter - 6, zoneAmberStart, zoneRedStart)}
-          fill="none"
-          stroke="#ca8a04"
-          strokeWidth="8"
-          strokeLinecap="butt"
-          opacity="0.85"
-        />
-        <path
-          d={arcPath(rOuter - 6, zoneRedStart, endDeg)}
-          fill="none"
-          stroke="#b91c1c"
-          strokeWidth="8"
-          strokeLinecap="butt"
-          opacity="0.9"
-        />
-
-        {majors.map((v) => {
-          const u = v / SPEEDO_MAX_KMH
-          const deg = startDeg + u * sweep
-          const outer = polarToSvg(cx, cy, rTicks + 6, deg)
-          const inner = polarToSvg(cx, cy, rTicks - 2, deg)
-          const label = polarToSvg(cx, cy, rTicks - 18, deg)
-          return (
-            <g key={v}>
-              <line
-                x1={inner.x}
-                y1={inner.y}
-                x2={outer.x}
-                y2={outer.y}
-                stroke="#e4e4e7"
-                strokeWidth={v % 40 === 0 ? 2.2 : 1.2}
-                strokeLinecap="round"
-              />
-              <text
-                x={label.x}
-                y={label.y}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="fill-zinc-400"
-                style={{
-                  fontSize: v % 40 === 0 ? 11 : 9,
-                  fontFamily: 'ui-monospace, monospace',
-                  fontWeight: v % 40 === 0 ? 700 : 500,
-                }}
-              >
-                {v}
-              </text>
-            </g>
-          )
-        })}
-
-        {[10, 30, 50, 70, 90, 110, 130].map((v) => {
-          const u = v / SPEEDO_MAX_KMH
-          const deg = startDeg + u * sweep
-          const outer = polarToSvg(cx, cy, rTicks + 3, deg)
-          const inner = polarToSvg(cx, cy, rTicks, deg)
-          return (
-            <line
-              key={v}
-              x1={inner.x}
-              y1={inner.y}
-              x2={outer.x}
-              y2={outer.y}
-              stroke="#71717a"
-              strokeWidth="1"
-              strokeLinecap="round"
-            />
-          )
-        })}
-
-        <path
-          d={`M ${baseL.x} ${baseL.y} L ${tip.x} ${tip.y} L ${baseR.x} ${baseR.y} L ${mid.x} ${mid.y} Z`}
-          fill={`url(#needle-${uid})`}
-          stroke="#78350f"
-          strokeWidth="0.35"
-          strokeLinejoin="round"
-          style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.65))' }}
-        />
-        <circle cx={cx} cy={cy} r={hubR} fill="#0a0a0b" stroke="#d97706" strokeWidth="1.25" />
-        <circle cx={cx} cy={cy} r={2.2} fill="#fbbf24" />
-      </svg>
-      <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center">
-        <span className="font-mono text-base font-bold tabular-nums tracking-tight text-amber-200">
-          {displayDigits}
+      </div>
+      <div className="flex flex-col items-center leading-none">
+        <span className="font-mono text-lg font-bold tabular-nums text-amber-200">
+          {speedKmh}
         </span>
         <span className="text-[8px] font-semibold uppercase tracking-[0.3em] text-zinc-500">
           km/h
@@ -309,70 +105,97 @@ function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
   )
 }
 
-function TankBar({
-  label,
+function RefuelSectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      <span className="h-px min-w-[8px] flex-1 bg-linear-to-r from-transparent via-amber-500/45 to-amber-500/30" />
+      <span className="shrink-0 text-[9px] font-black uppercase tracking-[0.2em] text-amber-300/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.9)]">
+        {children}
+      </span>
+      <span className="h-px min-w-[8px] flex-1 bg-linear-to-l from-transparent via-amber-500/45 to-amber-500/30" />
+    </div>
+  )
+}
+
+const gameArcadeBtn =
+  'rounded-xl border-2 font-black uppercase tracking-wide transition-[transform,box-shadow,border-width] duration-100 active:translate-y-1'
+
+/** Chunky arcade-style fuel tiles (press opens refuel where useful). */
+function FuelGameButtons({
   fuel,
-  fillClass,
-  sub,
+  rangeKmLabel,
+  onRefuel,
 }: {
-  label: string
   fuel: number
-  /** Used when fuel is above warn thresholds. */
-  fillClass: string
-  sub?: string
+  rangeKmLabel: string
+  onRefuel: () => void
 }) {
   const level = fuelLowLevel(fuel)
   const pct = Math.max(0, Math.min(100, (fuel / FUEL_MAX) * 100))
   const fillByLevel =
     level === 'critical'
-      ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.45)]'
+      ? 'bg-red-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]'
       : level === 'low'
-        ? 'bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.35)]'
-        : fillClass
+        ? 'bg-orange-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]'
+        : 'bg-linear-to-r from-sky-400 to-cyan-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]'
   const trackRing =
     level === 'critical'
-      ? 'ring-red-500/55'
+      ? 'ring-red-500/70'
       : level === 'low'
-        ? 'ring-orange-400/50'
-        : 'ring-zinc-600/60'
+        ? 'ring-orange-400/60'
+        : 'ring-sky-400/40'
+
+  const tileBase =
+    'w-full rounded-xl border-2 text-left transition-[transform,box-shadow,border-width] duration-100 active:translate-y-1'
 
   return (
-    <div className="flex min-w-[140px] flex-col gap-1 text-left">
-      <span className="text-xs font-medium tracking-wide text-zinc-300">
-        {label}
-      </span>
-      <div
-        className={`h-2 w-full overflow-hidden rounded-full bg-zinc-800 ring-1 transition-shadow duration-200 ${trackRing}`}
+    <div className="flex flex-col gap-2.5">
+      <button
+        type="button"
+        onClick={onRefuel}
+        className={`${tileBase} border-sky-400/55 border-b-[6px] border-b-sky-950 bg-linear-to-b from-sky-600/40 via-sky-950/80 to-black/90 px-3 py-2.5 shadow-[0_6px_0_rgba(8,47,73,0.85)] active:border-b-[3px] active:shadow-[0_3px_0_rgba(8,47,73,0.85)] ring-1 ring-sky-300/25`}
       >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-black uppercase italic tracking-[0.18em] text-sky-100 drop-shadow-[0_1px_0_rgba(0,0,0,0.8)]">
+            Fuel
+          </span>
+          <span className="rounded-md border border-sky-500/40 bg-black/55 px-2 py-0.5 font-mono text-xs font-bold tabular-nums text-sky-50">
+            {tankReadout(fuel)}
+          </span>
+        </div>
         <div
-          className={`h-full rounded-full transition-[width,background-color,box-shadow] duration-200 ${fillByLevel}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span
-        className={`font-mono text-sm ${
-          level === 'critical'
-            ? 'text-red-300'
-            : level === 'low'
-              ? 'text-orange-200'
-              : 'text-zinc-100'
-        }`}
-      >
-        {tankReadout(fuel)}
-      </span>
-      {sub ? (
-        <span
-          className={`text-[10px] leading-tight ${
-            level === 'critical'
-              ? 'text-red-400/90'
-              : level === 'low'
-                ? 'text-orange-300/85'
-                : 'text-zinc-500'
-          }`}
+          className={`mt-2.5 h-2.5 w-full overflow-hidden rounded-full bg-black/60 ring-1 ring-inset ring-black/80 ${trackRing}`}
         >
-          {sub}
+          <div
+            className={`h-full rounded-full transition-[width] duration-200 ${fillByLevel}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={onRefuel}
+        className={`${tileBase} border-emerald-500/45 border-b-[6px] border-b-emerald-950 bg-linear-to-b from-emerald-700/35 via-emerald-950/75 to-black/90 px-3 py-2.5 shadow-[0_6px_0_rgba(6,78,59,0.88)] active:border-b-[3px] active:shadow-[0_3px_0_rgba(6,78,59,0.88)] ring-1 ring-emerald-400/20`}
+      >
+        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-200/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.75)]">
+          Range
         </span>
-      ) : null}
+        <p className="mt-1 font-mono text-base font-bold tabular-nums text-emerald-50">
+          ~{rangeKmLabel}
+        </p>
+        <p className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-emerald-400/75">
+          Est. left
+        </p>
+      </button>
+
+      <button
+        type="button"
+        onClick={onRefuel}
+        className={`${tileBase} border-amber-300/70 border-b-[6px] border-b-amber-950 bg-linear-to-b from-amber-400 via-amber-500 to-amber-700 px-3 py-3 text-center font-black uppercase italic tracking-[0.2em] text-amber-950 shadow-[0_6px_0_rgba(120,53,15,0.95)] active:border-b-[3px] active:shadow-[0_3px_0_rgba(120,53,15,0.95)] ring-1 ring-amber-200/50 drop-shadow-sm`}
+      >
+        Refuel
+      </button>
     </div>
   )
 }
@@ -578,7 +401,7 @@ export function Hud() {
           </span>
         )}
         <div className="rounded-xl border border-white/10 bg-black/50 px-2 pb-1 pt-1 shadow-lg ring-1 ring-white/5 backdrop-blur-md">
-          <RacingSpeedometer speedKmh={speedKmh} />
+          <TenorSpeedometerEmbed speedKmh={speedKmh} />
         </div>
       </div>
 
@@ -590,21 +413,13 @@ export function Hud() {
         />
       </div>
 
-      <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex w-[min(100vw-2rem,260px)] flex-col gap-2">
-        <div className="rounded-lg border border-white/15 bg-black/65 px-3 py-3 shadow-lg backdrop-blur-md">
-          <TankBar
-            label="Fuel"
+      <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex w-[min(100vw-2rem,288px)] flex-col gap-2">
+        <div className="rounded-xl border-2 border-white/10 bg-linear-to-b from-zinc-900/90 to-black/80 px-3 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.55)] ring-1 ring-white/5 backdrop-blur-md">
+          <FuelGameButtons
             fuel={fuel}
-            fillClass="bg-sky-400"
-            sub={`~${rangeLeftM} range left (est.)`}
+            rangeKmLabel={rangeLeftM}
+            onRefuel={openRefuel}
           />
-          <button
-            type="button"
-            onClick={openRefuel}
-            className="mt-3 w-full rounded-md bg-sky-500/35 py-2.5 text-sm font-semibold text-sky-50 ring-1 ring-sky-400/40 transition hover:bg-sky-500/48"
-          >
-            Refuel
-          </button>
           <details className="mt-2 border-t border-white/10 pt-2 text-left">
             <summary className="cursor-pointer select-none text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
               History ({ledger.length})
@@ -654,89 +469,138 @@ export function Hud() {
           <button
             type="button"
             aria-label="Close refuel"
-            className="pointer-events-auto fixed inset-0 z-20 bg-black/45"
+            className="pointer-events-auto fixed inset-0 z-20 bg-black/60 backdrop-blur-[2px]"
             onClick={() => setRefuelOpen(false)}
           />
           <div
-            className="pointer-events-auto fixed z-30 flex max-h-[min(520px,55vh)] w-[min(100vw-2rem,320px)] flex-col overflow-hidden rounded-xl border border-white/20 bg-[#12141a] shadow-2xl ring-1 ring-white/10"
-            style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))', right: 'max(1rem, env(safe-area-inset-right))' }}
+            className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-4"
+            style={{
+              paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+            }}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-3 py-2.5">
-              <h2 className="text-sm font-semibold tracking-wide text-zinc-100">
-                Refuel
-              </h2>
-              <button
-                type="button"
-                onClick={() => setRefuelOpen(false)}
-                className="rounded-md px-2 py-1 text-lg leading-none text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
-                aria-label="Close"
-              >
-                ×
-              </button>
+            <div
+              className="pointer-events-auto flex max-h-[min(90dvh,680px)] w-full max-w-[380px] flex-col overflow-hidden rounded-2xl border-2 border-amber-500/35 bg-linear-to-b from-indigo-950/95 via-zinc-950 to-black shadow-[0_0_48px_rgba(251,191,36,0.12),0_16px_48px_rgba(0,0,0,0.65)] ring-2 ring-amber-400/15"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="refuel-modal-title"
+            >
+            <div className="relative shrink-0 bg-linear-to-r from-amber-600/25 via-amber-500/10 to-transparent px-3 py-2">
+              <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-300/50 to-transparent" />
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.3em] text-amber-200/70">
+                    Pit stop
+                  </p>
+                  <h2
+                    id="refuel-modal-title"
+                    className="text-base font-black uppercase italic tracking-wide text-amber-100 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)]"
+                  >
+                    Refuel
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRefuelOpen(false)}
+                  className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-left">
-              <p className="text-[11px] leading-snug text-zinc-500">
-                Tank capacity {FUEL_MAX} (points). {UGX_PER_FUEL_UNIT.toLocaleString()}{' '}
-                UGX = +1 point. Wallet:{' '}
-                <span className="font-mono text-zinc-300">
-                  UGX {money.toLocaleString()}
-                </span>
-              </p>
-              <p className="mt-1 text-[11px] text-zinc-400">
-                Room in tank:{' '}
-                <span className="font-mono text-zinc-200">
-                  {(Math.round((FUEL_MAX - normalizeTankFuel(fuel)) * 10) / 10).toFixed(1)} pts
-                </span>
-                {' · '}
+
+            <div className="flex flex-col gap-1.5 overflow-hidden px-3 pb-3 pt-1.5 text-left">
+              <div className="grid shrink-0 grid-cols-2 gap-1.5">
+                <div className="rounded-lg border-2 border-sky-600/35 border-b-4 border-b-sky-950 bg-linear-to-b from-sky-900/50 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(8,47,73,0.75)] ring-1 ring-sky-400/15">
+                  <p className="text-[7px] font-black uppercase tracking-widest text-sky-300/80">
+                    Tank max
+                  </p>
+                  <p className="font-mono text-base font-black tabular-nums leading-tight text-sky-100">
+                    {FUEL_MAX}
+                  </p>
+                  <p className="mt-0.5 text-[7px] font-bold uppercase leading-tight text-sky-400/70">
+                    {UGX_PER_FUEL_UNIT.toLocaleString()} UGX = +1 pt
+                  </p>
+                </div>
+                <div className="rounded-lg border-2 border-amber-600/40 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-900/40 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(120,53,15,0.8)] ring-1 ring-amber-400/20">
+                  <p className="text-[7px] font-black uppercase tracking-widest text-amber-300/80">
+                    Wallet
+                  </p>
+                  <p className="font-mono text-xs font-black leading-tight tabular-nums text-amber-100">
+                    {money.toLocaleString()}
+                  </p>
+                  <p className="mt-0.5 text-[7px] font-bold uppercase text-amber-500/75">
+                    UGX
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 rounded-lg border-2 border-emerald-600/35 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-950/60 to-black/85 px-2 py-1.5 shadow-[0_3px_0_rgba(6,78,59,0.75)] ring-1 ring-emerald-400/15">
+                <p className="text-[7px] font-black uppercase tracking-[0.15em] text-emerald-400/85">
+                  Room in tank
+                </p>
+                <p className="font-mono text-sm font-black leading-tight text-emerald-100">
+                  {(Math.round((FUEL_MAX - normalizeTankFuel(fuel)) * 10) / 10).toFixed(1)}{' '}
+                  <span className="text-xs font-bold text-emerald-400/90">pts</span>
+                </p>
                 {maxUgxTank > 0 ? (
-                  <>
-                    Up to{' '}
-                    <span className="font-mono text-sky-300/90">
+                  <p className="mt-0.5 text-[8px] font-bold uppercase leading-tight text-emerald-300/75">
+                    Fill cap{' '}
+                    <span className="font-mono text-emerald-100">
                       UGX {maxUgxTank.toLocaleString()}
-                    </span>{' '}
-                    to fill completely
-                  </>
+                    </span>
+                  </p>
                 ) : (
-                  <span className="text-zinc-500">Tank full — no more fuel fits.</span>
+                  <p className="mt-0.5 text-[9px] font-black uppercase text-zinc-500">
+                    Tank full
+                  </p>
                 )}
-              </p>
+              </div>
 
               {!canRefuel ? (
-                <p className="mt-3 rounded-md bg-white/5 px-2 py-2 text-sm text-zinc-400">
-                  {maxUgxTank <= 0
-                    ? 'Tank is full.'
-                    : 'No cash — earn UGX to refuel.'}
-                </p>
+                <div className="shrink-0 rounded-lg border-2 border-zinc-600 bg-zinc-950/90 px-2 py-3 text-center">
+                  <p className="text-xs font-black uppercase italic tracking-wide text-zinc-400">
+                    {maxUgxTank <= 0 ? 'Tank full' : 'No cash'}
+                  </p>
+                  <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-600">
+                    {maxUgxTank <= 0
+                      ? 'Ride on!'
+                      : 'Earn UGX to refuel'}
+                  </p>
+                </div>
               ) : partialOnly ? (
-                <>
-                  <p className="mt-3 text-[11px] text-zinc-400">
-                    Not enough room for a full point — one partial top-up only:
+                <div className="flex shrink-0 flex-col gap-1">
+                  <p className="text-center text-[9px] font-bold uppercase tracking-wide text-amber-200/80">
+                    Partial top-up only
                   </p>
                   <button
                     type="button"
                     onClick={() => buyFuel(maxUgxTank)}
-                    className="mt-2 w-full rounded-md bg-sky-500/45 py-2 text-sm font-semibold text-white ring-1 ring-sky-400/45"
+                    className={`${gameArcadeBtn} w-full border-cyan-500/50 border-b-[5px] border-b-cyan-950 bg-linear-to-b from-cyan-500 to-cyan-800 py-2 text-xs text-cyan-950 shadow-[0_5px_0_rgba(8,51,68,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,51,68,0.9)]`}
                   >
-                    Pay UGX {maxUgxTank.toLocaleString()} (+
-                    {(maxUgxTank / UGX_PER_FUEL_UNIT).toFixed(2)} pts)
+                    Pay {maxUgxTank.toLocaleString()} UGX
+                    <span className="mt-0.5 block text-[9px] font-mono font-black normal-case tracking-normal">
+                      +{(maxUgxTank / UGX_PER_FUEL_UNIT).toFixed(2)} pts
+                    </span>
                   </button>
-                </>
+                </div>
               ) : (
-                <>
-                  <label className="mt-3 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    Fuel to add (tank points)
-                  </label>
-                  <p className="mt-0.5 text-[10px] text-zinc-600">
-                    Starts at the max you can buy. Slide{' '}
-                    <span className="text-zinc-400">left</span> to buy less — cost
-                    goes down with fewer points.
+                <div className="flex flex-col gap-1 overflow-hidden">
+                  <RefuelSectionTitle>Fuel load</RefuelSectionTitle>
+                  <p className="shrink-0 text-center text-[8px] font-bold uppercase leading-tight tracking-wide text-zinc-500">
+                    Slide left · less fuel · lower cost
                   </p>
                   {maxWholePoints >= 1 ? (
-                    <div className="mt-2 space-y-1">
-                      <div className="flex justify-between text-[10px] text-zinc-500">
-                        <span>Points</span>
-                        <span className="font-mono text-sky-300/90">
-                          {previewPoints} / {maxWholePoints}
+                    <div className="shrink-0 rounded-lg border-2 border-violet-600/30 border-b-4 border-b-violet-950 bg-linear-to-b from-violet-950/50 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(49,46,129,0.75)] ring-1 ring-violet-400/15">
+                      <div className="flex items-center justify-between font-mono text-xs font-black text-violet-200">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-violet-400/90">
+                          Points
+                        </span>
+                        <span className="tabular-nums">
+                          {previewPoints}{' '}
+                          <span className="text-violet-500/80">/</span>{' '}
+                          {maxWholePoints}
                         </span>
                       </div>
                       <input
@@ -750,19 +614,17 @@ export function Hud() {
                           setPointsToAdd(v)
                           setPointsStr(String(v))
                         }}
-                        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-700 accent-sky-400"
+                        className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-full bg-black/60 accent-violet-400 ring-1 ring-inset ring-violet-500/25 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-amber-300 [&::-webkit-slider-thumb]:bg-amber-400"
                       />
                     </div>
                   ) : null}
 
-                  <label className="mt-3 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    Or type points (whole numbers)
-                  </label>
+                  <RefuelSectionTitle>Manual entry</RefuelSectionTitle>
                   <input
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
-                    placeholder={`1–${maxWholePoints}`}
+                    placeholder={`1 – ${maxWholePoints}`}
                     value={pointsStr}
                     onChange={(e) =>
                       setPointsStr(e.target.value.replace(/[^\d,]/g, ''))
@@ -781,29 +643,39 @@ export function Hud() {
                       setPointsToAdd(v)
                       setPointsStr(String(v))
                     }}
-                    className="mt-1 w-full rounded-md border border-white/15 bg-zinc-900/80 px-2.5 py-2 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500/50"
+                    className="shrink-0 w-full rounded-lg border-2 border-b-4 border-zinc-600 border-b-zinc-900 bg-zinc-900/90 px-2 py-1.5 text-center font-mono text-base font-black tabular-nums text-amber-100 shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)] outline-none ring-1 ring-zinc-500/30 placeholder:text-zinc-600 focus:border-amber-500/50 focus:ring-amber-400/30"
                   />
                   {!pointsDraft.valid && pointsStr.trim() !== '' ? (
-                    <p className="mt-1 text-[11px] text-rose-400/90">
-                      Enter a valid whole number of points.
+                    <p className="shrink-0 text-center text-[9px] font-black uppercase text-rose-400">
+                      Whole numbers only
                     </p>
                   ) : null}
 
                   {purchasePreview && previewPoints >= 1 ? (
-                    <div className="mt-2 rounded-md bg-white/5 px-2.5 py-2 text-[11px] leading-snug text-zinc-400">
-                      <span className="text-sky-300/90">
-                        +{purchasePreview.fuelAdd.toFixed(2)} pts → ~
-                        {formatDistanceShort(purchasePreview.approxMeters)} range
-                      </span>
-                      <br />
-                      <span className="text-zinc-500">Cost </span>
-                      <span className="font-mono text-zinc-200">
-                        UGX {purchasePreview.spendUgx.toLocaleString()}
-                      </span>
-                      <span className="text-zinc-500"> · balance </span>
-                      <span className="font-mono text-emerald-300/90">
-                        UGX {purchasePreview.balanceAfter.toLocaleString()}
-                      </span>
+                    <div className="shrink-0 rounded-lg border-2 border-amber-500/40 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-950/40 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(120,53,15,0.65)] ring-1 ring-amber-400/25">
+                      <p className="text-center font-mono text-xs font-black text-amber-100">
+                        +{purchasePreview.fuelAdd.toFixed(2)}{' '}
+                        <span className="text-[10px] uppercase text-amber-400/80">
+                          pts
+                        </span>
+                        <span className="mx-0.5 text-amber-600">→</span>~
+                        {formatDistanceShort(purchasePreview.approxMeters)}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+                        <span>
+                          Cost{' '}
+                          <span className="font-mono text-amber-200">
+                            {purchasePreview.spendUgx.toLocaleString()}
+                          </span>
+                        </span>
+                        <span className="text-zinc-700">|</span>
+                        <span>
+                          After{' '}
+                          <span className="font-mono text-emerald-400">
+                            {purchasePreview.balanceAfter.toLocaleString()}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   ) : null}
 
@@ -811,14 +683,15 @@ export function Hud() {
                     type="button"
                     disabled={!canPayPoints}
                     onClick={onPaySubmit}
-                    className="mt-2 w-full rounded-md bg-sky-500/45 py-2 text-sm font-semibold text-white ring-1 ring-sky-400/45 transition hover:bg-sky-500/58 disabled:cursor-not-allowed disabled:opacity-35"
+                    className={`${gameArcadeBtn} shrink-0 border-lime-500/60 border-b-[5px] border-b-lime-950 bg-linear-to-b from-lime-400 via-lime-500 to-lime-700 py-2 text-xs text-lime-950 shadow-[0_5px_0_rgba(54,83,20,0.95)] active:border-b-2 active:shadow-[0_2px_0_rgba(54,83,20,0.95)] disabled:translate-y-0 disabled:border-b-[5px] disabled:opacity-40 disabled:shadow-[0_5px_0_rgba(54,83,20,0.95)]`}
                   >
                     {purchasePreview && purchasePreview.spendUgx > 0
-                      ? `Pay UGX ${purchasePreview.spendUgx.toLocaleString()}`
+                      ? `Pay ${purchasePreview.spendUgx.toLocaleString()} UGX`
                       : 'Pay'}
                   </button>
 
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <RefuelSectionTitle>Quick buy</RefuelSectionTitle>
+                  <div className="grid shrink-0 grid-cols-4 gap-1">
                     {FUEL_POINT_PRESETS.map((pts) => {
                       const capped = Math.min(pts, maxWholePoints)
                       const p = previewFuelPurchase(
@@ -833,44 +706,43 @@ export function Hud() {
                           type="button"
                           title={title}
                           onClick={() => buyWholePoints(pts)}
-                          className="rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/15 transition hover:bg-white/18 disabled:cursor-not-allowed disabled:opacity-35"
                           disabled={!canRefuel || capped < 1 || p.spendUgx <= 0}
+                          className={`${gameArcadeBtn} border-fuchsia-600/45 border-b-4 border-b-fuchsia-950 bg-linear-to-b from-fuchsia-800/80 to-fuchsia-950 px-1 py-1.5 text-[10px] text-fuchsia-100 shadow-[0_4px_0_rgba(74,4,78,0.85)] active:border-b-2 active:shadow-[0_2px_0_rgba(74,4,78,0.85)] disabled:opacity-35`}
                         >
-                          +{pts} pts
+                          +{pts}
                         </button>
                       )
                     })}
-                    <button
-                      type="button"
-                      disabled={!canRefuel || fillPreview.spendUgx <= 0}
-                      onClick={() => {
-                        buyFuel(Number.MAX_SAFE_INTEGER)
-                        if (maxWholePoints >= 1) {
-                          setPointsToAdd(maxWholePoints)
-                          setPointsStr(String(maxWholePoints))
-                        }
-                      }}
-                      title={
-                        fillPreview.spendUgx > 0
-                          ? `Pay UGX ${fillPreview.spendUgx.toLocaleString()} to fill remaining space`
-                          : undefined
-                      }
-                      className="rounded-md bg-sky-500/25 px-2.5 py-1.5 text-xs font-semibold text-sky-100 ring-1 ring-sky-400/35 transition hover:bg-sky-500/35 disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                      Fill tank
-                      {fillPreview.spendUgx > 0 ? (
-                        <span className="ml-1 font-mono text-[10px] opacity-90">
-                          (UGX {fillPreview.spendUgx.toLocaleString()})
-                        </span>
-                      ) : null}
-                    </button>
                   </div>
-                  <p className="mt-2 text-[10px] text-zinc-600">
-                    +N pts charges N × {UGX_PER_FUEL_UNIT.toLocaleString()} UGX (capped
-                    by tank space and wallet). Fill tops up exactly what fits.
+                  <button
+                    type="button"
+                    disabled={!canRefuel || fillPreview.spendUgx <= 0}
+                    onClick={() => {
+                      buyFuel(Number.MAX_SAFE_INTEGER)
+                      if (maxWholePoints >= 1) {
+                        setPointsToAdd(maxWholePoints)
+                        setPointsStr(String(maxWholePoints))
+                      }
+                    }}
+                    title={
+                      fillPreview.spendUgx > 0
+                        ? `Pay UGX ${fillPreview.spendUgx.toLocaleString()} to fill remaining space`
+                        : undefined
+                    }
+                    className={`${gameArcadeBtn} shrink-0 border-sky-500/50 border-b-4 border-b-sky-950 bg-linear-to-b from-sky-500 to-sky-800 py-1.5 text-[10px] text-sky-50 shadow-[0_4px_0_rgba(8,47,73,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,47,73,0.9)] disabled:opacity-35`}
+                  >
+                    Fill —{' '}
+                    {fillPreview.spendUgx > 0
+                      ? `${fillPreview.spendUgx.toLocaleString()} UGX`
+                      : '—'}
+                  </button>
+                  <p className="shrink-0 text-center text-[7px] font-bold uppercase leading-tight tracking-wider text-zinc-600">
+                    × {UGX_PER_FUEL_UNIT.toLocaleString()} UGX/pt · capped by tank and
+                    wallet
                   </p>
-                </>
+                </div>
               )}
+            </div>
             </div>
           </div>
         </>
