@@ -6,7 +6,6 @@ import * as THREE from 'three'
 import { v4 as uuidv4 } from 'uuid'
 import {
   BLOCK,
-  CITY_START,
   CITY_TOTAL,
   NUM_BLOCKS,
   ROAD_W,
@@ -18,6 +17,7 @@ import {
   isGreenZone,
   isOnRoad,
   isValidBuildingPlot,
+  minDistToRoadNetwork,
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
 import { RoadNetwork } from './RoadNetwork'
@@ -350,45 +350,6 @@ export function Tree({ x, z, scale = 1 }: TreeProps) {
   )
 }
 
-function Matatu({
-  x,
-  z,
-  rotationY,
-}: {
-  x: number
-  z: number
-  rotationY: number
-}) {
-  return (
-    <RigidBody
-      type="fixed"
-      colliders={false}
-      position={[x, 0, z]}
-      rotation={[0, rotationY, 0]}
-    >
-      <group position={[0, 0.52, 0]}>
-      <mesh castShadow receiveShadow position={[0, 0.35, 0]}>
-        <boxGeometry args={[1.35, 1.1, 2.55]} />
-        <meshStandardMaterial color="#f8fafc" roughness={0.45} />
-      </mesh>
-      <mesh castShadow position={[0, 0.95, 0.15]}>
-        <boxGeometry args={[1.2, 0.35, 1.35]} />
-        <meshStandardMaterial color="#e5e7eb" roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 0.45, 0.02]}>
-        <boxGeometry args={[1.38, 0.18, 2.58]} />
-        <meshStandardMaterial color="#1d4ed8" roughness={0.4} metalness={0.25} />
-      </mesh>
-      <mesh position={[0.68, 0.35, 0]}>
-        <boxGeometry args={[0.06, 0.45, 0.55]} />
-        <meshStandardMaterial color="#171717" roughness={0.9} />
-      </mesh>
-      </group>
-      <CuboidCollider args={[0.72, 0.52, 1.32]} position={[0, 0.87, 0]} />
-    </RigidBody>
-  )
-}
-
 function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: number }) {
   return (
     <RigidBody type="fixed" colliders={false} position={[x, 0, z]} rotation={[0, rotationY, 0]}>
@@ -439,27 +400,6 @@ function ParkingLot({
   )
 }
 
-function collectRoadSamples(): [number, number][] {
-  const out: [number, number][] = []
-  const span = CITY_TOTAL - ROAD_W
-  const steps = 32
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const rx = roadStripCenterX(k)
-    for (let s = 0; s < steps; s++) {
-      const rz = CITY_START + ROAD_W / 2 + (s / (steps - 1)) * span
-      out.push([rx, rz])
-    }
-  }
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const rz = roadStripCenterZ(k)
-    for (let s = 0; s < steps; s++) {
-      const rx = CITY_START + ROAD_W / 2 + (s / (steps - 1)) * span
-      out.push([rx, rz])
-    }
-  }
-  return out
-}
-
 /** Trees only in block interiors, ≥5 units from road tarmac (green zone / sidewalk strip). */
 function sampleGreenZoneTreePositions(): [number, number][] {
   const out: [number, number][] = []
@@ -484,6 +424,32 @@ function sampleGreenZoneTreePositions(): [number, number][] {
     }
   }
   return out
+}
+
+/** Corners of a horizontal box must stay off tarmac (centroid-only checks miss large rotated footprints). */
+function footprintClearOfTarmac(
+  cx: number,
+  cz: number,
+  halfW: number,
+  halfD: number,
+  rotationY: number,
+  margin = 0.2,
+): boolean {
+  const c = Math.cos(rotationY)
+  const s = Math.sin(rotationY)
+  const corners: [number, number][] = [
+    [-halfW, -halfD],
+    [halfW, -halfD],
+    [halfW, halfD],
+    [-halfW, halfD],
+  ]
+  for (const [lx, lz] of corners) {
+    const x = cx + c * lx + s * lz
+    const z = cz - s * lx + c * lz
+    if (isOnRoad(x, z)) return false
+    if (minDistToRoadNetwork(x, z) < margin) return false
+  }
+  return true
 }
 
 function CityMapContent() {
@@ -544,7 +510,7 @@ function CityMapContent() {
   const [sx, sz] = LANDMARK_STANBIC
   const [nx, nz] = LANDMARK_NSSF
 
-  const { retail, midrise, matatus, trees, parkingLots, parkedCars } = useMemo(() => {
+  const { retail, midrise, trees, parkingLots, parkedCars } = useMemo(() => {
     const retailList: ReactNode[] = []
     const midList: ReactNode[] = []
     const lotList: ReactNode[] = []
@@ -556,45 +522,49 @@ function CityMapContent() {
         if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP) continue
 
         if (rnd(i, j, 17) < 0.1) {
-          const lotSlots = 2 + Math.floor(rnd(i, j, 301) * 2)
-          const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
-          const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
-          if (isValidBuildingPlot(lotX, lotZ, 2.2)) {
-            const lotRot = rnd(i, j, 304) < 0.5 ? 0 : Math.PI / 2
-            lotList.push(
-              <ParkingLot
-                key={`lot-mid-${i}-${j}`}
-                x={lotX}
-                z={lotZ}
-                rotationY={lotRot}
-                slots={lotSlots}
-              />,
-            )
-            for (let c = 0; c < lotSlots; c++) {
-              if (rnd(i, j, 320 + c) < 0.15) continue
-              const cx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
-              const cz = lotZ + (rnd(i, j, 330 + c) - 0.5) * 0.22
-              carList.push(
-                <ParkedCar
-                  key={`pc-mid-${i}-${j}-${c}`}
-                  x={cx}
-                  z={cz}
+          const fw = 6 + rnd(i, j, 19) * 3
+          const fd = 5 + rnd(i, j, 20) * 2
+          if (footprintClearOfTarmac(bcx, bcz, fw / 2, fd / 2, 0)) {
+            const lotSlots = 2 + Math.floor(rnd(i, j, 301) * 2)
+            const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
+            const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
+            if (isValidBuildingPlot(lotX, lotZ, 2.2)) {
+              const lotRot = rnd(i, j, 304) < 0.5 ? 0 : Math.PI / 2
+              lotList.push(
+                <ParkingLot
+                  key={`lot-mid-${i}-${j}`}
+                  x={lotX}
+                  z={lotZ}
                   rotationY={lotRot}
+                  slots={lotSlots}
                 />,
               )
+              for (let c = 0; c < lotSlots; c++) {
+                if (rnd(i, j, 320 + c) < 0.15) continue
+                const cx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
+                const cz = lotZ + (rnd(i, j, 330 + c) - 0.5) * 0.22
+                carList.push(
+                  <ParkedCar
+                    key={`pc-mid-${i}-${j}-${c}`}
+                    x={cx}
+                    z={cz}
+                    rotationY={lotRot}
+                  />,
+                )
+              }
             }
+            midList.push(
+              <MidriseTextured
+                key={`mid-${i}-${j}`}
+                cx={bcx}
+                cz={bcz}
+                floors={8 + Math.floor(rnd(i, j, 18) * 4)}
+                footprint={[fw, fd]}
+                bodyMaterial={midriseMat}
+              />,
+            )
+            continue
           }
-          midList.push(
-            <MidriseTextured
-              key={`mid-${i}-${j}`}
-              cx={bcx}
-              cz={bcz}
-              floors={8 + Math.floor(rnd(i, j, 18) * 4)}
-              footprint={[6 + rnd(i, j, 19) * 3, 5 + rnd(i, j, 20) * 2]}
-              bodyMaterial={midriseMat}
-            />,
-          )
-          continue
         }
 
         const count = 1 + Math.floor(rnd(i, j, 1) * 3)
@@ -608,11 +578,14 @@ function CityMapContent() {
 
           const w = 2.3 + rnd(i, j, 40 + k) * 2.1
           const d = 2.1 + rnd(i, j, 50 + k) * 1.7
-          const wallColor =
-            WALL_TONES[Math.floor(rnd(i, j, 60 + k) * WALL_TONES.length)]
           const stories = rnd(i, j, 80 + k) < 0.52 ? 2 : 3
           const pitchedRoof = rnd(i, j, 91 + k) < 0.5
           const rot = rnd(i, j, 90 + k) * Math.PI * 2
+
+          if (!footprintClearOfTarmac(x, z, w / 2, d / 2, rot)) continue
+
+          const wallColor =
+            WALL_TONES[Math.floor(rnd(i, j, 60 + k) * WALL_TONES.length)]
 
           retailList.push(
             <GenericCommercialBlock
@@ -631,33 +604,6 @@ function CityMapContent() {
       }
     }
 
-    const roadPts = collectRoadSamples().filter(
-      ([rx, rz]) =>
-        isOnRoad(rx, rz) && minDistToLandmark(rx, rz) > 12,
-    )
-    const matatuCount = 28
-    const mats: ReactNode[] = []
-    const nRoad = roadPts.length
-    for (let m = 0; m < matatuCount; m++) {
-      const idx =
-        nRoad > 0
-          ? Math.min(
-              Math.floor(rnd(99, m, 3) * nRoad),
-              nRoad - 1,
-            )
-          : 0
-      const [rx, rz] = nRoad > 0 ? roadPts[idx]! : [0, 0]
-      const rot = rnd(m, 7, 11) < 0.5 ? 0 : Math.PI / 2
-      mats.push(
-        <Matatu
-          key={uuidv4()}
-          x={rx + (rnd(m, 2, 5) - 0.5) * 1.1}
-          z={rz + (rnd(m, 4, 6) - 0.5) * 1.1}
-          rotationY={rot}
-        />,
-      )
-    }
-
     const treePts = sampleGreenZoneTreePositions()
     const treeNodes = treePts.map(([tx, tz], idx) => (
       <Tree
@@ -671,7 +617,6 @@ function CityMapContent() {
     return {
       retail: retailList,
       midrise: midList,
-      matatus: mats,
       trees: treeNodes,
       parkingLots: lotList,
       parkedCars: carList,
@@ -721,7 +666,6 @@ function CityMapContent() {
       {midrise}
       {retail}
       {trees}
-      {matatus}
       {parkingLots}
       {parkedCars}
     </group>
