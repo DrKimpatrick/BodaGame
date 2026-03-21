@@ -91,6 +91,120 @@ const dirtMatProps = {
   metalness: 0.02,
 } as const
 
+const ZEBRA_Y = 0.066
+const ZEBRA_STRIPE = 0.32
+const ZEBRA_GAP = 0.3
+const ZEBRA_COVER = 0.86 /** fraction of ROAD_W covered along each axis */
+
+const zebraStripeMat = new THREE.MeshBasicMaterial({
+  color: '#f2f2f0',
+  toneMapped: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1.5,
+  polygonOffsetUnits: -1,
+})
+
+/** Top of road deck (matches vertical/horizontal segment mesh). */
+const ROAD_TOP_Y = 0.06
+const HUMP_HALF_H = 0.1
+const HUMP_ALONG = 1.28 /** span along traffic direction */
+
+/** Rounded transverse hump on an N–S carriageway (ellipsoid, traffic ±Z). */
+function SpeedHumpVerticalRoad({
+  cx,
+  z,
+  material,
+}: {
+  cx: number
+  z: number
+  material: THREE.MeshStandardMaterial
+}) {
+  return (
+    <mesh
+      position={[cx, ROAD_TOP_Y + HUMP_HALF_H, z]}
+      scale={[ROAD_W * 0.4, HUMP_HALF_H, HUMP_ALONG]}
+      castShadow
+      receiveShadow
+      material={material}
+    >
+      <sphereGeometry args={[1, 14, 10]} />
+    </mesh>
+  )
+}
+
+/** Rounded transverse hump on an E–W carriageway (traffic ±X). */
+function SpeedHumpHorizontalRoad({
+  x,
+  cz,
+  material,
+}: {
+  x: number
+  cz: number
+  material: THREE.MeshStandardMaterial
+}) {
+  return (
+    <mesh
+      position={[x, ROAD_TOP_Y + HUMP_HALF_H, cz]}
+      scale={[HUMP_ALONG, HUMP_HALF_H, ROAD_W * 0.4]}
+      castShadow
+      receiveShadow
+      material={material}
+    >
+      <sphereGeometry args={[1, 14, 10]} />
+    </mesh>
+  )
+}
+
+/** Stripes across a N–S road (traffic ±Z): wide along X, thin along Z. */
+function ZebraAcrossVerticalRoad({ cx, z }: { cx: number; z: number }) {
+  const span = ROAD_W * ZEBRA_COVER
+  const period = ZEBRA_STRIPE + ZEBRA_GAP
+  const n = Math.max(4, Math.floor(span / period))
+  const used = n * period - ZEBRA_GAP
+  const startOff = -used / 2 + ZEBRA_STRIPE / 2
+  const roadW = ROAD_W * 0.94
+
+  const bars: ReactElement[] = []
+  for (let k = 0; k < n; k++) {
+    bars.push(
+      <mesh
+        key={k}
+        position={[cx, ZEBRA_Y, z + startOff + k * period]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={zebraStripeMat}
+      >
+        <planeGeometry args={[roadW, ZEBRA_STRIPE]} />
+      </mesh>,
+    )
+  }
+  return <group>{bars}</group>
+}
+
+/** Stripes across an E–W road (traffic ±X): thin along X, wide along Z. */
+function ZebraAcrossHorizontalRoad({ x, cz }: { x: number; cz: number }) {
+  const span = ROAD_W * ZEBRA_COVER
+  const period = ZEBRA_STRIPE + ZEBRA_GAP
+  const n = Math.max(4, Math.floor(span / period))
+  const used = n * period - ZEBRA_GAP
+  const startOff = -used / 2 + ZEBRA_STRIPE / 2
+  const roadW = ROAD_W * 0.94
+
+  const bars: ReactElement[] = []
+  for (let k = 0; k < n; k++) {
+    bars.push(
+      <mesh
+        key={k}
+        position={[x + startOff + k * period, ZEBRA_Y, cz]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={zebraStripeMat}
+      >
+        <planeGeometry args={[ZEBRA_STRIPE, roadW]} />
+      </mesh>,
+    )
+  }
+  return <group>{bars}</group>
+}
+
 function segmentRandom(a: number, b: number, salt: number) {
   const t = Math.sin(a * 12.9898 + b * 78.233 + salt * 43.758) * 43758.5453123
   return t - Math.floor(t)
@@ -295,10 +409,63 @@ export function RoadNetwork() {
     [tarmacMat, wornMat],
   )
 
+  /** Mid-block only: halfway between junctions, never on intersection centres. */
+  const zebraCrossings = useMemo(() => {
+    const out: ReactElement[] = []
+    for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
+      const cx = roadStripCenterX(vi)
+      for (let j = 0; j < NUM_BLOCKS; j++) {
+        if (segmentRandom(vi, j, 505) > 0.28) continue
+        const z = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
+        out.push(<ZebraAcrossVerticalRoad key={`zv-${vi}-${j}`} cx={cx} z={z} />)
+      }
+    }
+    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
+      const cz = roadStripCenterZ(hj)
+      for (let i = 0; i < NUM_BLOCKS; i++) {
+        if (segmentRandom(i, hj, 606) > 0.28) continue
+        const x = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
+        out.push(<ZebraAcrossHorizontalRoad key={`zh-${i}-${hj}`} x={x} cz={cz} />)
+      }
+    }
+    return out
+  }, [])
+
+  /** Mid-block humps, offset along the road so they don’t always sit on zebras. */
+  const speedHumps = useMemo(() => {
+    const out: ReactElement[] = []
+    const maxOff = 11
+    for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
+      const cx = roadStripCenterX(vi)
+      for (let j = 0; j < NUM_BLOCKS; j++) {
+        if (segmentRandom(vi, j, 919) > 0.2) continue
+        const mid = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
+        const z = mid + (segmentRandom(vi, j, 920) - 0.5) * 2 * maxOff
+        out.push(
+          <SpeedHumpVerticalRoad key={`hv-${vi}-${j}`} cx={cx} z={z} material={tarmacMat} />,
+        )
+      }
+    }
+    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
+      const cz = roadStripCenterZ(hj)
+      for (let i = 0; i < NUM_BLOCKS; i++) {
+        if (segmentRandom(i, hj, 921) > 0.2) continue
+        const mid = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
+        const x = mid + (segmentRandom(i, hj, 922) - 0.5) * 2 * maxOff
+        out.push(
+          <SpeedHumpHorizontalRoad key={`hh-${i}-${hj}`} x={x} cz={cz} material={tarmacMat} />,
+        )
+      }
+    }
+    return out
+  }, [tarmacMat])
+
   return (
     <group>
       {vertical}
       {horizontal}
+      {speedHumps}
+      {zebraCrossings}
     </group>
   )
 }
