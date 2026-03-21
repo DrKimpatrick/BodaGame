@@ -16,7 +16,9 @@ import {
 } from 'react'
 import * as THREE from 'three'
 import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
+import { BikeExhaust } from './BikeExhaust'
 import {
   isOnRoad,
   minDistToRoadNetwork,
@@ -349,6 +351,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
   const keys = useKeyboard()
   const speed = useRef(0)
+  useBikeEngineAudio(speed)
   const yaw = useRef(0)
   const lastReportedKmh = useRef(-1)
   const [isOffroad, setIsOffroad] = useState(false)
@@ -455,6 +458,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           </mesh>
         ) : null}
       </group>
+      <BikeExhaust rigidBodyRef={rb} speedRef={speed} />
     </RigidBody>
   )
 })
