@@ -18,7 +18,7 @@ import * as THREE from 'three'
 import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
-import { useGameStore } from '../store/useGameStore'
+import { FUEL_PER_WORLD_METER, useGameStore } from '../store/useGameStore'
 import { BikeExhaust } from './BikeExhaust'
 import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
 
@@ -368,6 +368,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const bankSmoothed = useRef(0)
   const pitchSmoothed = useRef(0)
   const enginePhase = useRef(0)
+  const lastFuelPos = useRef<{ x: number; z: number } | null>(null)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -487,12 +488,21 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       onSpeedKmhChange?.(kmh)
     }
 
-    if (drivable && speedAbs > 0.04) {
-      const burn = speedAbs * 0.35 * dt
-      const f = useGameStore.getState().fuel
-      if (f > 0) {
-        useGameStore.getState().setFuel(Math.max(0, f - burn))
+    if (speedAbs > 0.04) {
+      const prev = lastFuelPos.current
+      lastFuelPos.current = { x: t.x, z: t.z }
+      if (prev) {
+        const dist = Math.hypot(t.x - prev.x, t.z - prev.z)
+        if (dist > 1e-6) {
+          const burn = dist * FUEL_PER_WORLD_METER
+          const f = useGameStore.getState().fuel
+          if (f > 0) {
+            useGameStore.getState().setFuel(Math.max(0, f - burn))
+          }
+        }
       }
+    } else {
+      lastFuelPos.current = { x: t.x, z: t.z }
     }
   })
 
