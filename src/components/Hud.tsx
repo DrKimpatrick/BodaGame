@@ -35,6 +35,30 @@ function fuelLowLevel(fuel: number): 'ok' | 'low' | 'critical' {
 const TENOR_SPEEDO_POST_ID = '15773332'
 const TENOR_SPEEDO_ASPECT = 1.50943
 
+/** Uganda flag asset (public). */
+const UGANDA_FLAG_SRC = '/textures/uganda-flag_1070394-187.avif'
+
+function UgandaFlagBadge({
+  className,
+  title,
+}: {
+  className?: string
+  title?: string
+}) {
+  return (
+    <img
+      src={UGANDA_FLAG_SRC}
+      alt=""
+      title={title}
+      width={60}
+      height={40}
+      className={`pointer-events-none select-none object-cover shadow-sm ring-1 ring-black/40 ${className ?? ''}`}
+      loading="lazy"
+      decoding="async"
+    />
+  )
+}
+
 /** Car-style fuel pump lamp (stroke icon). */
 function FuelPumpIcon({ className }: { className?: string }) {
   return (
@@ -63,6 +87,42 @@ function FuelPumpIcon({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+/** Bifold wallet (stroke) — matches arcade HUD icons. */
+function WalletIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="14"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M3 10h18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M7 13h7M7 16h5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        opacity="0.4"
       />
     </svg>
   )
@@ -200,28 +260,79 @@ function FuelGameButtons({
   )
 }
 
-function StatBar({
-  label,
-  value,
-  fillClass,
-}: {
-  label: string
-  value: number
-  fillClass: string
-}) {
-  const pct = Math.max(0, Math.min(100, value))
+/** Gauge + hub — reads as vehicle condition / health. */
+function ConditionGaugeIcon({ className }: { className?: string }) {
   return (
-    <div className="flex min-w-[140px] flex-col gap-1 text-left">
-      <span className="text-xs font-medium tracking-wide text-zinc-300">
-        {label}
-      </span>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800 ring-1 ring-zinc-600/60">
-        <div
-          className={`h-full rounded-full transition-[width] duration-150 ${fillClass}`}
-          style={{ width: `${pct}%` }}
-        />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M5 16.5a8.5 8.5 0 0 1 14 0"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 16.5V10.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="16.5" r="1.75" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ConditionArcadeTile({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value))
+  const barTone =
+    pct <= 25
+      ? {
+          fill:
+            'bg-linear-to-r from-red-500 to-rose-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]',
+          ring: 'ring-red-500/65',
+        }
+      : pct <= 55
+        ? {
+            fill:
+              'bg-linear-to-r from-amber-400 to-yellow-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]',
+            ring: 'ring-amber-400/55',
+          }
+        : {
+            fill:
+              'bg-linear-to-r from-emerald-400 to-teal-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]',
+            ring: 'ring-emerald-400/45',
+          }
+
+  return (
+    <div className="relative flex gap-3">
+      <div
+        className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-emerald-400/50 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-500/65 to-emerald-950 shadow-[0_4px_0_rgba(6,78,59,0.88)] ring-1 ring-emerald-200/35"
+        aria-hidden
+      >
+        <ConditionGaugeIcon className="h-7 w-7 text-emerald-50 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)]" />
       </div>
-      <span className="font-mono text-sm text-zinc-100">{pct.toFixed(0)}</span>
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 pt-0.5">
+        <p className="text-[10px] font-black uppercase italic tracking-[0.2em] text-emerald-100/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.85)]">
+          Condition
+        </p>
+        <div
+          className={`h-2.5 w-full overflow-hidden rounded-full bg-black/60 ring-1 ring-inset ring-black/80 ${barTone.ring}`}
+        >
+          <div
+            className={`h-full rounded-full transition-[width] duration-200 ${barTone.fill}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <p className="font-mono text-xl font-black tabular-nums leading-none text-emerald-50 drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
+          {pct.toFixed(0)}
+          <span className="ml-0.5 text-sm font-black text-emerald-300/90">%</span>
+        </p>
+      </div>
     </div>
   )
 }
@@ -358,11 +469,39 @@ export function Hud() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
-      <div className="absolute left-4 top-4 max-w-[min(100vw-2rem,280px)] rounded-lg bg-black/55 px-4 py-3 ring-1 ring-zinc-600/50 backdrop-blur-sm">
-        <p className="text-xs font-medium tracking-wide text-zinc-400">Wallet</p>
-        <p className="mt-1 font-mono text-2xl text-amber-300">
-          UGX {money.toLocaleString()}
-        </p>
+      <div
+        className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"
+        style={{
+          marginTop: 'max(0px, env(safe-area-inset-top))',
+          marginLeft: 'max(0px, env(safe-area-inset-left))',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-300/55 to-transparent" />
+        <div className="relative flex gap-3">
+          <div
+            className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-amber-400/50 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-500/70 to-amber-950 shadow-[0_4px_0_rgba(69,26,3,0.88)] ring-1 ring-amber-200/35"
+            aria-hidden
+          >
+            <WalletIcon className="h-7 w-7 text-amber-50 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)]" />
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[10px] font-black uppercase italic tracking-[0.2em] text-amber-100/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.85)]">
+                Wallet
+              </p>
+              <UgandaFlagBadge
+                className="h-4 w-6 shrink-0 rounded-sm"
+                title="Uganda"
+              />
+            </div>
+            <p className="mt-1 font-mono text-2xl font-black tabular-nums leading-none text-amber-50 drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
+              {money.toLocaleString()}
+            </p>
+            <p className="mt-1 text-[9px] font-black uppercase tracking-[0.28em] text-amber-400/85">
+              UGX
+            </p>
+          </div>
+        </div>
       </div>
 
       <div
@@ -405,12 +544,15 @@ export function Hud() {
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-4 rounded-lg bg-black/55 px-4 py-3 ring-1 ring-zinc-600/50 backdrop-blur-sm">
-        <StatBar
-          label="Condition"
-          value={condition}
-          fillClass="bg-emerald-400"
-        />
+      <div
+        className="absolute bottom-4 left-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-emerald-500/45 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-700/28 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(6,78,59,0.78)] ring-1 ring-emerald-400/22 backdrop-blur-md"
+        style={{
+          marginBottom: 'max(0px, env(safe-area-inset-bottom))',
+          marginLeft: 'max(0px, env(safe-area-inset-left))',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-emerald-300/55 to-transparent" />
+        <ConditionArcadeTile value={condition} />
       </div>
 
       <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex w-[min(100vw-2rem,288px)] flex-col gap-2">
@@ -488,16 +630,22 @@ export function Hud() {
             <div className="relative shrink-0 bg-linear-to-r from-amber-600/25 via-amber-500/10 to-transparent px-3 py-2">
               <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-300/50 to-transparent" />
               <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.3em] text-amber-200/70">
-                    Pit stop
-                  </p>
-                  <h2
-                    id="refuel-modal-title"
-                    className="text-base font-black uppercase italic tracking-wide text-amber-100 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)]"
-                  >
-                    Refuel
-                  </h2>
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                  <UgandaFlagBadge
+                    className="h-9 w-[54px] shrink-0 rounded-md"
+                    title="Uganda"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[8px] font-black uppercase tracking-[0.3em] text-amber-200/70">
+                      Pit stop
+                    </p>
+                    <h2
+                      id="refuel-modal-title"
+                      className="text-base font-black uppercase italic tracking-wide text-amber-100 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)]"
+                    >
+                      Refuel
+                    </h2>
+                  </div>
                 </div>
                 <button
                   type="button"
