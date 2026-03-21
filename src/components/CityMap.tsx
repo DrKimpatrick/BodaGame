@@ -22,6 +22,13 @@ import {
 } from '@game/roadSpatial'
 import { BuildingNameLabel } from './BuildingNameLabel'
 import { BuildingPerimeterFence } from './BuildingPerimeterFence'
+import {
+  BoxBuildingWindowGrids,
+  CylinderCurtainPanels,
+  GlassTowerMullions,
+  MidriseWindowGrids,
+  TowerFaceWindowGrid,
+} from './BuildingFacadeWindows'
 import { RoadNetwork } from './RoadNetwork'
 import { RoadSign } from './RoadSign'
 import { IntersectionTrafficPair } from './TrafficLight'
@@ -147,12 +154,18 @@ export function MapeeraBuilding({
 
   return (
     <group>
-      <mesh position={[-1.2, towerH / 2, 0]} castShadow receiveShadow material={material}>
-        <boxGeometry args={[3, towerH, 3.2]} />
-      </mesh>
-      <mesh position={[1.2, towerH / 2, 0]} castShadow receiveShadow material={material}>
-        <boxGeometry args={[3, towerH, 3.2]} />
-      </mesh>
+      <group position={[-1.2, towerH / 2, 0]}>
+        <mesh castShadow receiveShadow material={material}>
+          <boxGeometry args={[3, towerH, 3.2]} />
+        </mesh>
+        <TowerFaceWindowGrid towerH={towerH} halfW={1.48} halfD={1.62} />
+      </group>
+      <group position={[1.2, towerH / 2, 0]}>
+        <mesh castShadow receiveShadow material={material}>
+          <boxGeometry args={[3, towerH, 3.2]} />
+        </mesh>
+        <TowerFaceWindowGrid towerH={towerH} halfW={1.48} halfD={1.62} />
+      </group>
       <mesh position={[0, towerH * 0.62, 0]} castShadow receiveShadow material={material}>
         <boxGeometry args={[2.6, 1.4, 2.2]} />
       </mesh>
@@ -178,6 +191,7 @@ export function StanbicBankTower({
       <mesh position={[0, 13.5, 0]} castShadow receiveShadow material={material}>
         <cylinderGeometry args={[5.8, 5.8, 27, 64]} />
       </mesh>
+      <CylinderCurtainPanels radius={5.8} centerY={13.5} height={27} segments={24} />
       <mesh position={[0, 26.5, 0]} castShadow>
         <cylinderGeometry args={[5.2, 4.2, 2.2, 32]} />
         <meshStandardMaterial color="#e2e8f0" roughness={0.4} metalness={0.2} />
@@ -213,6 +227,7 @@ export function NSSFGlassTower() {
           envMapIntensity={1.35}
         />
       </mesh>
+      <GlassTowerMullions width={5.2} height={21} depth={4.8} centerY={10.5} />
       <mesh position={[-2.9, 9, 0.4]} rotation={[0, 0.2, 0]} castShadow>
         <boxGeometry args={[2.4, 17, 3.6]} />
         <meshPhysicalMaterial
@@ -294,6 +309,13 @@ function GenericCommercialBlock({
         >
           <boxGeometry args={[w, bodyH, d]} />
         </mesh>
+        <BoxBuildingWindowGrids
+          width={w}
+          depth={d}
+          height={bodyH}
+          baseY={0.04}
+          rows={stories}
+        />
         {pitchedRoof ? (
           <mesh
             position={[0, bodyH + coneH * 0.48, 0]}
@@ -364,18 +386,14 @@ function MidriseTextured({
         <mesh position={[0, meshCenterY, 0]} castShadow receiveShadow material={boxMaterials}>
           <boxGeometry args={[fw, h, fd]} />
         </mesh>
-        {Array.from({ length: floors }, (_, f) => (
-          <group key={f} position={[0, 0.5 + f * 0.95, fd / 2 + 0.02]}>
-            {facadeMaterial
-              ? null
-              : Array.from({ length: 6 }, (_, c) => (
-                  <mesh key={c} position={[(c - 2.5) * (fw / 6.2), 0, 0]}>
-                    <planeGeometry args={[0.32, 0.42]} />
-                    <meshStandardMaterial color="#334155" roughness={0.35} metalness={0.2} />
-                  </mesh>
-                ))}
-          </group>
-        ))}
+        <MidriseWindowGrids
+          footprintW={fw}
+          footprintD={fd}
+          totalHeight={h}
+          floors={floors}
+          meshCenterY={meshCenterY}
+          skipZFaces={Boolean(facadeMaterial)}
+        />
         {roofLabel ? (
           <BuildingNameLabel
             position={[0, h + 0.55, 0]}
