@@ -47,13 +47,17 @@ const LANDMARK_NSSF: [number, number] = [
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
 
+type NamedMidrise = {
+  title: string
+  subtitle?: string
+  /** Photo texture on the street-facing (+Z) façade */
+  facade?: 'acacia' | 'garden'
+}
+
 /** Fixed blocks that always spawn a midrise with a recognizable mall / hub name. */
-const NAMED_MIDRISE_BLOCKS: Record<
-  string,
-  { title: string; subtitle?: string }
-> = {
-  '4,5': { title: 'Acacia Mall', subtitle: 'Kampala' },
-  '9,3': { title: 'Garden City', subtitle: 'Mall' },
+const NAMED_MIDRISE_BLOCKS: Record<string, NamedMidrise> = {
+  '4,5': { title: 'Acacia Mall', subtitle: 'Kampala', facade: 'acacia' },
+  '9,3': { title: 'Garden City', subtitle: 'Mall', facade: 'garden' },
   '2,8': { title: 'Oasis Mall' },
 }
 
@@ -320,13 +324,16 @@ function MidriseTextured({
   footprint,
   bodyMaterial,
   roofLabel,
+  facadeMaterial,
 }: {
   cx: number
   cz: number
   floors: number
   footprint: [number, number]
   bodyMaterial: THREE.MeshStandardMaterial
-  roofLabel?: { title: string; subtitle?: string }
+  roofLabel?: NamedMidrise
+  /** Optional photo on the box +Z face (material index 4 on BoxGeometry). */
+  facadeMaterial?: THREE.MeshBasicMaterial
 }) {
   const [fw, fd] = footprint
   const h = floors * 0.95
@@ -334,20 +341,38 @@ function MidriseTextured({
   const meshCenterY = h / 2 + 0.04
   const labelW = Math.min(Math.max(fw * 0.92, 5.2), 11)
 
+  /**
+   * Box face order: +X, -X, +Y, -Y, +Z, -Z.
+   * Same photo on both Z faces so it reads from either side of the block.
+   */
+  const boxMaterials = useMemo(() => {
+    if (!facadeMaterial) return bodyMaterial
+    return [
+      bodyMaterial,
+      bodyMaterial,
+      bodyMaterial,
+      bodyMaterial,
+      facadeMaterial,
+      facadeMaterial,
+    ] as THREE.Material[]
+  }, [bodyMaterial, facadeMaterial])
+
   return (
     <RigidBody type="fixed" colliders={false} position={[cx, 0, cz]}>
       <group>
-        <mesh position={[0, meshCenterY, 0]} castShadow receiveShadow material={bodyMaterial}>
+        <mesh position={[0, meshCenterY, 0]} castShadow receiveShadow material={boxMaterials}>
           <boxGeometry args={[fw, h, fd]} />
         </mesh>
         {Array.from({ length: floors }, (_, f) => (
           <group key={f} position={[0, 0.5 + f * 0.95, fd / 2 + 0.02]}>
-            {Array.from({ length: 6 }, (_, c) => (
-              <mesh key={c} position={[(c - 2.5) * (fw / 6.2), 0, 0]}>
-                <planeGeometry args={[0.32, 0.42]} />
-                <meshStandardMaterial color="#334155" roughness={0.35} metalness={0.2} />
-              </mesh>
-            ))}
+            {facadeMaterial
+              ? null
+              : Array.from({ length: 6 }, (_, c) => (
+                  <mesh key={c} position={[(c - 2.5) * (fw / 6.2), 0, 0]}>
+                    <planeGeometry args={[0.32, 0.42]} />
+                    <meshStandardMaterial color="#334155" roughness={0.35} metalness={0.2} />
+                  </mesh>
+                ))}
           </group>
         ))}
         {roofLabel ? (
@@ -510,13 +535,23 @@ const HALF_GROUND = (CITY_TOTAL + GROUND_MARGIN) / 2
 const FENCE_STRIP_DEPTH = 6.5
 
 function CityMapContent() {
-  const [mapeeraMap, stanbicMap, grassFieldMap, concreteMap, picketFenceMap] = useTexture(
+  const [
+    mapeeraMap,
+    stanbicMap,
+    grassFieldMap,
+    concreteMap,
+    picketFenceMap,
+    acaciaMallMap,
+    gardenCityMap,
+  ] = useTexture(
     [
       '/textures/mapeera.jpg',
       '/textures/stanbic_bank.jpg',
       '/textures/grass-vector-seamless.jpg',
       '/textures/ground-concrete.jpg',
       '/textures/perimeter-picket-fence.jpg',
+      '/textures/Acacia-Mall-1.jpg',
+      '/textures/garden-city.jpg',
     ],
     (loaded) => {
       configureFacadeTexture(loaded[0])
@@ -543,6 +578,12 @@ function CityMapContent() {
       fence.wrapT = THREE.ClampToEdgeWrapping
       fence.offset.set(0, 0.16)
       fence.repeat.set(groundSpan / 24, 0.58)
+      for (const idx of [5, 6]) {
+        const mall = loaded[idx]
+        mall.wrapS = mall.wrapT = THREE.ClampToEdgeWrapping
+        mall.colorSpace = THREE.SRGBColorSpace
+        mall.needsUpdate = true
+      }
     },
   )
 
@@ -575,6 +616,21 @@ function CityMapContent() {
         metalness: 0.05,
       }),
     [],
+  )
+
+  /** Basic + unlit so photos read clearly (standard materials were easy to miss in shadow / angle). */
+  const mallFacadeMats = useMemo(
+    () => ({
+      acacia: new THREE.MeshBasicMaterial({
+        map: acaciaMallMap,
+        toneMapped: false,
+      }),
+      garden: new THREE.MeshBasicMaterial({
+        map: gardenCityMap,
+        toneMapped: false,
+      }),
+    }),
+    [acaciaMallMap, gardenCityMap],
   )
 
   const pitchedRoofMat = useMemo(
@@ -724,6 +780,9 @@ function CityMapContent() {
                 footprint={[fw, fd]}
                 bodyMaterial={midriseMat}
                 roofLabel={namedMid}
+                facadeMaterial={
+                  namedMid?.facade ? mallFacadeMats[namedMid.facade] : undefined
+                }
               />,
             )
             continue
@@ -784,7 +843,7 @@ function CityMapContent() {
       parkingLots: lotList,
       parkedCars: carList,
     }
-  }, [midriseMat, pitchedRoofMat])
+  }, [midriseMat, mallFacadeMats, pitchedRoofMat])
 
   return (
     <group>
