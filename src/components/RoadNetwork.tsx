@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react'
-import { useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useMemo } from 'react'
 import * as THREE from 'three'
 import {
   BLOCK,
@@ -95,85 +94,6 @@ const dirtMatProps = {
 function segmentRandom(a: number, b: number, salt: number) {
   const t = Math.sin(a * 12.9898 + b * 78.233 + salt * 43.758) * 43758.5453123
   return t - Math.floor(t)
-}
-
-function TrafficLight() {
-  const phase = useRef(Math.random() * 15)
-  const elapsed = useRef(0)
-  const red = useRef<THREE.MeshStandardMaterial>(null)
-  const yellow = useRef<THREE.MeshStandardMaterial>(null)
-  const green = useRef<THREE.MeshStandardMaterial>(null)
-
-  useFrame((_, delta) => {
-    elapsed.current += delta
-    const cycle = (elapsed.current + phase.current) % 15
-    const next = cycle < 5 ? 'red' : cycle < 10 ? 'yellow' : 'green'
-    if (red.current) {
-      red.current.color.set(next === 'red' ? '#ef4444' : '#3f1111')
-      red.current.emissive.set(next === 'red' ? '#ef4444' : '#3f1111')
-    }
-    if (yellow.current) {
-      yellow.current.color.set(next === 'yellow' ? '#f59e0b' : '#3f2a06')
-      yellow.current.emissive.set(next === 'yellow' ? '#f59e0b' : '#3f2a06')
-    }
-    if (green.current) {
-      green.current.color.set(next === 'green' ? '#22c55e' : '#0d2e17')
-      green.current.emissive.set(next === 'green' ? '#22c55e' : '#0d2e17')
-    }
-  })
-
-  return (
-    <group>
-      <mesh position={[0, 1.8, 0]} castShadow>
-        <cylinderGeometry args={[0.06, 0.06, 3.6, 8]} />
-        <meshStandardMaterial color="#475569" roughness={0.75} />
-      </mesh>
-      <mesh position={[0.16, 3.15, 0]} castShadow>
-        <boxGeometry args={[0.32, 0.62, 0.24]} />
-        <meshStandardMaterial color="#111827" roughness={0.85} />
-      </mesh>
-      <mesh position={[0.23, 3.34, 0]} castShadow>
-        <sphereGeometry args={[0.045, 10, 10]} />
-        <meshStandardMaterial ref={red} color="#3f1111" emissive="#3f1111" emissiveIntensity={0.4} />
-      </mesh>
-      <mesh position={[0.23, 3.15, 0]} castShadow>
-        <sphereGeometry args={[0.045, 10, 10]} />
-        <meshStandardMaterial
-          ref={yellow}
-          color="#3f2a06"
-          emissive="#3f2a06"
-          emissiveIntensity={0.35}
-        />
-      </mesh>
-      <mesh position={[0.23, 2.96, 0]} castShadow>
-        <sphereGeometry args={[0.045, 10, 10]} />
-        <meshStandardMaterial ref={green} color="#0d2e17" emissive="#0d2e17" emissiveIntensity={0.4} />
-      </mesh>
-    </group>
-  )
-}
-
-function IntersectionTrafficLights() {
-  return (
-    <group>
-      {Array.from({ length: NUM_BLOCKS - 1 }, (_, ix) =>
-        Array.from({ length: NUM_BLOCKS - 1 }, (_, iz) => {
-          const x = roadStripCenterX(ix + 1)
-          const z = roadStripCenterZ(iz + 1)
-          return (
-            <group key={`tl-${ix}-${iz}`}>
-              <group position={[x + 1.65, 0, z + 1.65]}>
-                <TrafficLight />
-              </group>
-              <group position={[x - 1.65, 0, z - 1.65]} rotation={[0, Math.PI, 0]}>
-                <TrafficLight />
-              </group>
-            </group>
-          )
-        }),
-      )}
-    </group>
-  )
 }
 
 function VerticalRoadStrip({
@@ -379,7 +299,6 @@ export function RoadNetwork() {
     <group>
       {vertical}
       {horizontal}
-      <IntersectionTrafficLights />
     </group>
   )
 }

@@ -10,7 +10,8 @@ function App() {
         shadows
         className="h-full w-full"
         camera={{ fov: 52, near: 0.1, far: 420 }}
-        gl={{ antialias: true }}
+        dpr={[1, 1.75]}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <Environment preset="city" environmentIntensity={0.55} />
         <GameScene />

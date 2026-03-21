@@ -21,6 +21,11 @@ import {
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
 import { RoadNetwork } from './RoadNetwork'
+import { IntersectionTrafficPair } from './TrafficLight'
+
+/** Past tarmac onto murram diagonal — poles sit on the road shoulder, not in the lane. */
+const TRAFFIC_LIGHT_CORNER =
+  ROAD_W / 2 + SIDEWALK_WIDTH * 0.55
 
 /** Map coords from design brief → world XZ (±200 → inside playable city). */
 const MAP_COORD_SCALE = (CITY_TOTAL * 0.38) / 200
@@ -681,6 +686,19 @@ function CityMapContent() {
       </mesh>
 
       <RoadNetwork />
+
+      <group>
+        {Array.from({ length: NUM_BLOCKS - 1 }, (_, ix) =>
+          Array.from({ length: NUM_BLOCKS - 1 }, (_, iz) => (
+            <IntersectionTrafficPair
+              key={`tl-${ix}-${iz}`}
+              x={roadStripCenterX(ix + 1)}
+              z={roadStripCenterZ(iz + 1)}
+              cornerOffset={TRAFFIC_LIGHT_CORNER}
+            />
+          )),
+        )}
+      </group>
 
       <gridHelper
         args={[CITY_TOTAL * 0.92, 40, '#4a4a4a', '#2a2a2a']}
