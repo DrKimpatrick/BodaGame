@@ -20,6 +20,7 @@ import {
   minDistToRoadNetwork,
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
+import { BuildingNameLabel } from './BuildingNameLabel'
 import { RoadNetwork } from './RoadNetwork'
 import { RoadSign } from './RoadSign'
 import { IntersectionTrafficPair } from './TrafficLight'
@@ -45,6 +46,16 @@ const LANDMARK_NSSF: [number, number] = [
 
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
+
+/** Fixed blocks that always spawn a midrise with a recognizable mall / hub name. */
+const NAMED_MIDRISE_BLOCKS: Record<
+  string,
+  { title: string; subtitle?: string }
+> = {
+  '4,5': { title: 'Acacia Mall', subtitle: 'Kampala' },
+  '9,3': { title: 'Garden City', subtitle: 'Mall' },
+  '2,8': { title: 'Oasis Mall' },
+}
 
 /** East–west street names (along Z strips). */
 const STREETS_EW = [
@@ -308,17 +319,20 @@ function MidriseTextured({
   floors,
   footprint,
   bodyMaterial,
+  roofLabel,
 }: {
   cx: number
   cz: number
   floors: number
   footprint: [number, number]
   bodyMaterial: THREE.MeshStandardMaterial
+  roofLabel?: { title: string; subtitle?: string }
 }) {
   const [fw, fd] = footprint
   const h = floors * 0.95
 
   const meshCenterY = h / 2 + 0.04
+  const labelW = Math.min(Math.max(fw * 0.92, 5.2), 11)
 
   return (
     <RigidBody type="fixed" colliders={false} position={[cx, 0, cz]}>
@@ -336,6 +350,14 @@ function MidriseTextured({
             ))}
           </group>
         ))}
+        {roofLabel ? (
+          <BuildingNameLabel
+            position={[0, h + 0.55, 0]}
+            title={roofLabel.title}
+            subtitle={roofLabel.subtitle}
+            width={labelW}
+          />
+        ) : null}
       </group>
       <CuboidCollider
         args={[fw / 2, h / 2 + 0.02, fd / 2]}
@@ -660,7 +682,8 @@ function CityMapContent() {
         const [bcx, bcz] = blockCenter(i, j)
         if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP) continue
 
-        if (rnd(i, j, 17) < 0.1) {
+        const namedMid = NAMED_MIDRISE_BLOCKS[`${i},${j}`]
+        if (rnd(i, j, 17) < 0.1 || namedMid) {
           const fw = 6 + rnd(i, j, 19) * 3
           const fd = 5 + rnd(i, j, 20) * 2
           if (footprintClearOfTarmac(bcx, bcz, fw / 2, fd / 2, 0)) {
@@ -700,6 +723,7 @@ function CityMapContent() {
                 floors={8 + Math.floor(rnd(i, j, 18) * 4)}
                 footprint={[fw, fd]}
                 bodyMaterial={midriseMat}
+                roofLabel={namedMid}
               />,
             )
             continue
@@ -877,6 +901,25 @@ function CityMapContent() {
         <NSSFGlassTower />
         <CuboidCollider args={[4.2, 11, 5]} position={[0, 11, 0]} />
       </RigidBody>
+
+      <BuildingNameLabel
+        position={[mx, 50, mz]}
+        title="Centenary Tower"
+        subtitle="Mapeera House"
+        width={10}
+      />
+      <BuildingNameLabel
+        position={[sx, 28.5, sz]}
+        title="Stanbic Tower"
+        subtitle="Kampala"
+        width={9}
+      />
+      <BuildingNameLabel
+        position={[nx, 23.5, nz]}
+        title="NSSF Tower"
+        subtitle="Workers House"
+        width={8}
+      />
 
       {midrise}
       {retail}
