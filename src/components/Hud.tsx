@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   approxMetersForFuelPoints,
   formatDistanceShort,
@@ -75,24 +82,72 @@ function polarToSvg(cx: number, cy: number, r: number, deg: number) {
   }
 }
 
-/** Semicircular racing speedometer: arc, ticks, colored zones, needle. */
-function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
-  const cx = 100
-  const cy = 92
-  const rOuter = 78
-  const rTicks = 68
-  const rNeedle = 62
-  const startDeg = -135
-  const endDeg = 45
-  const sweep = endDeg - startDeg
+/** Map speed → needle angle (deg), same convention as polarToSvg. */
+function speedToNeedleDeg(speedKmh: number, startDeg: number, sweep: number) {
   const clamped = Math.min(
     Math.max(0, speedKmh),
     SPEEDO_MAX_KMH * 1.08,
   )
   const t = Math.min(clamped / SPEEDO_MAX_KMH, 1)
-  const needleDeg = startDeg + t * sweep
-  const tip = polarToSvg(cx, cy, rNeedle, needleDeg)
+  return startDeg + t * sweep
+}
+
+/**
+ * Semicircular speedometer with damped needle (lags on accel, settles faster on decel).
+ */
+function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
+  const uid = useId().replace(/:/g, '')
+  const rimGradId = `speedo-rim-${uid}`
+
+  const cx = 100
+  const cy = 88
+  const rOuter = 72
+  const rTicks = 62
+  const rNeedle = 56
+  const startDeg = -135
+  const endDeg = 45
+  const sweep = endDeg - startDeg
   const hubR = 5
+
+  const targetRef = useRef(speedKmh)
+  const displayRef = useRef(speedKmh)
+  const [smoothKmh, setSmoothKmh] = useState(speedKmh)
+
+  targetRef.current = speedKmh
+
+  useEffect(() => {
+    let frame = 0
+    let last = performance.now()
+
+    const tick = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.08)
+      last = now
+
+      const target = targetRef.current
+      let cur = displayRef.current
+      const diff = target - cur
+
+      // Inertia-like: slower to climb, quicker to fall (mechanical gauge feel).
+      const rising = diff > 0
+      const tauSec = rising ? 0.26 : 0.11
+      const k = 1 - Math.exp(-dt / tauSec)
+      cur += diff * k
+      if (Math.abs(diff) < 0.08) cur = target
+
+      displayRef.current = cur
+      setSmoothKmh(cur)
+      frame = requestAnimationFrame(tick)
+    }
+
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  const needleDeg = speedToNeedleDeg(smoothKmh, startDeg, sweep)
+  const tip = polarToSvg(cx, cy, rNeedle, needleDeg)
+  const mid = polarToSvg(cx, cy, rNeedle * 0.42, needleDeg)
+  const baseL = polarToSvg(cx, cy, 7, needleDeg + 90)
+  const baseR = polarToSvg(cx, cy, 7, needleDeg - 90)
 
   const majorEvery = 20
   const majors: number[] = []
@@ -110,34 +165,40 @@ function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
   const zoneRedStart = startDeg + (100 / SPEEDO_MAX_KMH) * sweep
   const zoneAmberStart = startDeg + (80 / SPEEDO_MAX_KMH) * sweep
 
+  const displayDigits = Math.round(smoothKmh)
+
   return (
     <div
-      className="relative mx-auto w-full max-w-[200px] select-none pb-7"
+      className="pointer-events-none relative w-[min(100vw-2rem,168px)] shrink-0 select-none pb-6"
       role="img"
       aria-label={`Speed ${speedKmh} kilometres per hour`}
     >
+      <div className="text-center text-[9px] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+        Speed
+      </div>
       <svg
-        viewBox="0 0 200 100"
-        className="h-[100px] w-full drop-shadow-[0_4px_16px_rgba(0,0,0,0.45)]"
+        viewBox="0 0 200 96"
+        className="mt-0.5 h-[96px] w-full drop-shadow-[0_4px_14px_rgba(0,0,0,0.5)]"
         aria-hidden
       >
         <defs>
-          <linearGradient id="speedoFace" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#14151a" />
-            <stop offset="100%" stopColor="#0a0a0c" />
+          <linearGradient id={rimGradId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#52525b" />
+            <stop offset="40%" stopColor="#27272a" />
+            <stop offset="100%" stopColor="#3f3f46" />
           </linearGradient>
-          <linearGradient id="speedoRim" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3f3f46" />
-            <stop offset="50%" stopColor="#18181b" />
-            <stop offset="100%" stopColor="#52525b" />
+          <linearGradient id={`needle-${uid}`} x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#fef08a" />
+            <stop offset="45%" stopColor="#fbbf24" />
+            <stop offset="100%" stopColor="#b45309" />
           </linearGradient>
         </defs>
 
         <path
-          d={arcPath(rOuter + 4, startDeg, endDeg)}
+          d={arcPath(rOuter + 3, startDeg, endDeg)}
           fill="none"
-          stroke="url(#speedoRim)"
-          strokeWidth="6"
+          stroke={`url(#${rimGradId})`}
+          strokeWidth="5"
           strokeLinecap="round"
         />
         <path
@@ -225,24 +286,22 @@ function RacingSpeedometer({ speedKmh }: { speedKmh: number }) {
           )
         })}
 
-        <line
-          x1={cx}
-          y1={cy}
-          x2={tip.x}
-          y2={tip.y}
-          stroke="#fbbf24"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          style={{ filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))' }}
+        <path
+          d={`M ${baseL.x} ${baseL.y} L ${tip.x} ${tip.y} L ${baseR.x} ${baseR.y} L ${mid.x} ${mid.y} Z`}
+          fill={`url(#needle-${uid})`}
+          stroke="#78350f"
+          strokeWidth="0.35"
+          strokeLinejoin="round"
+          style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.65))' }}
         />
-        <circle cx={cx} cy={cy} r={hubR} fill="#18181b" stroke="#fbbf24" strokeWidth="1.5" />
-        <circle cx={cx} cy={cy} r={2} fill="#fbbf24" />
+        <circle cx={cx} cy={cy} r={hubR} fill="#0a0a0b" stroke="#d97706" strokeWidth="1.25" />
+        <circle cx={cx} cy={cy} r={2.2} fill="#fbbf24" />
       </svg>
-      <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 translate-y-1 flex-col items-center">
-        <span className="font-mono text-lg font-bold tabular-nums tracking-tight text-amber-300">
-          {speedKmh}
+      <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 flex-col items-center">
+        <span className="font-mono text-base font-bold tabular-nums tracking-tight text-amber-200">
+          {displayDigits}
         </span>
-        <span className="text-[9px] font-semibold uppercase tracking-[0.35em] text-zinc-500">
+        <span className="text-[8px] font-semibold uppercase tracking-[0.3em] text-zinc-500">
           km/h
         </span>
       </div>
@@ -484,7 +543,7 @@ export function Hud() {
       </div>
 
       <div
-        className="absolute z-10 flex items-center justify-center"
+        className="absolute z-10 flex flex-col items-center gap-2"
         style={{
           top: 'max(1rem, env(safe-area-inset-top))',
           right: 'max(1rem, env(safe-area-inset-right))',
@@ -518,6 +577,9 @@ export function Hud() {
             <FuelPumpIcon className="h-6 w-6 text-zinc-100" />
           </span>
         )}
+        <div className="rounded-xl border border-white/10 bg-black/50 px-2 pb-1 pt-1 shadow-lg ring-1 ring-white/5 backdrop-blur-md">
+          <RacingSpeedometer speedKmh={speedKmh} />
+        </div>
       </div>
 
       <div className="absolute bottom-4 left-4 rounded-lg bg-black/55 px-4 py-3 ring-1 ring-zinc-600/50 backdrop-blur-sm">
@@ -530,20 +592,12 @@ export function Hud() {
 
       <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex w-[min(100vw-2rem,260px)] flex-col gap-2">
         <div className="rounded-lg border border-white/15 bg-black/65 px-3 py-3 shadow-lg backdrop-blur-md">
-          <div className="text-center">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-zinc-500">
-              Speed
-            </div>
-            <RacingSpeedometer speedKmh={speedKmh} />
-          </div>
-          <div className="mt-3 border-t border-white/10 pt-3">
-            <TankBar
-              label="Fuel"
-              fuel={fuel}
-              fillClass="bg-sky-400"
-              sub={`~${rangeLeftM} range left (est.)`}
-            />
-          </div>
+          <TankBar
+            label="Fuel"
+            fuel={fuel}
+            fillClass="bg-sky-400"
+            sub={`~${rangeLeftM} range left (est.)`}
+          />
           <button
             type="button"
             onClick={openRefuel}
