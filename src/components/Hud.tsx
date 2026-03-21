@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { fullNuclearResetAndReload } from '../clearClientOnRestart'
 import {
   approxMetersForFuelPoints,
   formatDistanceShort,
@@ -456,6 +457,17 @@ export function Hud() {
     [buyFuel, maxWholePoints],
   )
 
+  const onClearAllAndReload = useCallback(() => {
+    if (
+      !window.confirm(
+        'Clear all progress (wallet, fuel, condition, trip history), wipe saved data and caches, and reload?',
+      )
+    ) {
+      return
+    }
+    fullNuclearResetAndReload()
+  }, [])
+
   useEffect(() => {
     if (!refuelOpen) return
     const onKey = (e: KeyboardEvent) => {
@@ -603,6 +615,15 @@ export function Hud() {
               )}
             </ul>
           </details>
+          <div className="mt-2 border-t border-white/10 pt-2">
+            <button
+              type="button"
+              onClick={onClearAllAndReload}
+              className={`${gameArcadeBtn} w-full border-rose-800/60 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-950/80 to-black py-2 text-[10px] text-rose-200/95 shadow-[0_4px_0_rgba(69,10,10,0.85)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.85)]`}
+            >
+              Clear all & reload
+            </button>
+          </div>
         </div>
       </div>
 

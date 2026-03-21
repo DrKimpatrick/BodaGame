@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 
+/** Ignore bike↔ped / bike↔car collision penalties until this `performance.now()` (spawn overlap). */
+export const COLLISION_GRACE_MS = 2200
+
+/** Bike spawn XZ (matches `Boda`); used to defer ped knock / condition until you leave the intersection. */
+export const BIKE_SPAWN_XZ = { x: 0, z: 0 } as const
+/** Min horizontal distance from spawn before bike↔pedestrian knock & condition loss can apply. */
+export const BIKE_SPAWN_PED_CLEAR_M = 2.85
+
 /** Tank capacity in abstract units (0–FUEL_MAX, shown as % in UI). */
 export const FUEL_MAX = 100
 
@@ -18,6 +26,9 @@ export const UGX_PER_FUEL_UNIT = 500
 export const FUEL_PER_WORLD_METER = 0.042
 
 const LEDGER_CAP = 200
+
+/** Set in sessionStorage when run is no longer “factory fresh” (warn on reload / show notice after wipe). */
+export const SESSION_STORAGE_PROGRESS_KEY = 'boda-session-active'
 
 export type WalletTransaction = {
   id: string
@@ -107,8 +118,17 @@ export type GameState = {
   speedKmh: number
   ledger: WalletTransaction[]
   /**
-   * Full reset to defaults (new browser tab / refresh). Not persisted — Zustand is in-memory only;
-   * this makes every page load a clean run so condition/wallet/fuel are never “stuck” from a prior session.
+   * Collisions before this `performance.now()` do not apply stun / condition loss / pedestrian knock
+   * (avoids penalties from initial overlap before React effects run).
+   */
+  collisionPenaltiesAfterMs: number
+  /**
+   * After grace, still ignore bike↔ped knock & condition until the bike leaves spawn (zebra overlap).
+   */
+  bikeAwayFromSpawn: boolean
+  /**
+   * Full reset to defaults. Call from `main` before render and from `App` in `useLayoutEffect`
+   * so physics frames cannot drain condition before reset runs.
    */
   resetSession: () => void
   setMoney: (money: number) => void
@@ -123,6 +143,24 @@ export type GameState = {
   buyFuel: (ugx: number) => void
 }
 
+/** Bike–ped knockdown + condition loss (not vehicle bumps). */
+export function shouldApplyBikePedestrianInteraction(): boolean {
+  const s = useGameStore.getState()
+  const now = typeof performance !== 'undefined' ? performance.now() : 0
+  if (now < s.collisionPenaltiesAfterMs) return false
+  return s.bikeAwayFromSpawn
+}
+
+/** True while wallet / tank / condition / ledger match a brand-new session (ignores speed / grace fields). */
+export function isProgressPristine(s: GameState): boolean {
+  return (
+    moneyInt(s.money) === STARTING_MONEY_UGX &&
+    normalizeTankFuel(s.fuel) >= FUEL_MAX - 0.02 &&
+    s.condition >= 99.9 &&
+    s.ledger.length === 0
+  )
+}
+
 function appendLedger(
   ledger: WalletTransaction[],
   entry: Omit<WalletTransaction, 'id' | 'at'>,
@@ -135,20 +173,43 @@ function appendLedger(
   return [row, ...ledger].slice(0, LEDGER_CAP)
 }
 
+function nextCollisionPenaltyDeadline(): number {
+  return typeof performance !== 'undefined' ? performance.now() + COLLISION_GRACE_MS : 0
+}
+
 const initialSession = (): Pick<
   GameState,
-  'money' | 'fuel' | 'condition' | 'speedKmh' | 'ledger'
+  | 'money'
+  | 'fuel'
+  | 'condition'
+  | 'speedKmh'
+  | 'ledger'
+  | 'collisionPenaltiesAfterMs'
+  | 'bikeAwayFromSpawn'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
   condition: 100,
   speedKmh: 0,
   ledger: [],
+  /** Until `resetSession()` runs from `main`, ignore collisions (import order / first physics tick). */
+  collisionPenaltiesAfterMs: Number.POSITIVE_INFINITY,
+  bikeAwayFromSpawn: false,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
   ...initialSession(),
-  resetSession: () => set(initialSession()),
+  resetSession: () => {
+    try {
+      sessionStorage.removeItem(SESSION_STORAGE_PROGRESS_KEY)
+    } catch {
+      /* */
+    }
+    set({
+      ...initialSession(),
+      collisionPenaltiesAfterMs: nextCollisionPenaltyDeadline(),
+    })
+  },
   setMoney: (money) => set({ money: moneyInt(money) }),
   setFuel: (fuel) => set({ fuel: normalizeTankFuel(fuel) }),
   setCondition: (condition) => set({ condition }),
@@ -197,3 +258,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     })
   },
 }))
+
+useGameStore.subscribe((state) => {
+  if (typeof sessionStorage === 'undefined') return
+  if (isProgressPristine(state)) return
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_PROGRESS_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+})

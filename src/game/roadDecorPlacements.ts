@@ -54,8 +54,8 @@ export function listSidewalkAlongVertical(): SidewalkAlongVertical[] {
   for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
     const cx = roadStripCenterX(vi)
     for (let j = 0; j < NUM_BLOCKS; j++) {
-      /** ~85% of segments get a sidewalk strip (was ~13%). */
-      if (segmentRandom(vi, j, 750) > 0.85) continue
+      /** Murram / shoulder strips with walkers (~55% of segments skipped). */
+      if (segmentRandom(vi, j, 750) > 0.55) continue
       const z0 = roadStripCenterZ(j) + SEG_MARGIN
       const z1 = roadStripCenterZ(j + 1) - SEG_MARGIN
       if (z1 <= z0 + 2) continue
@@ -84,7 +84,7 @@ export function listSidewalkAlongHorizontal(): SidewalkAlongHorizontal[] {
   for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
     const cz = roadStripCenterZ(hj)
     for (let i = 0; i < NUM_BLOCKS; i++) {
-      if (segmentRandom(i, hj, 752) > 0.85) continue
+      if (segmentRandom(i, hj, 752) > 0.55) continue
       const x0 = roadStripCenterX(i) + SEG_MARGIN
       const x1 = roadStripCenterX(i + 1) - SEG_MARGIN
       if (x1 <= x0 + 2) continue

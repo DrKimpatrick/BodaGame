@@ -9,6 +9,7 @@ import {
   RigidBody,
 } from '@react-three/rapier'
 import { ROAD_W } from '@game/cityGrid'
+import { shouldApplyBikePedestrianInteraction } from '../store/useGameStore'
 import {
   segmentRandom,
   ZEBRA_HORIZONTAL_SITES,
@@ -20,6 +21,9 @@ import {
   type SidewalkAlongHorizontal,
   type SidewalkAlongVertical,
 } from '@game/roadDecorPlacements'
+
+/** Lying-down knockdown, then stand and resume pathing. */
+const PED_KNOCKDOWN_RECOVERY_MS = 5000
 
 const SHIRTS = ['#c2410c', '#1d4ed8', '#047857', '#7c3aed', '#b45309', '#0f766e', '#be185d', '#4f46e5']
 const PANTS = ['#1e293b', '#292524', '#334155', '#44403c', '#27272a']
@@ -33,6 +37,7 @@ function pick<T>(arr: T[], seed: number, salt: number): T {
 function pedCollisionHandler(
   knockedRef: MutableRefObject<boolean>,
   knockBlendRef: MutableRefObject<number>,
+  knockAtMsRef: MutableRefObject<number>,
   rbRef: RefObject<RapierRigidBody | null>,
   freezeRef: MutableRefObject<{
     x: number
@@ -45,9 +50,11 @@ function pedCollisionHandler(
   return ({ other }: CollisionEnterPayload) => {
     const ud = other.rigidBodyObject?.userData as { kind?: string } | undefined
     if (ud?.kind !== 'bike' || knockedRef.current) return
+    if (!shouldApplyBikePedestrianInteraction()) return
     knockedRef.current = true
     legsFrozenRef.current = true
     knockBlendRef.current = 0
+    knockAtMsRef.current = performance.now()
     const rb = rbRef.current
     if (!rb) return
     const t = rb.translation()
@@ -132,6 +139,7 @@ function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
+  const knockAtMsRef = useRef(0)
   const freezeRef = useRef<{
     x: number
     y: number
@@ -147,7 +155,14 @@ function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }
 
   const onCollisionEnter = useMemo(
     () =>
-      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+      pedCollisionHandler(
+        knockedRef,
+        knockBlendRef,
+        knockAtMsRef,
+        rbRef,
+        freezeRef,
+        legsFrozenRef,
+      ),
     [],
   )
 
@@ -155,24 +170,32 @@ function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }
     const rb = rbRef.current
     if (!rb) return
     if (knockedRef.current && freezeRef.current) {
-      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
-      const e = 1 - (1 - knockBlendRef.current) ** 2
-      const f = freezeRef.current
-      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
-      const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
-      const q = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-      )
-      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
-      rb.setTranslation(
-        {
-          x: f.x,
-          y: THREE.MathUtils.lerp(f.y, 0.03, e),
-          z: f.z,
-        },
-        true,
-      )
-      return
+      if (performance.now() - knockAtMsRef.current >= PED_KNOCKDOWN_RECOVERY_MS) {
+        knockedRef.current = false
+        freezeRef.current = null
+        legsFrozenRef.current = false
+        knockBlendRef.current = 0
+        knockAtMsRef.current = 0
+      } else {
+        knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+        const e = 1 - (1 - knockBlendRef.current) ** 2
+        const f = freezeRef.current
+        const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+        const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+        )
+        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        rb.setTranslation(
+          {
+            x: f.x,
+            y: THREE.MathUtils.lerp(f.y, 0.03, e),
+            z: f.z,
+          },
+          true,
+        )
+        return
+      }
     }
     const t = clock.elapsedTime * speed + phase
     const x = site.cx + Math.sin(t) * half
@@ -210,6 +233,7 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
+  const knockAtMsRef = useRef(0)
   const freezeRef = useRef<{
     x: number
     y: number
@@ -225,7 +249,14 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
 
   const onCollisionEnter = useMemo(
     () =>
-      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+      pedCollisionHandler(
+        knockedRef,
+        knockBlendRef,
+        knockAtMsRef,
+        rbRef,
+        freezeRef,
+        legsFrozenRef,
+      ),
     [],
   )
 
@@ -233,24 +264,32 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
     const rb = rbRef.current
     if (!rb) return
     if (knockedRef.current && freezeRef.current) {
-      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
-      const e = 1 - (1 - knockBlendRef.current) ** 2
-      const f = freezeRef.current
-      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
-      const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
-      const q = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-      )
-      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
-      rb.setTranslation(
-        {
-          x: f.x,
-          y: THREE.MathUtils.lerp(f.y, 0.03, e),
-          z: f.z,
-        },
-        true,
-      )
-      return
+      if (performance.now() - knockAtMsRef.current >= PED_KNOCKDOWN_RECOVERY_MS) {
+        knockedRef.current = false
+        freezeRef.current = null
+        legsFrozenRef.current = false
+        knockBlendRef.current = 0
+        knockAtMsRef.current = 0
+      } else {
+        knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+        const e = 1 - (1 - knockBlendRef.current) ** 2
+        const f = freezeRef.current
+        const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+        const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+        )
+        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        rb.setTranslation(
+          {
+            x: f.x,
+            y: THREE.MathUtils.lerp(f.y, 0.03, e),
+            z: f.z,
+          },
+          true,
+        )
+        return
+      }
     }
     const t = clock.elapsedTime * speed + phase
     const z = site.cz + Math.sin(t) * half
@@ -296,6 +335,7 @@ function SidewalkWalkerVertical({
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
+  const knockAtMsRef = useRef(0)
   const freezeRef = useRef<{
     x: number
     y: number
@@ -314,7 +354,14 @@ function SidewalkWalkerVertical({
 
   const onCollisionEnter = useMemo(
     () =>
-      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+      pedCollisionHandler(
+        knockedRef,
+        knockBlendRef,
+        knockAtMsRef,
+        rbRef,
+        freezeRef,
+        legsFrozenRef,
+      ),
     [],
   )
 
@@ -322,24 +369,32 @@ function SidewalkWalkerVertical({
     const rb = rbRef.current
     if (!rb) return
     if (knockedRef.current && freezeRef.current) {
-      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
-      const e = 1 - (1 - knockBlendRef.current) ** 2
-      const f = freezeRef.current
-      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
-      const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
-      const q = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-      )
-      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
-      rb.setTranslation(
-        {
-          x: f.x,
-          y: THREE.MathUtils.lerp(f.y, 0.03, e),
-          z: f.z,
-        },
-        true,
-      )
-      return
+      if (performance.now() - knockAtMsRef.current >= PED_KNOCKDOWN_RECOVERY_MS) {
+        knockedRef.current = false
+        freezeRef.current = null
+        legsFrozenRef.current = false
+        knockBlendRef.current = 0
+        knockAtMsRef.current = 0
+      } else {
+        knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+        const e = 1 - (1 - knockBlendRef.current) ** 2
+        const f = freezeRef.current
+        const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+        const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+        )
+        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        rb.setTranslation(
+          {
+            x: f.x,
+            y: THREE.MathUtils.lerp(f.y, 0.03, e),
+            z: f.z,
+          },
+          true,
+        )
+        return
+      }
     }
     const t = clock.elapsedTime * speed + phase
     const u = (Math.sin(t) + 1) / 2
@@ -383,6 +438,7 @@ function SidewalkWalkerHorizontal({
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
+  const knockAtMsRef = useRef(0)
   const freezeRef = useRef<{
     x: number
     y: number
@@ -401,7 +457,14 @@ function SidewalkWalkerHorizontal({
 
   const onCollisionEnter = useMemo(
     () =>
-      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+      pedCollisionHandler(
+        knockedRef,
+        knockBlendRef,
+        knockAtMsRef,
+        rbRef,
+        freezeRef,
+        legsFrozenRef,
+      ),
     [],
   )
 
@@ -409,24 +472,32 @@ function SidewalkWalkerHorizontal({
     const rb = rbRef.current
     if (!rb) return
     if (knockedRef.current && freezeRef.current) {
-      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
-      const e = 1 - (1 - knockBlendRef.current) ** 2
-      const f = freezeRef.current
-      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
-      const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
-      const q = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-      )
-      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
-      rb.setTranslation(
-        {
-          x: f.x,
-          y: THREE.MathUtils.lerp(f.y, 0.03, e),
-          z: f.z,
-        },
-        true,
-      )
-      return
+      if (performance.now() - knockAtMsRef.current >= PED_KNOCKDOWN_RECOVERY_MS) {
+        knockedRef.current = false
+        freezeRef.current = null
+        legsFrozenRef.current = false
+        knockBlendRef.current = 0
+        knockAtMsRef.current = 0
+      } else {
+        knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+        const e = 1 - (1 - knockBlendRef.current) ** 2
+        const f = freezeRef.current
+        const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+        const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+        )
+        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        rb.setTranslation(
+          {
+            x: f.x,
+            y: THREE.MathUtils.lerp(f.y, 0.03, e),
+            z: f.z,
+          },
+          true,
+        )
+        return
+      }
     }
     const t = clock.elapsedTime * speed + phase
     const u = (Math.sin(t) + 1) / 2
@@ -465,14 +536,15 @@ export function Pedestrians() {
   const zebraNodes = useMemo(() => {
     const out: ReactNode[] = []
     for (const s of ZEBRA_VERTICAL_SITES) {
-      if (segmentRandom(s.vi, s.j, 848) > 0.78) continue
+      /** Keep most zebra sites populated (second filter was ~22% — felt empty on the tarmac). */
+      if (segmentRandom(s.vi, s.j, 848) > 0.32) continue
       const n = 1 + Math.floor(segmentRandom(s.vi, s.j, 849) * 3)
       for (let p = 0; p < n; p++) {
         out.push(<CrosserVertical key={`${s.key}-p${p}`} site={s} idx={p} />)
       }
     }
     for (const s of ZEBRA_HORIZONTAL_SITES) {
-      if (segmentRandom(s.i, s.hj, 858) > 0.78) continue
+      if (segmentRandom(s.i, s.hj, 858) > 0.32) continue
       const n = 1 + Math.floor(segmentRandom(s.i, s.hj, 859) * 3)
       for (let p = 0; p < n; p++) {
         out.push(<CrosserHorizontal key={`${s.key}-p${p}`} site={s} idx={p} />)

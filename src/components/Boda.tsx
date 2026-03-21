@@ -21,7 +21,13 @@ import * as THREE from 'three'
 import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
-import { FUEL_PER_WORLD_METER, useGameStore } from '../store/useGameStore'
+import {
+  BIKE_SPAWN_PED_CLEAR_M,
+  BIKE_SPAWN_XZ,
+  FUEL_PER_WORLD_METER,
+  shouldApplyBikePedestrianInteraction,
+  useGameStore,
+} from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
 import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
@@ -391,9 +397,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
   const onBikeCollision = useCallback(
     ({ other }: CollisionEnterPayload) => {
+      const now = performance.now()
       const ud = other.rigidBodyObject?.userData as { kind?: string } | undefined
       if (ud?.kind === 'vehicle') {
-        const now = performance.now()
+        if (now < useGameStore.getState().collisionPenaltiesAfterMs) return
         if (now < noVehicleBumpUntil.current) return
         noVehicleBumpUntil.current = now + 850
         speed.current *= 0.26
@@ -404,7 +411,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         return
       }
       if (ud?.kind === 'pedestrian') {
-        const now = performance.now()
+        if (!shouldApplyBikePedestrianInteraction()) return
         if (now < noPedestrianStunUntil.current) return
         noPedestrianStunUntil.current = now + 700
         speed.current *= 0.38
@@ -434,6 +441,12 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const dt = Math.min(delta, 0.05)
 
     const t = body.translation()
+    if (!useGameStore.getState().bikeAwayFromSpawn) {
+      const d = Math.hypot(t.x - BIKE_SPAWN_XZ.x, t.z - BIKE_SPAWN_XZ.z)
+      if (d > BIKE_SPAWN_PED_CLEAR_M) {
+        useGameStore.setState({ bikeAwayFromSpawn: true })
+      }
+    }
     const drivable = isDrivableSurface(t.x, t.z)
 
     const steer =
