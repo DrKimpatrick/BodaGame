@@ -21,6 +21,7 @@ import {
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
 import { RoadNetwork } from './RoadNetwork'
+import { RoadSign } from './RoadSign'
 import { IntersectionTrafficPair } from './TrafficLight'
 
 /** Past tarmac onto murram diagonal — poles sit on the road shoulder, not in the lane. */
@@ -44,6 +45,34 @@ const LANDMARK_NSSF: [number, number] = [
 
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
+
+/** East–west street names (along Z strips). */
+const STREETS_EW = [
+  'Jinja Rd',
+  'Bombo Rd',
+  'Gaba Rd',
+  'Kololo Dr',
+  'Nakivubo',
+  'Buganda Rd',
+  'Mukwano Rd',
+  'Ntinda Rd',
+  'Lugogo By',
+  'Kira Rd',
+] as const
+
+/** North–south street names (along X strips). */
+const STREETS_NS = [
+  'Luwum St',
+  'Parliament Ave',
+  'Acacia Ave',
+  'Nakasero',
+  'Muyenga Rd',
+  'Bukoto St',
+  'Kisaasi Rd',
+  'Mulago Rd',
+  'Entebbe Expy',
+  'Wandegeya',
+] as const
 
 function rnd(i: number, j: number, salt: number) {
   const t = Math.sin(i * 12.9898 + j * 78.233 + salt * 43.758) * 43758.5453123
@@ -664,6 +693,38 @@ function CityMapContent() {
               cornerOffset={TRAFFIC_LIGHT_CORNER}
             />
           )),
+        )}
+      </group>
+
+      <group>
+        {Array.from({ length: NUM_BLOCKS - 1 }, (_, ix) =>
+          Array.from({ length: NUM_BLOCKS - 1 }, (_, iz) => {
+            const cx = roadStripCenterX(ix + 1)
+            const cz = roadStripCenterZ(iz + 1)
+            const d = TRAFFIC_LIGHT_CORNER
+            const si = ix + 1
+            const sj = iz + 1
+            const ew = STREETS_EW[sj % STREETS_EW.length]
+            const ns = STREETS_NS[si % STREETS_NS.length]
+            return (
+              <group key={`rs-${ix}-${iz}`}>
+                <RoadSign
+                  x={cx + d}
+                  z={cz - d}
+                  rotationY={0}
+                  streetName={ew}
+                  crossStreet={ns}
+                />
+                <RoadSign
+                  x={cx - d}
+                  z={cz + d}
+                  rotationY={Math.PI}
+                  streetName={ew}
+                  crossStreet={ns}
+                />
+              </group>
+            )
+          }),
         )}
       </group>
 

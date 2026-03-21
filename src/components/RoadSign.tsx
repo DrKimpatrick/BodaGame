@@ -27,6 +27,18 @@ type Props = {
   crossStreet?: string
 }
 
+const streetTextureCache = new Map<string, THREE.Texture>()
+
+function textureForStreet(main: string, cross?: string): THREE.Texture {
+  const key = `${main}\0${cross ?? ''}`
+  let tex = streetTextureCache.get(key)
+  if (!tex) {
+    tex = createStreetNameTexture(main, cross)
+    streetTextureCache.set(key, tex)
+  }
+  return tex
+}
+
 /** NYC-inspired: black pole, green blade sign + optional STOP octagon. */
 export function RoadSign({
   x,
@@ -35,7 +47,10 @@ export function RoadSign({
   streetName,
   crossStreet,
 }: Props) {
-  const nameTex = useMemo(() => createStreetNameTexture(streetName, crossStreet), [streetName, crossStreet])
+  const nameTex = useMemo(
+    () => textureForStreet(streetName, crossStreet),
+    [streetName, crossStreet],
+  )
 
   return (
     <group position={[x, 0, z]} rotation={[0, rotationY, 0]}>
