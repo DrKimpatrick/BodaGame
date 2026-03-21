@@ -481,12 +481,20 @@ function footprintClearOfTarmac(
   return true
 }
 
+/** Extra world units beyond `CITY_TOTAL` on the grass plane (half = border strip width). */
+const GROUND_MARGIN = 80
+const HALF_GROUND = (CITY_TOTAL + GROUND_MARGIN) / 2
+/** One thin row at the outer rim (photo is a fence strip, not a tile). */
+const FENCE_STRIP_DEPTH = 6.5
+
 function CityMapContent() {
-  const [mapeeraMap, stanbicMap, grassFieldMap] = useTexture(
+  const [mapeeraMap, stanbicMap, grassFieldMap, concreteMap, picketFenceMap] = useTexture(
     [
       '/textures/mapeera.jpg',
       '/textures/stanbic_bank.jpg',
       '/textures/grass-vector-seamless.jpg',
+      '/textures/ground-concrete.jpg',
+      '/textures/perimeter-picket-fence.jpg',
     ],
     (loaded) => {
       configureFacadeTexture(loaded[0])
@@ -498,11 +506,21 @@ function CityMapContent() {
       const grass = loaded[2]
       grass.wrapS = grass.wrapT = THREE.RepeatWrapping
       grass.colorSpace = THREE.SRGBColorSpace
-      const groundSpan = CITY_TOTAL + 80
+      const groundSpan = CITY_TOTAL + GROUND_MARGIN
       const tile = 14
       grass.repeat.set(groundSpan / tile, groundSpan / tile)
       grass.center.set(0.5, 0.5)
       grass.rotation = -Math.PI / 2
+      const conc = loaded[3]
+      conc.wrapS = conc.wrapT = THREE.RepeatWrapping
+      conc.colorSpace = THREE.SRGBColorSpace
+      conc.repeat.set(5, 5)
+      const fence = loaded[4]
+      fence.colorSpace = THREE.SRGBColorSpace
+      fence.wrapS = THREE.RepeatWrapping
+      fence.wrapT = THREE.ClampToEdgeWrapping
+      fence.offset.set(0, 0.16)
+      fence.repeat.set(groundSpan / 24, 0.58)
     },
   )
 
@@ -557,6 +575,75 @@ function CityMapContent() {
       }),
     [grassFieldMap],
   )
+
+  const concreteMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: concreteMap,
+        color: '#ffffff',
+        roughness: 0.9,
+        metalness: 0.04,
+      }),
+    [concreteMap],
+  )
+
+  const picketFenceMapEW = useMemo(() => {
+    const t = picketFenceMap.clone()
+    t.wrapS = THREE.ClampToEdgeWrapping
+    t.wrapT = THREE.RepeatWrapping
+    t.colorSpace = THREE.SRGBColorSpace
+    t.offset.set(0.16, 0)
+    t.repeat.set(0.58, (CITY_TOTAL + GROUND_MARGIN) / 24)
+    t.needsUpdate = true
+    return t
+  }, [picketFenceMap])
+
+  const perimeterMatNS = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: picketFenceMap,
+        color: '#ffffff',
+        roughness: 0.72,
+        metalness: 0.06,
+      }),
+    [picketFenceMap],
+  )
+
+  const perimeterMatEW = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: picketFenceMapEW,
+        color: '#ffffff',
+        roughness: 0.72,
+        metalness: 0.06,
+      }),
+    [picketFenceMapEW],
+  )
+
+  const concreteLots = useMemo(() => {
+    const lots: { cx: number; cz: number; w: number; d: number }[] = []
+    const hw = ROAD_W / 2
+    const pad = SIDEWALK_WIDTH + 0.35
+    for (let i = 0; i < NUM_BLOCKS; i++) {
+      for (let j = 0; j < NUM_BLOCKS; j++) {
+        if (rnd(i, j, 902) > 0.34) continue
+        const [bcx, bcz] = blockCenter(i, j)
+        if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP) continue
+        const xMin = roadStripCenterX(i) + hw + pad
+        const xMax = roadStripCenterX(i + 1) - hw - pad
+        const zMin = roadStripCenterZ(j) + hw + pad
+        const zMax = roadStripCenterZ(j + 1) - hw - pad
+        if (xMax <= xMin + 1 || zMax <= zMin + 1) continue
+        lots.push({
+          cx: bcx,
+          cz: bcz,
+          w: xMax - xMin,
+          d: zMax - zMin,
+        })
+      }
+    }
+    return lots
+  }, [])
 
   const [mx, mz] = LANDMARK_MAPEERA
   const [sx, sz] = LANDMARK_STANBIC
@@ -678,7 +765,52 @@ function CityMapContent() {
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat}>
-        <planeGeometry args={[CITY_TOTAL + 80, CITY_TOTAL + 80]} />
+        <planeGeometry args={[CITY_TOTAL + GROUND_MARGIN, CITY_TOTAL + GROUND_MARGIN]} />
+      </mesh>
+
+      {concreteLots.map((lot, idx) => (
+        <mesh
+          key={`concrete-${idx}`}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[lot.cx, -0.009, lot.cz]}
+          receiveShadow
+          material={concreteMat}
+        >
+          <planeGeometry args={[lot.w * 0.88, lot.d * 0.88]} />
+        </mesh>
+      ))}
+
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.006, HALF_GROUND - FENCE_STRIP_DEPTH / 2]}
+        receiveShadow
+        material={perimeterMatNS}
+      >
+        <planeGeometry args={[CITY_TOTAL + GROUND_MARGIN, FENCE_STRIP_DEPTH]} />
+      </mesh>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.006, -HALF_GROUND + FENCE_STRIP_DEPTH / 2]}
+        receiveShadow
+        material={perimeterMatNS}
+      >
+        <planeGeometry args={[CITY_TOTAL + GROUND_MARGIN, FENCE_STRIP_DEPTH]} />
+      </mesh>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[HALF_GROUND - FENCE_STRIP_DEPTH / 2, -0.006, 0]}
+        receiveShadow
+        material={perimeterMatEW}
+      >
+        <planeGeometry args={[FENCE_STRIP_DEPTH, CITY_TOTAL + GROUND_MARGIN]} />
+      </mesh>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[-HALF_GROUND + FENCE_STRIP_DEPTH / 2, -0.006, 0]}
+        receiveShadow
+        material={perimeterMatEW}
+      >
+        <planeGeometry args={[FENCE_STRIP_DEPTH, CITY_TOTAL + GROUND_MARGIN]} />
       </mesh>
 
       <RoadNetwork />
@@ -729,7 +861,7 @@ function CityMapContent() {
       </group>
 
       <gridHelper
-        args={[CITY_TOTAL * 0.92, 40, '#4a4a4a', '#2a2a2a']}
+        args={[(CITY_TOTAL + GROUND_MARGIN) * 0.92, 40, '#4a4a4a', '#2a2a2a']}
         position={[0, 0.07, 0]}
       />
 
@@ -758,7 +890,7 @@ function CityMapContent() {
 function CityMapFallback() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-      <planeGeometry args={[CITY_TOTAL + 80, CITY_TOTAL + 80]} />
+      <planeGeometry args={[CITY_TOTAL + GROUND_MARGIN, CITY_TOTAL + GROUND_MARGIN]} />
       <meshStandardMaterial color="#2a231e" roughness={0.92} />
     </mesh>
   )
