@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
+import { CityMapErrorBoundary } from './CityMapErrorBoundary'
 import { Pedestrians } from './Pedestrians'
 import { RoadTraffic } from './RoadTraffic'
 import { getSunDirection, HorizonSky } from './HorizonSky'
@@ -40,17 +41,19 @@ export function GameScene() {
         shadow-camera-bottom={-110}
       />
 
-      <Physics gravity={[0, 0, 0]} interpolate>
-        <CityMap />
+      <Physics gravity={[0, -16, 0]} interpolate={false}>
+        <CityMapErrorBoundary>
+          <CityMap />
+        </CityMapErrorBoundary>
         <Boda
           ref={bodaRef}
           onSpeedKmhChange={setSpeedKmh}
           onOffroadChange={setOffroad}
         />
+        <RoadTraffic />
+        <Pedestrians />
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
-      <RoadTraffic />
-      <Pedestrians />
     </>
   )
 }

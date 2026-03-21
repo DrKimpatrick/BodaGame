@@ -2,12 +2,15 @@ import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import {
   CuboidCollider,
+  type CollisionEnterPayload,
   type RapierRigidBody,
   RigidBody,
+  useAfterPhysicsStep,
   useRapier,
 } from '@react-three/rapier'
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -19,6 +22,7 @@ import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUti
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
 import { FUEL_PER_WORLD_METER, useGameStore } from '../store/useGameStore'
+import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
 import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
 
@@ -35,6 +39,12 @@ const OFFROAD_DRAG_PER_S = 1.25
 const OFFROAD_ACCEL_SCALE = 1.65
 const OFFROAD_SPEED_CAP = 36
 const OFFROAD_REVERSE_SCALE = 0.95
+
+/** After hitting a walker: brief throttle lock. */
+const PEDESTRIAN_STUN_MS = 520
+/** Car hit: strong slow + stun only (no ragdoll / wreck — avoids physics + graphics issues). */
+const VEHICLE_STUN_MS = 720
+const CONDITION_LOSS_PEDESTRIAN = 6
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
@@ -369,9 +379,51 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const pitchSmoothed = useRef(0)
   const enginePhase = useRef(0)
   const lastFuelPos = useRef<{ x: number; z: number } | null>(null)
+  /** Car hits can spam `onCollisionEnter` while overlapping. */
+  const noVehicleBumpUntil = useRef(0)
+  /** Pedestrian hits can spam collision events while overlapping. */
+  const noPedestrianStunUntil = useRef(0)
+  /** Throttle ignored until this time (walker / vehicle bump). */
+  const stunnedUntil = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
+
+  const onBikeCollision = useCallback(
+    ({ other }: CollisionEnterPayload) => {
+      const ud = other.rigidBodyObject?.userData as { kind?: string } | undefined
+      if (ud?.kind === 'vehicle') {
+        const now = performance.now()
+        if (now < noVehicleBumpUntil.current) return
+        noVehicleBumpUntil.current = now + 850
+        speed.current *= 0.26
+        stunnedUntil.current = Math.max(
+          stunnedUntil.current,
+          now + VEHICLE_STUN_MS,
+        )
+        return
+      }
+      if (ud?.kind === 'pedestrian') {
+        const now = performance.now()
+        if (now < noPedestrianStunUntil.current) return
+        noPedestrianStunUntil.current = now + 700
+        speed.current *= 0.38
+        stunnedUntil.current = now + PEDESTRIAN_STUN_MS
+        const st = useGameStore.getState()
+        st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
+      }
+    },
+    [],
+  )
+
+  useAfterPhysicsStep(() => {
+    const body = rb.current
+    if (!body || world.getRigidBody(body.handle) == null) return
+    const av = body.angvel()
+    if (Math.abs(av.x) > 0.002 || Math.abs(av.z) > 0.002) {
+      body.setAngvel({ x: 0, y: av.y, z: 0 }, true)
+    }
+  })
 
   useFrame((_, delta) => {
     assignForwardedRef(forwardRefLatest.current, rb.current)
@@ -386,8 +438,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     const steer =
       (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
-    const throttle =
+    const throttleRaw =
       (keys.current.forward ? 1 : 0) - (keys.current.back ? 1 : 0)
+    const throttle =
+      performance.now() < stunnedUntil.current ? 0 : throttleRaw
 
     const speedAbsEarly = Math.abs(speed.current)
     const moving = speedAbsEarly > 0.08
@@ -513,9 +567,13 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       colliders={false}
       enabledRotations={[false, true, false]}
       enabledTranslations={[true, false, true]}
+      gravityScale={0}
       linearDamping={0.22}
       angularDamping={2.5}
       mass={2.8}
+      userData={{ kind: 'bike' }}
+      ccd
+      onCollisionEnter={onBikeCollision}
     >
       <CuboidCollider args={[0.48, 0.36, 1.05]} position={[0, 0.35, 0]} />
       <group ref={visualRef}>
@@ -540,6 +598,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         ) : null}
       </group>
       <BikeExhaust rigidBodyRef={rb} speedRef={speed} />
+      <BikeDustTrail
+        rigidBodyRef={rb}
+        speedRef={speed}
+        offroadRef={offroadRef}
+      />
     </RigidBody>
   )
 })

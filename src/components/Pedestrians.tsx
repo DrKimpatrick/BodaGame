@@ -1,7 +1,13 @@
 import { useFrame } from '@react-three/fiber'
-import type { ReactNode } from 'react'
+import type { MutableRefObject, ReactNode, RefObject } from 'react'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import {
+  CapsuleCollider,
+  type CollisionEnterPayload,
+  type RapierRigidBody,
+  RigidBody,
+} from '@react-three/rapier'
 import { ROAD_W } from '@game/cityGrid'
 import {
   segmentRandom,
@@ -24,8 +30,44 @@ function pick<T>(arr: T[], seed: number, salt: number): T {
   return arr[Math.max(0, i)]
 }
 
+function pedCollisionHandler(
+  knockedRef: MutableRefObject<boolean>,
+  knockBlendRef: MutableRefObject<number>,
+  rbRef: RefObject<RapierRigidBody | null>,
+  freezeRef: MutableRefObject<{
+    x: number
+    y: number
+    z: number
+    yaw: number
+  } | null>,
+  legsFrozenRef: MutableRefObject<boolean>,
+) {
+  return ({ other }: CollisionEnterPayload) => {
+    const ud = other.rigidBodyObject?.userData as { kind?: string } | undefined
+    if (ud?.kind !== 'bike' || knockedRef.current) return
+    knockedRef.current = true
+    legsFrozenRef.current = true
+    knockBlendRef.current = 0
+    const rb = rbRef.current
+    if (!rb) return
+    const t = rb.translation()
+    const r = rb.rotation()
+    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
+    const eq = new THREE.Euler().setFromQuaternion(q, 'YXZ')
+    freezeRef.current = { x: t.x, y: t.y, z: t.z, yaw: eq.y }
+  }
+}
+
 /** Low-poly walker; `seed` drives outfit colours. */
-function SimpleWalker({ seed, scale = 1 }: { seed: number; scale?: number }) {
+function SimpleWalker({
+  seed,
+  scale = 1,
+  legsFrozenRef,
+}: {
+  seed: number
+  scale?: number
+  legsFrozenRef?: RefObject<boolean>
+}) {
   const legL = useRef<THREE.Group>(null)
   const legR = useRef<THREE.Group>(null)
 
@@ -58,6 +100,7 @@ function SimpleWalker({ seed, scale = 1 }: { seed: number; scale?: number }) {
   )
 
   useFrame(({ clock }) => {
+    if (legsFrozenRef?.current) return
     const w = Math.sin(clock.elapsedTime * 6.2 + seed * 0.3) * 0.42
     if (legL.current) legL.current.rotation.x = w
     if (legR.current) legR.current.rotation.x = -w
@@ -86,100 +129,313 @@ function SimpleWalker({ seed, scale = 1 }: { seed: number; scale?: number }) {
 }
 
 function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }) {
-  const ref = useRef<THREE.Group>(null)
+  const rbRef = useRef<RapierRigidBody | null>(null)
+  const knockedRef = useRef(false)
+  const knockBlendRef = useRef(0)
+  const freezeRef = useRef<{
+    x: number
+    y: number
+    z: number
+    yaw: number
+  } | null>(null)
+  const legsFrozenRef = useRef(false)
   const half = ROAD_W * 0.36
   const speed = 0.38 + segmentRandom(site.vi, idx, 860) * 0.55
   const zOff = (idx - 0.9) * 0.38 + (segmentRandom(site.vi, idx, 861) - 0.5) * 0.28
   const phase = segmentRandom(site.vi, idx, 862) * Math.PI * 2
   const seed = site.vi * 409 + site.j * 37 + idx * 19
 
-  useFrame(({ clock }) => {
-    if (!ref.current) return
+  const onCollisionEnter = useMemo(
+    () =>
+      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+    [],
+  )
+
+  useFrame(({ clock }, dt) => {
+    const rb = rbRef.current
+    if (!rb) return
+    if (knockedRef.current && freezeRef.current) {
+      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+      const e = 1 - (1 - knockBlendRef.current) ** 2
+      const f = freezeRef.current
+      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+      const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+      )
+      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+      rb.setTranslation(
+        {
+          x: f.x,
+          y: THREE.MathUtils.lerp(f.y, 0.03, e),
+          z: f.z,
+        },
+        true,
+      )
+      return
+    }
     const t = clock.elapsedTime * speed + phase
     const x = site.cx + Math.sin(t) * half
-    ref.current.position.set(x, 0.075, site.z + zOff)
+    const z = site.z + zOff
     const vx = Math.cos(t) * half * speed
-    ref.current.rotation.y = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
+    const ry = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
+    rb.setTranslation({ x, y: 0.075, z }, true)
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
+    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
 
   return (
-    <group ref={ref}>
-      <SimpleWalker seed={seed} scale={0.88 + segmentRandom(site.vi, idx, 863) * 0.14} />
-    </group>
+    <RigidBody
+      ref={rbRef}
+      type="kinematicPosition"
+      colliders={false}
+      mass={0.85}
+      friction={0.9}
+      restitution={0.02}
+      userData={{ kind: 'pedestrian' }}
+      canSleep={false}
+      onCollisionEnter={onCollisionEnter}
+    >
+      <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.66, 0]} />
+      <SimpleWalker
+        seed={seed}
+        scale={0.88 + segmentRandom(site.vi, idx, 863) * 0.14}
+        legsFrozenRef={legsFrozenRef}
+      />
+    </RigidBody>
   )
 }
 
 function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: number }) {
-  const ref = useRef<THREE.Group>(null)
+  const rbRef = useRef<RapierRigidBody | null>(null)
+  const knockedRef = useRef(false)
+  const knockBlendRef = useRef(0)
+  const freezeRef = useRef<{
+    x: number
+    y: number
+    z: number
+    yaw: number
+  } | null>(null)
+  const legsFrozenRef = useRef(false)
   const half = ROAD_W * 0.36
   const speed = 0.38 + segmentRandom(site.i, idx, 870) * 0.55
   const xOff = (idx - 0.9) * 0.38 + (segmentRandom(site.i, idx, 871) - 0.5) * 0.28
   const phase = segmentRandom(site.i, idx, 872) * Math.PI * 2
   const seed = site.i * 311 + site.hj * 41 + idx * 23
 
-  useFrame(({ clock }) => {
-    if (!ref.current) return
+  const onCollisionEnter = useMemo(
+    () =>
+      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+    [],
+  )
+
+  useFrame(({ clock }, dt) => {
+    const rb = rbRef.current
+    if (!rb) return
+    if (knockedRef.current && freezeRef.current) {
+      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+      const e = 1 - (1 - knockBlendRef.current) ** 2
+      const f = freezeRef.current
+      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+      const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+      )
+      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+      rb.setTranslation(
+        {
+          x: f.x,
+          y: THREE.MathUtils.lerp(f.y, 0.03, e),
+          z: f.z,
+        },
+        true,
+      )
+      return
+    }
     const t = clock.elapsedTime * speed + phase
     const z = site.cz + Math.sin(t) * half
-    ref.current.position.set(site.x + xOff, 0.075, z)
     const vz = Math.cos(t) * half * speed
-    ref.current.rotation.y = vz >= 0 ? 0 : Math.PI
+    const ry = vz >= 0 ? 0 : Math.PI
+    rb.setTranslation({ x: site.x + xOff, y: 0.075, z }, true)
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
+    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
 
   return (
-    <group ref={ref}>
-      <SimpleWalker seed={seed} scale={0.88 + segmentRandom(site.i, idx, 873) * 0.14} />
-    </group>
+    <RigidBody
+      ref={rbRef}
+      type="kinematicPosition"
+      colliders={false}
+      mass={0.85}
+      friction={0.9}
+      restitution={0.02}
+      userData={{ kind: 'pedestrian' }}
+      canSleep={false}
+      onCollisionEnter={onCollisionEnter}
+    >
+      <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.66, 0]} />
+      <SimpleWalker
+        seed={seed}
+        scale={0.88 + segmentRandom(site.i, idx, 873) * 0.14}
+        legsFrozenRef={legsFrozenRef}
+      />
+    </RigidBody>
   )
 }
 
 function SidewalkWalkerVertical({ slot }: { slot: SidewalkAlongVertical }) {
-  const ref = useRef<THREE.Group>(null)
+  const rbRef = useRef<RapierRigidBody | null>(null)
+  const knockedRef = useRef(false)
+  const knockBlendRef = useRef(0)
+  const freezeRef = useRef<{
+    x: number
+    y: number
+    z: number
+    yaw: number
+  } | null>(null)
+  const legsFrozenRef = useRef(false)
   const speed = 0.22 + segmentRandom(slot.vi, slot.j, 880) * 0.32
   const phase = segmentRandom(slot.vi, slot.j, 881) * Math.PI * 2
   const seed = slot.vi * 227 + slot.j * 53
 
-  useFrame(({ clock }) => {
-    if (!ref.current) return
+  const onCollisionEnter = useMemo(
+    () =>
+      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+    [],
+  )
+
+  useFrame(({ clock }, dt) => {
+    const rb = rbRef.current
+    if (!rb) return
+    if (knockedRef.current && freezeRef.current) {
+      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+      const e = 1 - (1 - knockBlendRef.current) ** 2
+      const f = freezeRef.current
+      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+      const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+      )
+      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+      rb.setTranslation(
+        {
+          x: f.x,
+          y: THREE.MathUtils.lerp(f.y, 0.03, e),
+          z: f.z,
+        },
+        true,
+      )
+      return
+    }
     const t = clock.elapsedTime * speed + phase
     const u = (Math.sin(t) + 1) / 2
     const z = slot.zMin + u * (slot.zMax - slot.zMin)
-    ref.current.position.set(slot.x, 0.055, z)
     const vz = Math.cos(t)
-    ref.current.rotation.y = vz >= 0 ? 0 : Math.PI
+    const ry = vz >= 0 ? 0 : Math.PI
+    rb.setTranslation({ x: slot.x, y: 0.055, z }, true)
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
+    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
 
   return (
-    <group ref={ref}>
-      <SimpleWalker seed={seed} scale={0.86 + segmentRandom(slot.vi, slot.j, 882) * 0.12} />
-    </group>
+    <RigidBody
+      ref={rbRef}
+      type="kinematicPosition"
+      colliders={false}
+      mass={0.85}
+      friction={0.9}
+      restitution={0.02}
+      userData={{ kind: 'pedestrian' }}
+      canSleep={false}
+      onCollisionEnter={onCollisionEnter}
+    >
+      <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.64, 0]} />
+      <SimpleWalker
+        seed={seed}
+        scale={0.86 + segmentRandom(slot.vi, slot.j, 882) * 0.12}
+        legsFrozenRef={legsFrozenRef}
+      />
+    </RigidBody>
   )
 }
 
 function SidewalkWalkerHorizontal({ slot }: { slot: SidewalkAlongHorizontal }) {
-  const ref = useRef<THREE.Group>(null)
+  const rbRef = useRef<RapierRigidBody | null>(null)
+  const knockedRef = useRef(false)
+  const knockBlendRef = useRef(0)
+  const freezeRef = useRef<{
+    x: number
+    y: number
+    z: number
+    yaw: number
+  } | null>(null)
+  const legsFrozenRef = useRef(false)
   const speed = 0.22 + segmentRandom(slot.i, slot.hj, 890) * 0.32
   const phase = segmentRandom(slot.i, slot.hj, 891) * Math.PI * 2
   const seed = slot.i * 199 + slot.hj * 61
 
-  useFrame(({ clock }) => {
-    if (!ref.current) return
+  const onCollisionEnter = useMemo(
+    () =>
+      pedCollisionHandler(knockedRef, knockBlendRef, rbRef, freezeRef, legsFrozenRef),
+    [],
+  )
+
+  useFrame(({ clock }, dt) => {
+    const rb = rbRef.current
+    if (!rb) return
+    if (knockedRef.current && freezeRef.current) {
+      knockBlendRef.current = Math.min(1, knockBlendRef.current + dt * 1.2)
+      const e = 1 - (1 - knockBlendRef.current) ** 2
+      const f = freezeRef.current
+      const pitch = THREE.MathUtils.lerp(0, 1.42, e)
+      const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
+      const q = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
+      )
+      rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+      rb.setTranslation(
+        {
+          x: f.x,
+          y: THREE.MathUtils.lerp(f.y, 0.03, e),
+          z: f.z,
+        },
+        true,
+      )
+      return
+    }
     const t = clock.elapsedTime * speed + phase
     const u = (Math.sin(t) + 1) / 2
     const x = slot.xMin + u * (slot.xMax - slot.xMin)
-    ref.current.position.set(x, 0.055, slot.z)
     const vx = Math.cos(t)
-    ref.current.rotation.y = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
+    const ry = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
+    rb.setTranslation({ x, y: 0.055, z: slot.z }, true)
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
+    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
 
   return (
-    <group ref={ref}>
-      <SimpleWalker seed={seed} scale={0.86 + segmentRandom(slot.i, slot.hj, 892) * 0.12} />
-    </group>
+    <RigidBody
+      ref={rbRef}
+      type="kinematicPosition"
+      colliders={false}
+      mass={0.85}
+      friction={0.9}
+      restitution={0.02}
+      userData={{ kind: 'pedestrian' }}
+      canSleep={false}
+      onCollisionEnter={onCollisionEnter}
+    >
+      <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.64, 0]} />
+      <SimpleWalker
+        seed={seed}
+        scale={0.86 + segmentRandom(slot.i, slot.hj, 892) * 0.12}
+        legsFrozenRef={legsFrozenRef}
+      />
+    </RigidBody>
   )
 }
 
-/** Animated figures at zebra crossings and on murram strips beside roads. */
+/** Animated figures at zebra crossings and on murram strips — solid vs boda, knockdown on hit. */
 export function Pedestrians() {
   const zebraNodes = useMemo(() => {
     const out: ReactNode[] = []

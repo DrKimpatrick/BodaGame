@@ -15,7 +15,7 @@ const IDLE_RUMBLE_BASE = 0.078
 
 /**
  * Engine always audible at idle; extra loudness and pitch only when overspeeding.
- * Requires a user gesture to unlock AudioContext (keydown / pointerdown).
+ * Oscillators start only after AudioContext is running (avoids autoplay console spam).
  */
 export function useBikeEngineAudio(speedRef: RefObject<number>) {
   useEffect(() => {
@@ -46,18 +46,31 @@ export function useBikeEngineAudio(speedRef: RefObject<number>) {
     osc3.connect(g3)
     g3.connect(master)
 
-    osc.start()
-    osc2.start()
-    osc3.start()
+    let graphStarted = false
+    const startGraph = () => {
+      if (graphStarted || ctx.state !== 'running') return
+      graphStarted = true
+      osc.start()
+      osc2.start()
+      osc3.start()
+    }
 
     const resume = () => {
-      void ctx.resume()
+      void ctx.resume().then(startGraph)
     }
+
     window.addEventListener('keydown', resume)
     window.addEventListener('pointerdown', resume)
 
+    if (ctx.state === 'running') startGraph()
+
     let raf = 0
     const tick = () => {
+      if (ctx.state !== 'running') {
+        raf = requestAnimationFrame(tick)
+        return
+      }
+      startGraph()
       const s = Math.abs(speedRef.current ?? 0)
       const t = ctx.currentTime
       const band = Math.max(0.001, MAX_SPEED_MS - OVERSPEED_START_MS)
@@ -85,9 +98,11 @@ export function useBikeEngineAudio(speedRef: RefObject<number>) {
       window.removeEventListener('keydown', resume)
       window.removeEventListener('pointerdown', resume)
       cancelAnimationFrame(raf)
-      osc.stop()
-      osc2.stop()
-      osc3.stop()
+      if (graphStarted) {
+        osc.stop()
+        osc2.stop()
+        osc3.stop()
+      }
       void ctx.close()
     }
   }, [speedRef])

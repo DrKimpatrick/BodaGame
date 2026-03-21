@@ -2,6 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import type { RapierRigidBody } from '@react-three/rapier'
 import { useMemo, useRef, type RefObject } from 'react'
 import * as THREE from 'three'
+import { setOppositeTravelDirHorizontal } from '../utils/bikeWakeDirection'
 
 const MAX_FORWARD = 14
 
@@ -52,31 +53,37 @@ export function BikeExhaust({ rigidBodyRef, speedRef }: Props) {
   const q = useMemo(() => new THREE.Quaternion(), [])
   const e = useMemo(() => new THREE.Euler(), [])
   const tmp = useMemo(() => new THREE.Vector3(), [])
-  /** Unit horizontal vector opposite to travel (smoke leaves the back of the path). */
-  const trailDir = useMemo(() => new THREE.Vector3(), [])
-  /** Horizontal perpendicular to trailDir (tiny sideways wisp only). */
+  const tmpForward = useMemo(() => new THREE.Vector3(), [])
+  /** Horizontal unit vector **opposite** to travel (wake blows behind the path). */
+  const wakeDir = useMemo(() => new THREE.Vector3(), [])
+  /** Horizontal perpendicular to wakeDir (sideways wisp). */
   const sideDir = useMemo(() => new THREE.Vector3(), [])
 
   useFrame((_, dt) => {
     const body = rigidBodyRef.current
     if (!body) return
 
-    const speed = Math.abs(speedRef.current ?? 0)
+    const signedSpeed = speedRef.current ?? 0
+    const speed = Math.abs(signedSpeed)
     const moving = speed > 0.08
     const speedNorm = Math.min(1, speed / MAX_FORWARD)
     const tr = body.translation()
     const rot = body.rotation()
     q.set(rot.x, rot.y, rot.z, rot.w)
 
-    const lv = body.linvel()
-    trailDir.set(-lv.x, 0, -lv.z)
-    const horiz = Math.hypot(trailDir.x, trailDir.z)
-    if (horiz > 0.035) {
-      trailDir.multiplyScalar(1 / horiz)
-    } else {
-      trailDir.set(0, 0, 1).applyQuaternion(q).normalize()
+    const hasWake = setOppositeTravelDirHorizontal(
+      body,
+      signedSpeed,
+      q,
+      tmpForward,
+      wakeDir,
+    )
+    if (!hasWake || wakeDir.lengthSq() < 1e-8) {
+      wakeDir.set(0, 0, 1).applyQuaternion(q)
+      wakeDir.y = 0
+      if (wakeDir.lengthSq() > 1e-8) wakeDir.normalize()
     }
-    sideDir.set(-trailDir.z, 0, trailDir.x)
+    sideDir.set(-wakeDir.z, 0, wakeDir.x)
 
     const exhaustEmit = moving ? speedNorm * 22 * dt : 0
     const airEmit = moving ? Math.pow(speedNorm, 1.2) * 48 * dt : 0
@@ -100,7 +107,7 @@ export function BikeExhaust({ rigidBodyRef, speedRef }: Props) {
             p.pos.set(tr.x + tmp.x, tr.y + tmp.y, tr.z + tmp.z)
             const along = 0.38 + speed * 0.045
             p.vel
-              .copy(trailDir)
+              .copy(wakeDir)
               .multiplyScalar(along)
               .addScaledVector(sideDir, (Math.random() - 0.5) * 0.06)
             p.vel.y = (Math.random() - 0.35) * 0.05
@@ -111,7 +118,7 @@ export function BikeExhaust({ rigidBodyRef, speedRef }: Props) {
             p.pos.set(tr.x + tmp.x, tr.y + tmp.y, tr.z + tmp.z)
             const along = 0.22 + speed * 0.028
             p.vel
-              .copy(trailDir)
+              .copy(wakeDir)
               .multiplyScalar(along)
               .addScaledVector(sideDir, (Math.random() - 0.5) * 0.045)
             p.vel.y = 0.02 + Math.random() * 0.05

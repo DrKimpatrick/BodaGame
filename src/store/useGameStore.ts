@@ -106,6 +106,11 @@ export type GameState = {
   /** Display speed (KM/H), updated from physics — keep updates throttled in Boda. */
   speedKmh: number
   ledger: WalletTransaction[]
+  /**
+   * Full reset to defaults (new browser tab / refresh). Not persisted — Zustand is in-memory only;
+   * this makes every page load a clean run so condition/wallet/fuel are never “stuck” from a prior session.
+   */
+  resetSession: () => void
   setMoney: (money: number) => void
   setFuel: (fuel: number) => void
   setCondition: (condition: number) => void
@@ -130,12 +135,20 @@ function appendLedger(
   return [row, ...ledger].slice(0, LEDGER_CAP)
 }
 
-export const useGameStore = create<GameState>((set, get) => ({
+const initialSession = (): Pick<
+  GameState,
+  'money' | 'fuel' | 'condition' | 'speedKmh' | 'ledger'
+> => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
   condition: 100,
   speedKmh: 0,
   ledger: [],
+})
+
+export const useGameStore = create<GameState>((set, get) => ({
+  ...initialSession(),
+  resetSession: () => set(initialSession()),
   setMoney: (money) => set({ money: moneyInt(money) }),
   setFuel: (fuel) => set({ fuel: normalizeTankFuel(fuel) }),
   setCondition: (condition) => set({ condition }),

@@ -1,5 +1,11 @@
 import { useFrame } from '@react-three/fiber'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  CuboidCollider,
+  type RapierRigidBody,
+  RigidBody,
+  useRapier,
+} from '@react-three/rapier'
+import { useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { CITY_START, CITY_TOTAL, NUM_BLOCKS, roadStripCenterX, roadStripCenterZ } from '@game/cityGrid'
 import { segmentRandom } from '@game/roadDecorPlacements'
@@ -9,6 +15,8 @@ const Z0 = CITY_START
 const X1 = CITY_START + CITY_TOTAL
 const Z1 = CITY_START + CITY_TOTAL
 const EDGE = 3.5
+/** Extra meters past city edge so respawns are off-screen / in fog before they drive in. */
+const SPAWN_BEYOND = 64
 const IZ_EPS = 0.2
 const LANE = 0.58
 /** Offset from strip center; all traffic stays on this one side (never ±LANE split). */
@@ -16,8 +24,6 @@ const ROAD_SIDE_V = LANE
 const ROAD_SIDE_H = LANE
 /** Two logical slots per strip (same road side, staggered along the road). */
 const LANES_PER_STRIP = 2
-
-let nextSpawnId = 1
 
 function flatOccV(vi: number, laneSlot: number): number {
   return vi * LANES_PER_STRIP + laneSlot
@@ -67,7 +73,6 @@ type Agent = {
   z: number
   /** Occupancy slot: flat index into occV / occH (strip × lane). */
   slot: { t: 'v' | 'h'; idx: number }
-  spawnId: number
 }
 
 function pickKind(salt: number): VehicleKind {
@@ -394,9 +399,10 @@ function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
     laneH: 0,
     heading: north ? 'N' : 'S',
     x: cx + laneV,
-    z: north ? Z0 + EDGE + zOff : Z1 - EDGE - zOff,
+    z: north
+      ? Z0 - SPAWN_BEYOND + EDGE + zOff
+      : Z1 + SPAWN_BEYOND - EDGE - zOff,
     slot: { t: 'v', idx: flatOccV(vi, laneSlot) },
-    spawnId: nextSpawnId++,
   }
 }
 
@@ -415,23 +421,24 @@ function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
     laneV: 0,
     laneH,
     heading: east ? 'E' : 'W',
-    x: east ? X0 + EDGE + xOff : X1 - EDGE - xOff,
+    x: east
+      ? X0 - SPAWN_BEYOND + EDGE + xOff
+      : X1 + SPAWN_BEYOND - EDGE - xOff,
     z: cz + laneH,
     slot: { t: 'h', idx: flatOccH(hj, laneSlot) },
-    spawnId: nextSpawnId++,
   }
 }
 
-function velocity(a: Agent): { vx: number; vz: number } {
+function velocityWithSpeed(a: Agent, speedNow: number): { vx: number; vz: number } {
   switch (a.heading) {
     case 'N':
-      return { vx: 0, vz: a.speed }
+      return { vx: 0, vz: speedNow }
     case 'S':
-      return { vx: 0, vz: -a.speed }
+      return { vx: 0, vz: -speedNow }
     case 'E':
-      return { vx: a.speed, vz: 0 }
+      return { vx: speedNow, vz: 0 }
     case 'W':
-      return { vx: -a.speed, vz: 0 }
+      return { vx: -speedNow, vz: 0 }
   }
 }
 
@@ -441,9 +448,10 @@ function integrateAgent(
   occV: boolean[],
   occH: boolean[],
   rng: () => number,
+  speedNow: number,
 ): boolean {
   const d = Math.min(dt, 0.055)
-  const { vx, vz } = velocity(a)
+  const { vx, vz } = velocityWithSpeed(a, speedNow)
   const px = a.x
   const pz = a.z
   a.x += vx * d
@@ -452,7 +460,7 @@ function integrateAgent(
   if (a.mode === 'v') {
     const vi = a.vi
     const tx = roadStripCenterX(vi) + a.laneV
-    a.x += (tx - a.x) * Math.min(1, d * 4)
+    a.x += (tx - a.x) * Math.min(1, d * 2.35)
 
     if (vz > 0) {
       for (let j = 0; j <= NUM_BLOCKS; j++) {
@@ -476,7 +484,7 @@ function integrateAgent(
   } else {
     const hj = a.hj
     const tz = roadStripCenterZ(hj) + a.laneH
-    a.z += (tz - a.z) * Math.min(1, d * 4)
+    a.z += (tz - a.z) * Math.min(1, d * 2.35)
 
     if (vx > 0) {
       for (let i = 0; i <= NUM_BLOCKS; i++) {
@@ -527,9 +535,47 @@ function integrateAgent(
   return true
 }
 
-function applyAgentToGroup(a: Agent, g: THREE.Group) {
-  g.position.set(a.x, 0.09, a.z)
-  g.rotation.y = headingToYaw(a.heading)
+/** Rough cuboid half-extents + local center (Y) for solid traffic vs boda. */
+function vehicleColliderForKind(kind: VehicleKind): {
+  args: [number, number, number]
+  pos: [number, number, number]
+} {
+  switch (kind) {
+    case 'bus':
+      return { args: [1.28, 0.72, 4.85], pos: [0, 0.78, 0] }
+    case 'trailer':
+      return { args: [1.15, 0.58, 5.15], pos: [0, 0.55, -0.45] }
+    case 'pickup':
+      return { args: [1.02, 0.48, 2.35], pos: [0, 0.45, -0.12] }
+    case 'taxi':
+      return { args: [0.9, 0.44, 2.08], pos: [0, 0.4, 0] }
+    case 'bicycle':
+      return { args: [0.5, 0.42, 0.52], pos: [0, 0.34, 0] }
+    case 'motorbike':
+      return { args: [0.32, 0.36, 0.95], pos: [0, 0.34, 0.06] }
+    case 'sedan':
+      return { args: [0.86, 0.42, 1.95], pos: [0, 0.38, 0] }
+    case 'van':
+      return { args: [0.98, 0.54, 2.22], pos: [0, 0.52, 0.08] }
+    case 'suv':
+      return { args: [1.02, 0.4, 2.12], pos: [0, 0.46, 0.02] }
+    case 'matatu':
+      return { args: [1.06, 0.56, 2.78], pos: [0, 0.58, 0] }
+    default:
+      return { args: [0.85, 0.42, 1.85], pos: [0, 0.38, 0] }
+  }
+}
+
+function applyAgentToRigidBody(
+  a: Agent,
+  rb: RapierRigidBody,
+  world: { getRigidBody(handle: number): unknown },
+  yawRad: number,
+) {
+  if (world.getRigidBody(rb.handle) == null) return
+  rb.setTranslation({ x: a.x, y: 0.09, z: a.z }, true)
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad)
+  rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
 }
 
 const tireMat = new THREE.MeshStandardMaterial({
@@ -1000,10 +1046,13 @@ const NUM_V_SLOTS = NUM_STRIPS * LANES_PER_STRIP
 /**
  * Two vehicles per N–S strip and two per E–W strip, all on one side of the road (same offset from
  * center). They drive to the map edge (no mid-road looping) and pick random turns when a free slot
- * exists on the target road.
- * No Rapier bodies — boda is never knocked.
+ * exists on the target road. Spawns sit beyond the city so traffic enters from outside the fog band;
+ * stable RigidBody keys avoid remount-at-origin pops. Yaw and speed are smoothed toward targets.
+ * Kinematic rigid bodies with cuboid colliders — boda can collide (speed bump + stun).
  */
 export function RoadTraffic() {
+  const { world } = useRapier()
+
   const initial = useMemo(() => {
     const ov = Array(NUM_V_SLOTS).fill(false) as boolean[]
     const oh = Array(NUM_V_SLOTS).fill(false) as boolean[]
@@ -1028,7 +1077,10 @@ export function RoadTraffic() {
   const occV = useRef(initial.ov)
   const occH = useRef(initial.oh)
   const agentsRef = useRef(initial.agents)
-  const groupRefs = useRef<(THREE.Group | null)[]>([])
+  /** Vehicle Rapier bodies (name kept `groupRefs` for older HMR chunks that still reference it). */
+  const groupRefs = useRef<(RapierRigidBody | null)[]>([])
+  const smoothYawRef = useRef<number[]>([])
+  const smoothSpeedRef = useRef<number[]>([])
   const [, setRenderTick] = useState(0)
 
   const slotKeys = useMemo(() => {
@@ -1042,31 +1094,44 @@ export function RoadTraffic() {
     return k
   }, [])
 
-  useLayoutEffect(() => {
-    agentsRef.current.forEach((a, i) => {
-      const g = groupRefs.current[i]
-      if (g && a) applyAgentToGroup(a, g)
-    })
-  }, [])
-
   useFrame((_, dt) => {
     const rng = Math.random
     const agents = agentsRef.current
     const ov = occV.current
     const oh = occH.current
+    const n = agents.length
+    const yawBuf = smoothYawRef.current
+    const spdBuf = smoothSpeedRef.current
+    while (yawBuf.length < n) yawBuf.push(Number.NaN)
+    while (spdBuf.length < n) spdBuf.push(Number.NaN)
 
-    for (let i = 0; i < agents.length; i++) {
+    for (let i = 0; i < n; i++) {
       let a = agents[i]
-      const g = groupRefs.current[i]
-      if (!g) continue
+      const rb = groupRefs.current[i]
+      if (!rb || world.getRigidBody(rb.handle) == null) continue
 
       if (!a) {
-        g.scale.setScalar(0)
         continue
       }
-      g.scale.setScalar(1)
 
-      const alive = integrateAgent(a, dt, ov, oh, rng)
+      const targetYaw = headingToYaw(a.heading)
+      let sy = yawBuf[i]
+      if (!Number.isFinite(sy)) sy = targetYaw
+      const yawDiff = Math.atan2(
+        Math.sin(targetYaw - sy),
+        Math.cos(targetYaw - sy),
+      )
+      sy += yawDiff * (1 - Math.exp(-6.2 * dt))
+      yawBuf[i] = sy
+
+      const tgtSp = a.speed
+      let sp = spdBuf[i]
+      if (!Number.isFinite(sp)) sp = tgtSp
+      const maxStep = 3.6 * dt
+      sp += Math.sign(tgtSp - sp) * Math.min(Math.abs(tgtSp - sp), maxStep)
+      spdBuf[i] = sp
+
+      const alive = integrateAgent(a, dt, ov, oh, rng, sp)
       if (!alive) {
         const wasV = i < NUM_V_SLOTS
         const salt = Math.floor(performance.now() + i) % 997
@@ -1088,10 +1153,13 @@ export function RoadTraffic() {
           agents[i] = na
         }
         a = agents[i]!
+        yawBuf[i] = headingToYaw(a.heading)
+        spdBuf[i] = a.speed
         setRenderTick((t) => t + 1)
       }
 
-      if (agents[i]) applyAgentToGroup(agents[i]!, g)
+      if (agents[i])
+        applyAgentToRigidBody(agents[i]!, rb, world, yawBuf[i])
     }
   })
 
@@ -1099,15 +1167,26 @@ export function RoadTraffic() {
     <group>
       {slotKeys.map((key, i) => {
         const ag = agentsRef.current[i]
+        const col = ag ? vehicleColliderForKind(ag.kind) : null
         return (
-          <group
-            key={`${key}-${ag?.spawnId ?? 'x'}`}
+          <RigidBody
+            key={key}
             ref={(el) => {
               groupRefs.current[i] = el
             }}
+            position={ag ? [ag.x, 0.09, ag.z] : [0, -999, 0]}
+            type="kinematicPosition"
+            colliders={false}
+            userData={{ kind: 'vehicle' }}
+            friction={0.35}
+            restitution={0.06}
+            canSleep={false}
           >
+            {ag && col ? (
+              <CuboidCollider args={col.args} position={col.pos} />
+            ) : null}
             {ag ? <VehicleMesh kind={ag.kind} /> : null}
-          </group>
+          </RigidBody>
         )
       })}
     </group>

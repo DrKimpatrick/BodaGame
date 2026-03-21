@@ -9,6 +9,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
