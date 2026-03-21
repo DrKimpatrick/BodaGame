@@ -1,11 +1,15 @@
-import { useRef } from 'react'
-import * as THREE from 'three'
+import type { RapierRigidBody } from '@react-three/rapier'
+import { Physics } from '@react-three/rapier'
+import { useRef, useState } from 'react'
+import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
 
 export function GameScene() {
-  const bodaRef = useRef<THREE.Group>(null)
+  const bodaRef = useRef<RapierRigidBody>(null)
+  const setSpeedKmh = useGameStore((s) => s.setSpeedKmh)
+  const [offroad, setOffroad] = useState(false)
 
   return (
     <>
@@ -26,9 +30,15 @@ export function GameScene() {
         shadow-camera-bottom={-110}
       />
 
-      <CityMap />
-      <Boda ref={bodaRef} />
-      <ThirdPersonCamera target={bodaRef} />
+      <Physics gravity={[0, 0, 0]} interpolate>
+        <CityMap />
+        <Boda
+          ref={bodaRef}
+          onSpeedKmhChange={setSpeedKmh}
+          onOffroadChange={setOffroad}
+        />
+        <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
+      </Physics>
     </>
   )
 }

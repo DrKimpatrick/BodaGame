@@ -1,15 +1,26 @@
 import { useTexture } from '@react-three/drei'
+import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier'
 import type { ReactNode } from 'react'
 import { Suspense, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { v4 as uuidv4 } from 'uuid'
-
-/** 10×10 blocks, roads between (11 strips each way). Origin = central intersection. */
-const NUM_BLOCKS = 10
-const ROAD_W = 4
-const BLOCK = 14
-const CITY_TOTAL = NUM_BLOCKS * BLOCK + (NUM_BLOCKS + 1) * ROAD_W
-const CITY_START = -CITY_TOTAL / 2
+import {
+  BLOCK,
+  CITY_START,
+  CITY_TOTAL,
+  NUM_BLOCKS,
+  ROAD_W,
+  blockCenter,
+  roadStripCenterX,
+  roadStripCenterZ,
+} from '@game/cityGrid'
+import {
+  isGreenZone,
+  isOnRoad,
+  isValidBuildingPlot,
+  SIDEWALK_WIDTH,
+} from '@game/roadSpatial'
+import { RoadNetwork } from './RoadNetwork'
 
 /** Map coords from design brief → world XZ (±200 → inside playable city). */
 const MAP_COORD_SCALE = (CITY_TOTAL * 0.38) / 200
@@ -28,22 +39,6 @@ const LANDMARK_NSSF: [number, number] = [
 
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
-
-function roadStripCenterX(k: number) {
-  return CITY_START + k * (ROAD_W + BLOCK) + ROAD_W / 2
-}
-
-function roadStripCenterZ(k: number) {
-  return CITY_START + k * (ROAD_W + BLOCK) + ROAD_W / 2
-}
-
-function blockCenter(i: number, j: number): [number, number] {
-  const cx =
-    CITY_START + ROAD_W + i * (ROAD_W + BLOCK) + BLOCK / 2
-  const cz =
-    CITY_START + ROAD_W + j * (ROAD_W + BLOCK) + BLOCK / 2
-  return [cx, cz]
-}
 
 function rnd(i: number, j: number, salt: number) {
   const t = Math.sin(i * 12.9898 + j * 78.233 + salt * 43.758) * 43758.5453123
@@ -76,52 +71,6 @@ function createNSSFTexture() {
   return tex
 }
 
-function createAsphaltRoadTexture() {
-  const s = 256
-  const c = document.createElement('canvas')
-  c.width = c.height = s
-  const ctx = c.getContext('2d')
-  if (!ctx) return new THREE.Texture()
-  ctx.fillStyle = '#252528'
-  ctx.fillRect(0, 0, s, s)
-  for (let i = 0; i < 5000; i++) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.045})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1)
-  }
-  for (let i = 0; i < 800; i++) {
-    ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.2})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 2, 1)
-  }
-  const t = new THREE.CanvasTexture(c)
-  t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.repeat.set(CITY_TOTAL / 12, CITY_TOTAL / 12)
-  t.colorSpace = THREE.SRGBColorSpace
-  return t
-}
-
-function createMurramHazeTexture() {
-  const s = 256
-  const c = document.createElement('canvas')
-  c.width = c.height = s
-  const ctx = c.getContext('2d')
-  if (!ctx) return new THREE.Texture()
-  ctx.fillStyle = '#9a3412'
-  ctx.fillRect(0, 0, s, s)
-  for (let i = 0; i < 3000; i++) {
-    ctx.fillStyle = `rgba(180,80,30,${0.08 + Math.random() * 0.2})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 4, 2)
-  }
-  for (let i = 0; i < 2000; i++) {
-    ctx.fillStyle = `rgba(60,30,15,${Math.random() * 0.12})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1)
-  }
-  const t = new THREE.CanvasTexture(c)
-  t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.repeat.set(CITY_TOTAL / 14, CITY_TOTAL / 14)
-  t.colorSpace = THREE.SRGBColorSpace
-  return t
-}
-
 const landmarkPoints: [number, number][] = [
   LANDMARK_MAPEERA,
   LANDMARK_STANBIC,
@@ -139,19 +88,15 @@ function minDistToLandmark(x: number, z: number) {
 /** Twin volumes + tall spire (~3× typical tower module), textured like Mapeera façade. */
 export function MapeeraBuilding({
   material,
-  cx,
-  cz,
 }: {
   material: THREE.MeshStandardMaterial
-  cx: number
-  cz: number
 }) {
   const towerH = 22
   const moduleH = 8
   const spireH = moduleH * 3
 
   return (
-    <group position={[cx, 0, cz]}>
+    <group>
       <mesh position={[-1.2, towerH / 2, 0]} castShadow receiveShadow material={material}>
         <boxGeometry args={[3, towerH, 3.2]} />
       </mesh>
@@ -175,15 +120,11 @@ export function MapeeraBuilding({
 /** Curved curtain wall massing (high-segment cylinder). */
 export function StanbicBankTower({
   material,
-  cx,
-  cz,
 }: {
   material: THREE.MeshStandardMaterial
-  cx: number
-  cz: number
 }) {
   return (
-    <group position={[cx, 0, cz]}>
+    <group>
       <mesh position={[0, 13.5, 0]} castShadow receiveShadow material={material}>
         <cylinderGeometry args={[5.8, 5.8, 27, 64]} />
       </mesh>
@@ -206,9 +147,9 @@ function NSSFRoofSign({ y }: { y: number }) {
 }
 
 /** Bright blue glass landmark (NSSF-style). */
-export function NSSFGlassTower({ cx, cz }: { cx: number; cz: number }) {
+export function NSSFGlassTower() {
   return (
-    <group position={[cx, 0, cz]}>
+    <group>
       <mesh position={[0, 10.5, 0]} castShadow receiveShadow>
         <boxGeometry args={[5.2, 21, 4.8]} />
         <meshPhysicalMaterial
@@ -284,36 +225,46 @@ function GenericCommercialBlock({
 
   const coneR = Math.hypot(w, d) * 0.42
   const coneH = 1.05
+  const topY = bodyH + 0.04 + (pitchedRoof ? coneH * 0.92 : 0.14)
+  const colliderHalfY = topY / 2
 
   return (
-    <group position={position} rotation={[0, rotationY, 0]}>
-      <mesh
-        position={[0, bodyH / 2 + 0.04, 0]}
-        castShadow
-        receiveShadow
-        material={wallMat}
-      >
-        <boxGeometry args={[w, bodyH, d]} />
-      </mesh>
-      {pitchedRoof ? (
+    <RigidBody
+      type="fixed"
+      colliders={false}
+      position={position}
+      rotation={[0, rotationY, 0]}
+    >
+      <group>
         <mesh
-          position={[0, bodyH + coneH * 0.48, 0]}
-          scale={[w / (coneR * 2), 1, d / (coneR * 2)]}
+          position={[0, bodyH / 2 + 0.04, 0]}
           castShadow
-          material={pitchedRoofMaterial}
+          receiveShadow
+          material={wallMat}
         >
-          <coneGeometry args={[coneR, coneH, 4, 1]} />
+          <boxGeometry args={[w, bodyH, d]} />
         </mesh>
-      ) : (
-        <mesh
-          position={[0, bodyH + 0.08, 0]}
-          castShadow
-          material={flatRoofMat}
-        >
-          <boxGeometry args={[w * 1.04, 0.14, d * 1.04]} />
-        </mesh>
-      )}
-    </group>
+        {pitchedRoof ? (
+          <mesh
+            position={[0, bodyH + coneH * 0.48, 0]}
+            scale={[w / (coneR * 2), 1, d / (coneR * 2)]}
+            castShadow
+            material={pitchedRoofMaterial}
+          >
+            <coneGeometry args={[coneR, coneH, 4, 1]} />
+          </mesh>
+        ) : (
+          <mesh
+            position={[0, bodyH + 0.08, 0]}
+            castShadow
+            material={flatRoofMat}
+          >
+            <boxGeometry args={[w * 1.04, 0.14, d * 1.04]} />
+          </mesh>
+        )}
+      </group>
+      <CuboidCollider args={[w / 2, colliderHalfY, d / 2]} position={[0, colliderHalfY, 0]} />
+    </RigidBody>
   )
 }
 
@@ -333,22 +284,30 @@ function MidriseTextured({
   const [fw, fd] = footprint
   const h = floors * 0.95
 
+  const meshCenterY = h / 2 + 0.04
+
   return (
-    <group position={[cx, 0, cz]}>
-      <mesh position={[0, h / 2 + 0.04, 0]} castShadow receiveShadow material={bodyMaterial}>
-        <boxGeometry args={[fw, h, fd]} />
-      </mesh>
-      {Array.from({ length: floors }, (_, f) => (
-        <group key={f} position={[0, 0.5 + f * 0.95, fd / 2 + 0.02]}>
-          {Array.from({ length: 6 }, (_, c) => (
-            <mesh key={c} position={[(c - 2.5) * (fw / 6.2), 0, 0]}>
-              <planeGeometry args={[0.32, 0.42]} />
-              <meshStandardMaterial color="#334155" roughness={0.35} metalness={0.2} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-    </group>
+    <RigidBody type="fixed" colliders={false} position={[cx, 0, cz]}>
+      <group>
+        <mesh position={[0, meshCenterY, 0]} castShadow receiveShadow material={bodyMaterial}>
+          <boxGeometry args={[fw, h, fd]} />
+        </mesh>
+        {Array.from({ length: floors }, (_, f) => (
+          <group key={f} position={[0, 0.5 + f * 0.95, fd / 2 + 0.02]}>
+            {Array.from({ length: 6 }, (_, c) => (
+              <mesh key={c} position={[(c - 2.5) * (fw / 6.2), 0, 0]}>
+                <planeGeometry args={[0.32, 0.42]} />
+                <meshStandardMaterial color="#334155" roughness={0.35} metalness={0.2} />
+              </mesh>
+            ))}
+          </group>
+        ))}
+      </group>
+      <CuboidCollider
+        args={[fw / 2, h / 2 + 0.02, fd / 2]}
+        position={[0, meshCenterY, 0]}
+      />
+    </RigidBody>
   )
 }
 
@@ -358,7 +317,8 @@ type TreeProps = { x: number; z: number; scale?: number }
 export function Tree({ x, z, scale = 1 }: TreeProps) {
   const s = scale
   return (
-    <group position={[x, 0, z]} scale={[s, s, s]}>
+    <RigidBody type="fixed" colliders={false} position={[x, 0, z]}>
+      <group scale={[s, s, s]}>
       <mesh position={[0, 1.15, 0]} castShadow>
         <cylinderGeometry args={[0.15, 0.22, 2.35, 8]} />
         <meshStandardMaterial color="#292524" roughness={0.92} />
@@ -379,7 +339,9 @@ export function Tree({ x, z, scale = 1 }: TreeProps) {
         <icosahedronGeometry args={[0.55, 0]} />
         <meshStandardMaterial color="#0f3d24" roughness={0.9} />
       </mesh>
-    </group>
+      </group>
+      <CylinderCollider args={[1.65 * s, 0.42 * s]} position={[0, 1.65 * s, 0]} />
+    </RigidBody>
   )
 }
 
@@ -393,7 +355,13 @@ function Matatu({
   rotationY: number
 }) {
   return (
-    <group position={[x, 0.52, z]} rotation={[0, rotationY, 0]}>
+    <RigidBody
+      type="fixed"
+      colliders={false}
+      position={[x, 0, z]}
+      rotation={[0, rotationY, 0]}
+    >
+      <group position={[0, 0.52, 0]}>
       <mesh castShadow receiveShadow position={[0, 0.35, 0]}>
         <boxGeometry args={[1.35, 1.1, 2.55]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.45} />
@@ -410,6 +378,58 @@ function Matatu({
         <boxGeometry args={[0.06, 0.45, 0.55]} />
         <meshStandardMaterial color="#171717" roughness={0.9} />
       </mesh>
+      </group>
+      <CuboidCollider args={[0.72, 0.52, 1.32]} position={[0, 0.87, 0]} />
+    </RigidBody>
+  )
+}
+
+function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: number }) {
+  return (
+    <RigidBody type="fixed" colliders={false} position={[x, 0, z]} rotation={[0, rotationY, 0]}>
+      <group>
+        <mesh position={[0, 0.32, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.9, 0.42, 1.7]} />
+          <meshStandardMaterial color="#d1d5db" roughness={0.42} />
+        </mesh>
+        <mesh position={[0, 0.6, 0.1]} castShadow>
+          <boxGeometry args={[0.7, 0.24, 0.95]} />
+          <meshStandardMaterial color="#9ca3af" roughness={0.45} metalness={0.2} />
+        </mesh>
+      </group>
+      <CuboidCollider args={[0.46, 0.32, 0.86]} position={[0, 0.36, 0]} />
+    </RigidBody>
+  )
+}
+
+function ParkingLot({
+  x,
+  z,
+  rotationY,
+  slots,
+}: {
+  x: number
+  z: number
+  rotationY: number
+  slots: number
+}) {
+  const lotDepth = 3.2
+  const lotWidth = slots * 1.2 + 1
+  return (
+    <group position={[x, 0, z]} rotation={[0, rotationY, 0]}>
+      <mesh position={[0, 0.04, 0]} receiveShadow>
+        <boxGeometry args={[lotWidth, 0.08, lotDepth]} />
+        <meshStandardMaterial color="#2a2a2a" roughness={0.95} />
+      </mesh>
+      {Array.from({ length: slots + 1 }, (_, i) => {
+        const lx = -lotWidth / 2 + 0.5 + i * 1.2
+        return (
+          <mesh key={`line-${i}`} position={[lx, 0.09, 0.15]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.05, lotDepth - 0.45]} />
+            <meshBasicMaterial color="#ffffff" toneMapped={false} />
+          </mesh>
+        )
+      })}
     </group>
   )
 }
@@ -435,52 +455,29 @@ function collectRoadSamples(): [number, number][] {
   return out
 }
 
-function medianAndRoadsideTrees(): [number, number][] {
+/** Trees only in block interiors, ≥5 units from road tarmac (green zone / sidewalk strip). */
+function sampleGreenZoneTreePositions(): [number, number][] {
   const out: [number, number][] = []
-  const span = CITY_TOTAL - ROAD_W
-  const medianSteps = 10
-  const edgeSteps = 16
+  const hw = ROAD_W / 2
+  const pad = SIDEWALK_WIDTH + 0.35
 
-  for (let k = 1; k < NUM_BLOCKS; k++) {
-    const rx = roadStripCenterX(k)
-    for (let s = 1; s < medianSteps; s++) {
-      const t = s / medianSteps
-      const rz = CITY_START + ROAD_W + t * (span - ROAD_W)
-      if (rnd(k, s, 201) > 0.22) {
-        out.push([rx + (rnd(k, s, 202) - 0.5) * 1.1, rz])
+  for (let i = 0; i < NUM_BLOCKS; i++) {
+    for (let j = 0; j < NUM_BLOCKS; j++) {
+      const xMin = roadStripCenterX(i) + hw + pad
+      const xMax = roadStripCenterX(i + 1) - hw - pad
+      const zMin = roadStripCenterZ(j) + hw + pad
+      const zMax = roadStripCenterZ(j + 1) - hw - pad
+      if (xMax <= xMin + 0.5 || zMax <= zMin + 0.5) continue
+
+      for (let t = 0; t < 6; t++) {
+        const x = xMin + rnd(i, j, 700 + t) * (xMax - xMin)
+        const z = zMin + rnd(i, j, 750 + t) * (zMax - zMin)
+        if (isOnRoad(x, z)) continue
+        if (!isGreenZone(x, z)) continue
+        out.push([x, z])
       }
     }
   }
-  for (let k = 1; k < NUM_BLOCKS; k++) {
-    const rz = roadStripCenterZ(k)
-    for (let s = 1; s < medianSteps; s++) {
-      const t = s / medianSteps
-      const rx = CITY_START + ROAD_W + t * (span - ROAD_W)
-      if (rnd(s, k, 203) > 0.22) {
-        out.push([rx, rz + (rnd(s, k, 204) - 0.5) * 1.1])
-      }
-    }
-  }
-
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const rx = roadStripCenterX(k)
-    for (let s = 0; s < edgeSteps; s++) {
-      const rz = CITY_START + ROAD_W / 2 + (s / (edgeSteps - 1)) * span
-      const off = ROAD_W * 0.32
-      if (rnd(k + 50, s, 301) > 0.15) out.push([rx + off, rz + (rnd(k, s, 302) - 0.5)])
-      if (rnd(k + 60, s, 303) > 0.15) out.push([rx - off, rz + (rnd(k, s, 304) - 0.5)])
-    }
-  }
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const rz = roadStripCenterZ(k)
-    for (let s = 0; s < edgeSteps; s++) {
-      const rx = CITY_START + ROAD_W / 2 + (s / (edgeSteps - 1)) * span
-      const off = ROAD_W * 0.32
-      if (rnd(k + 70, s, 401) > 0.15) out.push([rx + (rnd(k, s, 402) - 0.5), rz + off])
-      if (rnd(k + 80, s, 403) > 0.15) out.push([rx + (rnd(k, s, 404) - 0.5), rz - off])
-    }
-  }
-
   return out
 }
 
@@ -538,39 +535,15 @@ function CityMapContent() {
     [],
   )
 
-  const asphaltTex = useMemo(() => createAsphaltRoadTexture(), [])
-  const murramTex = useMemo(() => createMurramHazeTexture(), [])
-
-  const roadAsphaltMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: asphaltTex,
-        roughness: 0.93,
-        metalness: 0.04,
-      }),
-    [asphaltTex],
-  )
-
-  const roadMurramMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: murramTex,
-        roughness: 0.97,
-        metalness: 0,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-      }),
-    [murramTex],
-  )
-
   const [mx, mz] = LANDMARK_MAPEERA
   const [sx, sz] = LANDMARK_STANBIC
   const [nx, nz] = LANDMARK_NSSF
 
-  const { retail, midrise, matatus, trees } = useMemo(() => {
+  const { retail, midrise, matatus, trees, parkingLots, parkedCars } = useMemo(() => {
     const retailList: ReactNode[] = []
     const midList: ReactNode[] = []
+    const lotList: ReactNode[] = []
+    const carList: ReactNode[] = []
 
     for (let i = 0; i < NUM_BLOCKS; i++) {
       for (let j = 0; j < NUM_BLOCKS; j++) {
@@ -578,6 +551,34 @@ function CityMapContent() {
         if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP) continue
 
         if (rnd(i, j, 17) < 0.1) {
+          const lotSlots = 2 + Math.floor(rnd(i, j, 301) * 2)
+          const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
+          const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
+          if (isValidBuildingPlot(lotX, lotZ, 2.2)) {
+            const lotRot = rnd(i, j, 304) < 0.5 ? 0 : Math.PI / 2
+            lotList.push(
+              <ParkingLot
+                key={`lot-mid-${i}-${j}`}
+                x={lotX}
+                z={lotZ}
+                rotationY={lotRot}
+                slots={lotSlots}
+              />,
+            )
+            for (let c = 0; c < lotSlots; c++) {
+              if (rnd(i, j, 320 + c) < 0.15) continue
+              const cx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
+              const cz = lotZ + (rnd(i, j, 330 + c) - 0.5) * 0.22
+              carList.push(
+                <ParkedCar
+                  key={`pc-mid-${i}-${j}-${c}`}
+                  x={cx}
+                  z={cz}
+                  rotationY={lotRot}
+                />,
+              )
+            }
+          }
           midList.push(
             <MidriseTextured
               key={`mid-${i}-${j}`}
@@ -598,6 +599,7 @@ function CityMapContent() {
           const x = bcx + ox
           const z = bcz + oz
           if (minDistToLandmark(x, z) < LANDMARK_CLEARANCE) continue
+          if (!isValidBuildingPlot(x, z)) continue
 
           const w = 2.3 + rnd(i, j, 40 + k) * 2.1
           const d = 2.1 + rnd(i, j, 50 + k) * 1.7
@@ -625,7 +627,8 @@ function CityMapContent() {
     }
 
     const roadPts = collectRoadSamples().filter(
-      ([rx, rz]) => minDistToLandmark(rx, rz) > 12,
+      ([rx, rz]) =>
+        isOnRoad(rx, rz) && minDistToLandmark(rx, rz) > 12,
     )
     const matatuCount = 28
     const mats: ReactNode[] = []
@@ -650,7 +653,7 @@ function CityMapContent() {
       )
     }
 
-    const treePts = medianAndRoadsideTrees()
+    const treePts = sampleGreenZoneTreePositions()
     const treeNodes = treePts.map(([tx, tz], idx) => (
       <Tree
         key={`tr-${idx}`}
@@ -665,54 +668,10 @@ function CityMapContent() {
       midrise: midList,
       matatus: mats,
       trees: treeNodes,
+      parkingLots: lotList,
+      parkedCars: carList,
     }
   }, [midriseMat, pitchedRoofMat])
-
-  const verticalRoads = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => (
-        <group key={`rv-${k}`}>
-          <mesh
-            position={[roadStripCenterX(k), 0.03, 0]}
-            receiveShadow
-            material={roadAsphaltMat}
-          >
-            <boxGeometry args={[ROAD_W, 0.06, CITY_TOTAL]} />
-          </mesh>
-          <mesh
-            position={[roadStripCenterX(k), 0.068, 0]}
-            receiveShadow
-            material={roadMurramMat}
-          >
-            <boxGeometry args={[ROAD_W * 0.94, 0.025, CITY_TOTAL * 0.99]} />
-          </mesh>
-        </group>
-      )),
-    [roadAsphaltMat, roadMurramMat],
-  )
-
-  const horizontalRoads = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => (
-        <group key={`rh-${k}`}>
-          <mesh
-            position={[0, 0.03, roadStripCenterZ(k)]}
-            receiveShadow
-            material={roadAsphaltMat}
-          >
-            <boxGeometry args={[CITY_TOTAL, 0.06, ROAD_W]} />
-          </mesh>
-          <mesh
-            position={[0, 0.068, roadStripCenterZ(k)]}
-            receiveShadow
-            material={roadMurramMat}
-          >
-            <boxGeometry args={[CITY_TOTAL * 0.99, 0.025, ROAD_W * 0.94]} />
-          </mesh>
-        </group>
-      )),
-    [roadAsphaltMat, roadMurramMat],
-  )
 
   return (
     <group>
@@ -721,22 +680,32 @@ function CityMapContent() {
         <meshStandardMaterial color="#2a231e" roughness={0.94} metalness={0.02} />
       </mesh>
 
-      {verticalRoads}
-      {horizontalRoads}
+      <RoadNetwork />
 
       <gridHelper
-        args={[CITY_TOTAL * 0.92, 40, '#5c4d42', '#3d342c']}
-        position={[0, 0.048, 0]}
+        args={[CITY_TOTAL * 0.92, 40, '#4a4a4a', '#2a2a2a']}
+        position={[0, 0.07, 0]}
       />
 
-      <MapeeraBuilding material={mapeeraMat} cx={mx} cz={mz} />
-      <StanbicBankTower material={stanbicMat} cx={sx} cz={sz} />
-      <NSSFGlassTower cx={nx} cz={nz} />
+      <RigidBody type="fixed" position={[mx, 0, mz]} colliders={false}>
+        <MapeeraBuilding material={mapeeraMat} />
+        <CuboidCollider args={[3.4, 14, 3.2]} position={[0, 12, 0]} />
+      </RigidBody>
+      <RigidBody type="fixed" position={[sx, 0, sz]} colliders={false}>
+        <StanbicBankTower material={stanbicMat} />
+        <CylinderCollider args={[13.5, 5.85]} position={[0, 13.5, 0]} />
+      </RigidBody>
+      <RigidBody type="fixed" position={[nx, 0, nz]} colliders={false}>
+        <NSSFGlassTower />
+        <CuboidCollider args={[4.2, 11, 5]} position={[0, 11, 0]} />
+      </RigidBody>
 
       {midrise}
       {retail}
       {trees}
       {matatus}
+      {parkingLots}
+      {parkedCars}
     </group>
   )
 }

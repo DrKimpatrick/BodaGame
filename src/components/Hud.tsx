@@ -30,6 +30,7 @@ export function Hud() {
   const money = useGameStore((s) => s.money)
   const fuel = useGameStore((s) => s.fuel)
   const condition = useGameStore((s) => s.condition)
+  const speedKmh = useGameStore((s) => s.speedKmh)
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
@@ -50,6 +51,13 @@ export function Hud() {
           value={condition}
           fillClass="bg-emerald-400"
         />
+      </div>
+
+      <div className="absolute bottom-4 right-4 rounded-md border border-white/20 bg-black/60 px-4 py-2 text-right font-mono text-sm text-amber-200 shadow-lg backdrop-blur-sm">
+        <div className="text-xs uppercase tracking-wide text-amber-100/80">
+          Speed
+        </div>
+        <div className="text-lg font-semibold leading-tight">{speedKmh} KM/H</div>
       </div>
     </div>
   )

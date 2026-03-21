@@ -1,13 +1,40 @@
 import { useFrame } from '@react-three/fiber'
-import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
+import {
+  CuboidCollider,
+  type RapierRigidBody,
+  RigidBody,
+  useRapier,
+} from '@react-three/rapier'
+import {
+  forwardRef,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ForwardedRef,
+} from 'react'
 import * as THREE from 'three'
 import { useKeyboard } from '../hooks/useKeyboard'
+import { isOnRoad } from '@game/roadSpatial'
 
 const MAX_FORWARD = 14
 const MAX_REVERSE = 5
 const ACCEL = 28
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
+const OFFROAD_SPEED_FACTOR = 0.3
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+const SPAWN: [number, number, number] = [0, 0.32, 0]
+
+function assignForwardedRef<T>(
+  ref: ForwardedRef<T> | undefined,
+  value: T | null,
+) {
+  if (typeof ref === 'function') ref(value)
+  else if (ref) ref.current = value
+}
 
 /** Glossy commuter red (tank, fenders) */
 const matRed = {
@@ -51,6 +78,41 @@ const matGlass = {
   emissiveIntensity: 0.15,
 } as const
 
+const matVest = {
+  color: '#facc15',
+  metalness: 0.03,
+  roughness: 0.8,
+} as const
+
+const matHelmet = {
+  color: '#f3f4f6',
+  metalness: 0.2,
+  roughness: 0.45,
+} as const
+
+function RiderMesh() {
+  return (
+    <group position={[0, 0.72, 0.25]}>
+      <mesh position={[0, 0.3, 0]} castShadow>
+        <capsuleGeometry args={[0.13, 0.28, 8, 14]} />
+        <meshStandardMaterial color="#78350f" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.6, 0]} castShadow>
+        <boxGeometry args={[0.42, 0.42, 0.28]} />
+        <meshStandardMaterial {...matVest} />
+      </mesh>
+      <mesh position={[0, 0.98, -0.03]} castShadow>
+        <sphereGeometry args={[0.17, 18, 14]} />
+        <meshStandardMaterial color="#8d5524" roughness={0.85} />
+      </mesh>
+      <mesh position={[0, 1, -0.03]} castShadow>
+        <sphereGeometry args={[0.19, 18, 14]} />
+        <meshStandardMaterial {...matHelmet} />
+      </mesh>
+    </group>
+  )
+}
+
 function Wheel({ z }: { z: number }) {
   return (
     <group position={[0, 0, z]}>
@@ -90,7 +152,6 @@ function BodaBikeModel() {
       <Wheel z={-0.78} />
       <Wheel z={0.78} />
 
-      {/* Main spine / downtube */}
       <mesh
         position={[0, 0.22, -0.05]}
         rotation={[0.55, 0, 0]}
@@ -104,13 +165,11 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matBlack} />
       </mesh>
 
-      {/* Crash bar around engine */}
       <mesh position={[0, 0.12, 0.02]} rotation={[0, 0, Math.PI / 2]} castShadow>
         <torusGeometry args={[0.22, 0.022, 8, 20]} />
         <meshStandardMaterial {...matBlack} />
       </mesh>
 
-      {/* Engine block */}
       <mesh position={[0, 0.08, 0.06]} castShadow receiveShadow>
         <boxGeometry args={[0.38, 0.28, 0.36]} />
         <meshStandardMaterial {...matSilver} />
@@ -120,13 +179,11 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matSilver} />
       </mesh>
 
-      {/* Chain guard */}
       <mesh position={[-0.12, 0.04, 0.52]} rotation={[0, 0.08, 0]} castShadow>
         <boxGeometry args={[0.06, 0.06, 0.42]} />
         <meshStandardMaterial {...matSilver} metalness={0.75} roughness={0.4} />
       </mesh>
 
-      {/* Exhaust */}
       <mesh
         position={[-0.22, 0.1, 0.35]}
         rotation={[0, 0, Math.PI / 2.3]}
@@ -136,7 +193,6 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matSilver} />
       </mesh>
 
-      {/* Fuel tank */}
       <mesh position={[0, 0.48, -0.18]} castShadow receiveShadow>
         <sphereGeometry args={[0.26, 16, 12]} />
         <meshStandardMaterial {...matRed} />
@@ -146,7 +202,6 @@ function BodaBikeModel() {
         <meshStandardMaterial color="#f5f5f5" roughness={0.4} metalness={0.1} />
       </mesh>
 
-      {/* Side panel */}
       <mesh position={[0.22, 0.28, 0.08]} castShadow receiveShadow>
         <boxGeometry args={[0.04, 0.22, 0.38]} />
         <meshStandardMaterial {...matRed} />
@@ -156,7 +211,6 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matRed} />
       </mesh>
 
-      {/* Long bench seat + luggage rack */}
       <mesh position={[0, 0.52, 0.32]} castShadow receiveShadow>
         <boxGeometry args={[0.36, 0.1, 0.62]} />
         <meshStandardMaterial {...matBlack} />
@@ -178,7 +232,6 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matBlack} />
       </mesh>
 
-      {/* Rear shocks */}
       {[-0.13, 0.13].map((x) => (
         <group key={x} position={[x, 0.32, 0.48]}>
           <mesh castShadow>
@@ -192,19 +245,13 @@ function BodaBikeModel() {
         </group>
       ))}
 
-      {/* Front fork legs */}
       {[-0.1, 0.1].map((x) => (
-        <mesh
-          key={x}
-          position={[x, 0.28, -0.62]}
-          castShadow
-        >
+        <mesh key={x} position={[x, 0.28, -0.62]} castShadow>
           <cylinderGeometry args={[0.03, 0.028, 0.62, 8]} />
           <meshStandardMaterial {...matBlack} />
         </mesh>
       ))}
 
-      {/* Fork gaiters (slightly wider) */}
       {[-0.1, 0.1].map((x) => (
         <mesh key={`g-${x}`} position={[x, 0.08, -0.58]} castShadow>
           <cylinderGeometry args={[0.038, 0.034, 0.22, 8]} />
@@ -212,19 +259,16 @@ function BodaBikeModel() {
         </mesh>
       ))}
 
-      {/* Triple clamp / bars stem */}
       <mesh position={[0, 0.56, -0.48]} castShadow>
         <boxGeometry args={[0.24, 0.05, 0.08]} />
         <meshStandardMaterial {...matBlack} />
       </mesh>
 
-      {/* Handlebar */}
       <mesh position={[0, 0.58, -0.5]} rotation={[0, 0, Math.PI / 2]} castShadow>
         <cylinderGeometry args={[0.02, 0.02, 0.72, 8]} />
         <meshStandardMaterial {...matBlack} />
       </mesh>
 
-      {/* Fairing + headlight */}
       <mesh position={[0, 0.52, -0.78]} castShadow>
         <boxGeometry args={[0.32, 0.12, 0.1]} />
         <meshStandardMaterial {...matBlack} />
@@ -238,7 +282,6 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matRed} />
       </mesh>
 
-      {/* Front fender */}
       <mesh
         position={[0, 0.12, -0.82]}
         rotation={[0.35, 0, 0]}
@@ -248,7 +291,6 @@ function BodaBikeModel() {
         <meshStandardMaterial {...matRed} />
       </mesh>
 
-      {/* Turn signals (orange) */}
       {[-0.2, 0.2].map((x) => (
         <mesh key={`s-${x}`} position={[x, 0.46, -0.8]} castShadow>
           <sphereGeometry args={[0.035, 10, 10]} />
@@ -262,7 +304,6 @@ function BodaBikeModel() {
         </mesh>
       ))}
 
-      {/* Rear mudguard + tail */}
       <mesh
         position={[0, 0.22, 0.88]}
         rotation={[-0.4, 0, 0]}
@@ -279,18 +320,45 @@ function BodaBikeModel() {
   )
 }
 
-export const Boda = forwardRef<THREE.Group>(function Boda(_, ref) {
-  const group = useRef<THREE.Group>(null)
-  useImperativeHandle(ref, () => group.current!)
+type BodaProps = {
+  onSpeedKmhChange?: (speedKmh: number) => void
+  onOffroadChange?: (isOffroad: boolean) => void
+}
+
+export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
+  { onSpeedKmhChange, onOffroadChange },
+  ref,
+) {
+  const rb = useRef<RapierRigidBody | null>(null)
+  /** Latest forwarded ref without re-creating callbacks (RigidBody is memoized). */
+  const forwardRefLatest = useRef(ref)
+  forwardRefLatest.current = ref
+
+  const { world } = useRapier()
+
+  useEffect(
+    () => () => {
+      rb.current = null
+      assignForwardedRef(forwardRefLatest.current, null)
+    },
+    [],
+  )
 
   const keys = useKeyboard()
   const speed = useRef(0)
+  const yaw = useRef(0)
+  const lastReportedKmh = useRef(-1)
+  const [isOffroad, setIsOffroad] = useState(false)
+  const offroadRef = useRef(false)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
+  const quat = useMemo(() => new THREE.Quaternion(), [])
 
   useFrame((_, delta) => {
-    const g = group.current
-    if (!g) return
+    assignForwardedRef(forwardRefLatest.current, rb.current)
+
+    const body = rb.current
+    if (!body || world.getRigidBody(body.handle) == null) return
 
     const dt = Math.min(delta, 0.05)
 
@@ -306,7 +374,7 @@ export const Boda = forwardRef<THREE.Group>(function Boda(_, ref) {
         0.35,
         1,
       )
-      g.rotation.y += steer * TURN_SPEED * turnScale * dt
+      yaw.current += steer * TURN_SPEED * turnScale * dt
     }
 
     speed.current += throttle * ACCEL * dt
@@ -325,16 +393,62 @@ export const Boda = forwardRef<THREE.Group>(function Boda(_, ref) {
     speed.current = THREE.MathUtils.clamp(
       speed.current,
       -MAX_REVERSE,
-      MAX_FORWARD,
+      isOffroad ? MAX_FORWARD * OFFROAD_SPEED_FACTOR : MAX_FORWARD,
     )
 
-    forward.set(0, 0, -1).applyQuaternion(g.quaternion)
-    g.position.addScaledVector(forward, speed.current * dt)
+    quat.setFromAxisAngle(Y_AXIS, yaw.current)
+    body.setRotation(
+      { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+      true,
+    )
+
+    forward.set(0, 0, -1).applyQuaternion(quat)
+    body.setLinvel(
+      {
+        x: forward.x * speed.current,
+        y: 0,
+        z: forward.z * speed.current,
+      },
+      true,
+    )
+
+    const t = body.translation()
+    const nextOffroad = !isOnRoad(t.x, t.z)
+    if (nextOffroad !== offroadRef.current) {
+      offroadRef.current = nextOffroad
+      setIsOffroad(nextOffroad)
+      onOffroadChange?.(nextOffroad)
+    }
+
+    const kmh = Math.round(Math.abs(speed.current) * 3.6)
+    if (kmh !== lastReportedKmh.current) {
+      lastReportedKmh.current = kmh
+      onSpeedKmhChange?.(kmh)
+    }
   })
 
   return (
-    <group ref={group} position={[0, 0.32, 0]}>
-      <BodaBikeModel />
-    </group>
+    <RigidBody
+      ref={rb}
+      position={SPAWN}
+      colliders={false}
+      enabledRotations={[false, true, false]}
+      enabledTranslations={[true, false, true]}
+      linearDamping={0.35}
+      angularDamping={2.5}
+      mass={2.8}
+    >
+      <CuboidCollider args={[0.48, 0.36, 1.05]} position={[0, 0.35, 0]} />
+      <group>
+        <BodaBikeModel />
+        <RiderMesh />
+        {isOffroad ? (
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.95, 1.1, 24]} />
+            <meshBasicMaterial color="#f59e0b" transparent opacity={0.3} toneMapped={false} />
+          </mesh>
+        ) : null}
+      </group>
+    </RigidBody>
   )
 })
