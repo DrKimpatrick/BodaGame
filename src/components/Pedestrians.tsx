@@ -283,7 +283,16 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
   )
 }
 
-function SidewalkWalkerVertical({ slot }: { slot: SidewalkAlongVertical }) {
+/** Multiple walkers per sidewalk segment (staggered along + slight X spread). */
+const SIDEWALK_WALKERS_PER_SEGMENT = 3
+
+function SidewalkWalkerVertical({
+  slot,
+  pathIndex,
+}: {
+  slot: SidewalkAlongVertical
+  pathIndex: number
+}) {
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
@@ -294,9 +303,14 @@ function SidewalkWalkerVertical({ slot }: { slot: SidewalkAlongVertical }) {
     yaw: number
   } | null>(null)
   const legsFrozenRef = useRef(false)
-  const speed = 0.22 + segmentRandom(slot.vi, slot.j, 880) * 0.32
-  const phase = segmentRandom(slot.vi, slot.j, 881) * Math.PI * 2
-  const seed = slot.vi * 227 + slot.j * 53
+  const speed =
+    (0.2 + segmentRandom(slot.vi, slot.j, 880 + pathIndex) * 0.34) *
+    (1 + pathIndex * 0.04)
+  const phase =
+    segmentRandom(slot.vi, slot.j, 881 + pathIndex) * Math.PI * 2 +
+    pathIndex * 1.85
+  const xSpread = (pathIndex - (SIDEWALK_WALKERS_PER_SEGMENT - 1) / 2) * 0.36
+  const seed = slot.vi * 227 + slot.j * 53 + pathIndex * 59
 
   const onCollisionEnter = useMemo(
     () =>
@@ -332,7 +346,7 @@ function SidewalkWalkerVertical({ slot }: { slot: SidewalkAlongVertical }) {
     const z = slot.zMin + u * (slot.zMax - slot.zMin)
     const vz = Math.cos(t)
     const ry = vz >= 0 ? 0 : Math.PI
-    rb.setTranslation({ x: slot.x, y: 0.055, z }, true)
+    rb.setTranslation({ x: slot.x + xSpread, y: 0.055, z }, true)
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
     rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
@@ -352,14 +366,20 @@ function SidewalkWalkerVertical({ slot }: { slot: SidewalkAlongVertical }) {
       <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.64, 0]} />
       <SimpleWalker
         seed={seed}
-        scale={0.86 + segmentRandom(slot.vi, slot.j, 882) * 0.12}
+        scale={0.86 + segmentRandom(slot.vi, slot.j, 882 + pathIndex) * 0.12}
         legsFrozenRef={legsFrozenRef}
       />
     </RigidBody>
   )
 }
 
-function SidewalkWalkerHorizontal({ slot }: { slot: SidewalkAlongHorizontal }) {
+function SidewalkWalkerHorizontal({
+  slot,
+  pathIndex,
+}: {
+  slot: SidewalkAlongHorizontal
+  pathIndex: number
+}) {
   const rbRef = useRef<RapierRigidBody | null>(null)
   const knockedRef = useRef(false)
   const knockBlendRef = useRef(0)
@@ -370,9 +390,14 @@ function SidewalkWalkerHorizontal({ slot }: { slot: SidewalkAlongHorizontal }) {
     yaw: number
   } | null>(null)
   const legsFrozenRef = useRef(false)
-  const speed = 0.22 + segmentRandom(slot.i, slot.hj, 890) * 0.32
-  const phase = segmentRandom(slot.i, slot.hj, 891) * Math.PI * 2
-  const seed = slot.i * 199 + slot.hj * 61
+  const speed =
+    (0.2 + segmentRandom(slot.i, slot.hj, 890 + pathIndex) * 0.34) *
+    (1 + pathIndex * 0.04)
+  const phase =
+    segmentRandom(slot.i, slot.hj, 891 + pathIndex) * Math.PI * 2 +
+    pathIndex * 1.85
+  const zSpread = (pathIndex - (SIDEWALK_WALKERS_PER_SEGMENT - 1) / 2) * 0.36
+  const seed = slot.i * 199 + slot.hj * 61 + pathIndex * 59
 
   const onCollisionEnter = useMemo(
     () =>
@@ -408,7 +433,7 @@ function SidewalkWalkerHorizontal({ slot }: { slot: SidewalkAlongHorizontal }) {
     const x = slot.xMin + u * (slot.xMax - slot.xMin)
     const vx = Math.cos(t)
     const ry = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
-    rb.setTranslation({ x, y: 0.055, z: slot.z }, true)
+    rb.setTranslation({ x, y: 0.055, z: slot.z + zSpread }, true)
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
     rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
   })
@@ -428,7 +453,7 @@ function SidewalkWalkerHorizontal({ slot }: { slot: SidewalkAlongHorizontal }) {
       <CapsuleCollider args={[0.44, 0.2]} position={[0, 0.64, 0]} />
       <SimpleWalker
         seed={seed}
-        scale={0.86 + segmentRandom(slot.i, slot.hj, 892) * 0.12}
+        scale={0.86 + segmentRandom(slot.i, slot.hj, 892 + pathIndex) * 0.12}
         legsFrozenRef={legsFrozenRef}
       />
     </RigidBody>
@@ -459,10 +484,18 @@ export function Pedestrians() {
   const sidewalkNodes = useMemo(() => {
     const out: ReactNode[] = []
     for (const s of SIDEWALK_VERTICAL_SLOTS) {
-      out.push(<SidewalkWalkerVertical key={s.key} slot={s} />)
+      for (let w = 0; w < SIDEWALK_WALKERS_PER_SEGMENT; w++) {
+        out.push(
+          <SidewalkWalkerVertical key={`${s.key}-w${w}`} slot={s} pathIndex={w} />,
+        )
+      }
     }
     for (const s of SIDEWALK_HORIZONTAL_SLOTS) {
-      out.push(<SidewalkWalkerHorizontal key={s.key} slot={s} />)
+      for (let w = 0; w < SIDEWALK_WALKERS_PER_SEGMENT; w++) {
+        out.push(
+          <SidewalkWalkerHorizontal key={`${s.key}-w${w}`} slot={s} pathIndex={w} />,
+        )
+      }
     }
     return out
   }, [])

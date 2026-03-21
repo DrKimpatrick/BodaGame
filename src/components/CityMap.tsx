@@ -445,21 +445,248 @@ export function Tree({ x, z, scale = 1 }: TreeProps) {
   )
 }
 
+const parkedCarTireMat = new THREE.MeshStandardMaterial({
+  color: '#0c0c0c',
+  roughness: 0.92,
+  metalness: 0.02,
+  envMapIntensity: 0.35,
+})
+const parkedCarRimMat = new THREE.MeshStandardMaterial({
+  color: '#2a2a2a',
+  roughness: 0.4,
+  metalness: 0.55,
+  envMapIntensity: 0.75,
+})
+const parkedCarGlassMat = new THREE.MeshStandardMaterial({
+  color: '#1e293b',
+  roughness: 0.22,
+  metalness: 0.45,
+  envMapIntensity: 1.25,
+})
+const parkedCarGlassRearMat = new THREE.MeshStandardMaterial({
+  color: '#0c1929',
+  roughness: 0.28,
+  metalness: 0.5,
+  envMapIntensity: 1.05,
+})
+const parkedCarHandleMat = new THREE.MeshStandardMaterial({
+  color: '#475569',
+  roughness: 0.32,
+  metalness: 0.72,
+  envMapIntensity: 0.95,
+})
+
+const PARKED_PAINT = ['#94a3b8', '#cbd5e1', '#64748b', '#78716c', '#1e3a5f', '#334155'] as const
+
+function ParkedCarWheel({
+  x,
+  y,
+  z,
+  radius,
+  width,
+}: {
+  x: number
+  y: number
+  z: number
+  radius: number
+  width: number
+}) {
+  return (
+    <group position={[x, y, z]}>
+      <mesh rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow material={parkedCarTireMat}>
+        <cylinderGeometry args={[radius, radius, width, 16]} />
+      </mesh>
+      <mesh rotation={[0, 0, Math.PI / 2]} castShadow material={parkedCarRimMat}>
+        <cylinderGeometry args={[radius * 0.52, radius * 0.52, width + 0.028, 10]} />
+      </mesh>
+    </group>
+  )
+}
+
 function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: number }) {
+  const paint =
+    PARKED_PAINT[Math.floor(Math.abs(Math.sin(x * 14.2 + z * 91.7)) * PARKED_PAINT.length) % PARKED_PAINT.length]
+  const sill = '#475569'
+  const halfW = 0.44
+  const wy = 0.132
+  const wr = 0.128
+  const tw = 0.065
+  const fz = 0.5
+  const rz = -0.52
+
   return (
     <RigidBody type="fixed" colliders={false} position={[x, 0, z]} rotation={[0, rotationY, 0]}>
       <group>
-        <mesh position={[0, 0.32, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.9, 0.42, 1.7]} />
-          <meshStandardMaterial color="#d1d5db" roughness={0.42} />
+        {/* Lower sill / rocker */}
+        <mesh position={[0, 0.175, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.86, 0.14, 1.64]} />
+          <meshStandardMaterial
+            color={sill}
+            roughness={0.55}
+            metalness={0.22}
+            envMapIntensity={0.75}
+          />
         </mesh>
-        <mesh position={[0, 0.6, 0.1]} castShadow>
-          <boxGeometry args={[0.7, 0.24, 0.95]} />
-          <meshStandardMaterial color="#9ca3af" roughness={0.45} metalness={0.2} />
+        {/* Main body */}
+        <mesh position={[0, 0.34, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.88, 0.2, 1.68]} />
+          <meshStandardMaterial
+            color={paint}
+            roughness={0.42}
+            metalness={0.34}
+            envMapIntensity={1.02}
+          />
         </mesh>
+        {/* Cabin / roof block */}
+        <mesh position={[0, 0.545, 0.04]} castShadow receiveShadow>
+          <boxGeometry args={[0.74, 0.19, 0.88]} />
+          <meshStandardMaterial
+            color={paint}
+            roughness={0.4}
+            metalness={0.36}
+            envMapIntensity={1.05}
+          />
+        </mesh>
+        {/* Windshield */}
+        <mesh position={[0, 0.52, 0.52]} castShadow material={parkedCarGlassMat}>
+          <boxGeometry args={[0.7, 0.17, 0.055]} />
+        </mesh>
+        {/* Rear window */}
+        <mesh position={[0, 0.495, -0.58]} castShadow material={parkedCarGlassRearMat}>
+          <boxGeometry args={[0.68, 0.15, 0.048]} />
+        </mesh>
+        {/* Side glass — front / rear quarters (+B-pillars) */}
+        <mesh position={[halfW + 0.018, 0.515, 0.22]} castShadow material={parkedCarGlassMat}>
+          <boxGeometry args={[0.038, 0.13, 0.34]} />
+        </mesh>
+        <mesh position={[halfW + 0.018, 0.515, -0.26]} castShadow material={parkedCarGlassMat}>
+          <boxGeometry args={[0.038, 0.13, 0.36]} />
+        </mesh>
+        <mesh position={[-halfW - 0.018, 0.515, 0.22]} castShadow material={parkedCarGlassMat}>
+          <boxGeometry args={[0.038, 0.13, 0.34]} />
+        </mesh>
+        <mesh position={[-halfW - 0.018, 0.515, -0.26]} castShadow material={parkedCarGlassMat}>
+          <boxGeometry args={[0.038, 0.13, 0.36]} />
+        </mesh>
+        {/* B-pillars */}
+        <mesh position={[halfW + 0.012, 0.52, -0.02]} castShadow receiveShadow>
+          <boxGeometry args={[0.055, 0.175, 0.065]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.65} metalness={0.15} envMapIntensity={0.5} />
+        </mesh>
+        <mesh position={[-halfW - 0.012, 0.52, -0.02]} castShadow receiveShadow>
+          <boxGeometry args={[0.055, 0.175, 0.065]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.65} metalness={0.15} envMapIntensity={0.5} />
+        </mesh>
+        {/* Door cut-lines (seams) */}
+        <mesh position={[halfW + 0.015, 0.36, 0.12]} castShadow={false}>
+          <boxGeometry args={[0.024, 0.22, 0.04]} />
+          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
+        </mesh>
+        <mesh position={[halfW + 0.015, 0.36, -0.38]} castShadow={false}>
+          <boxGeometry args={[0.024, 0.22, 0.04]} />
+          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
+        </mesh>
+        <mesh position={[-halfW - 0.015, 0.36, 0.12]} castShadow={false}>
+          <boxGeometry args={[0.024, 0.22, 0.04]} />
+          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
+        </mesh>
+        <mesh position={[-halfW - 0.015, 0.36, -0.38]} castShadow={false}>
+          <boxGeometry args={[0.024, 0.22, 0.04]} />
+          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
+        </mesh>
+        {/* Door pulls */}
+        <mesh position={[halfW + 0.028, 0.385, 0.26]} castShadow material={parkedCarHandleMat}>
+          <boxGeometry args={[0.04, 0.035, 0.1]} />
+        </mesh>
+        <mesh position={[halfW + 0.028, 0.385, -0.24]} castShadow material={parkedCarHandleMat}>
+          <boxGeometry args={[0.04, 0.035, 0.1]} />
+        </mesh>
+        <mesh position={[-halfW - 0.028, 0.385, 0.26]} castShadow material={parkedCarHandleMat}>
+          <boxGeometry args={[0.04, 0.035, 0.1]} />
+        </mesh>
+        <mesh position={[-halfW - 0.028, 0.385, -0.24]} castShadow material={parkedCarHandleMat}>
+          <boxGeometry args={[0.04, 0.035, 0.1]} />
+        </mesh>
+        {/* Headlamps */}
+        <mesh position={[0.3, 0.355, 0.805]} castShadow={false}>
+          <boxGeometry args={[0.1, 0.065, 0.038]} />
+          <meshStandardMaterial
+            color="#fffef5"
+            emissive="#fff3c4"
+            emissiveIntensity={2.4}
+            toneMapped={false}
+          />
+        </mesh>
+        <mesh position={[-0.3, 0.355, 0.805]} castShadow={false}>
+          <boxGeometry args={[0.1, 0.065, 0.038]} />
+          <meshStandardMaterial
+            color="#fffef5"
+            emissive="#fff3c4"
+            emissiveIntensity={2.4}
+            toneMapped={false}
+          />
+        </mesh>
+        {/* Wheels */}
+        <ParkedCarWheel x={halfW - 0.02} y={wy} z={fz} radius={wr} width={tw} />
+        <ParkedCarWheel x={-halfW + 0.02} y={wy} z={fz} radius={wr} width={tw} />
+        <ParkedCarWheel x={halfW - 0.02} y={wy} z={rz} radius={wr} width={tw} />
+        <ParkedCarWheel x={-halfW + 0.02} y={wy} z={rz} radius={wr} width={tw} />
       </group>
       <CuboidCollider args={[0.46, 0.32, 0.86]} position={[0, 0.36, 0]} />
     </RigidBody>
+  )
+}
+
+const STAND_SHIRT = ['#c2410c', '#1d4ed8', '#047857', '#7c3aed', '#be185d', '#0f766e'] as const
+
+/** Static figure beside lots / buildings (no physics — decoration). */
+function StandingPerson({
+  x,
+  z,
+  rotationY,
+  si,
+  sj,
+  salt,
+}: {
+  x: number
+  z: number
+  rotationY: number
+  si: number
+  sj: number
+  salt: number
+}) {
+  const shirt = STAND_SHIRT[Math.floor(rnd(si, sj, salt) * STAND_SHIRT.length)]
+  const pants = rnd(si, sj, salt + 1) < 0.5 ? '#1e293b' : '#292524'
+  return (
+    <group position={[x, 0, z]} rotation={[0, rotationY, 0]}>
+      <mesh position={[0, 0.28, 0]} castShadow>
+        <cylinderGeometry args={[0.1, 0.11, 0.48, 8]} />
+        <meshStandardMaterial
+          color={pants}
+          roughness={0.84}
+          metalness={0.04}
+          envMapIntensity={0.55}
+        />
+      </mesh>
+      <mesh position={[0, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.24, 0.32, 0.14]} />
+        <meshStandardMaterial
+          color={shirt}
+          roughness={0.76}
+          metalness={0.05}
+          envMapIntensity={0.55}
+        />
+      </mesh>
+      <mesh position={[0, 0.9, 0]} castShadow>
+        <sphereGeometry args={[0.09, 8, 8]} />
+        <meshStandardMaterial
+          color="#c4a574"
+          roughness={0.72}
+          metalness={0.02}
+          envMapIntensity={0.5}
+        />
+      </mesh>
+    </group>
   )
 }
 
@@ -746,11 +973,12 @@ function CityMapContent() {
   const [sx, sz] = LANDMARK_STANBIC
   const [nx, nz] = LANDMARK_NSSF
 
-  const { retail, midrise, trees, parkingLots, parkedCars } = useMemo(() => {
+  const { retail, midrise, trees, parkingLots, parkedCars, parkingStanders } = useMemo(() => {
     const retailList: ReactNode[] = []
     const midList: ReactNode[] = []
     const lotList: ReactNode[] = []
     const carList: ReactNode[] = []
+    const standList: ReactNode[] = []
 
     for (let i = 0; i < NUM_BLOCKS; i++) {
       for (let j = 0; j < NUM_BLOCKS; j++) {
@@ -762,7 +990,7 @@ function CityMapContent() {
           const fw = 6 + rnd(i, j, 19) * 3
           const fd = 5 + rnd(i, j, 20) * 2
           if (footprintClearOfTarmac(bcx, bcz, fw / 2, fd / 2, 0)) {
-            const lotSlots = 2 + Math.floor(rnd(i, j, 301) * 2)
+            const lotSlots = 3 + Math.floor(rnd(i, j, 301) * 3)
             const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
             const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
             if (isValidBuildingPlot(lotX, lotZ, 2.2)) {
@@ -777,7 +1005,7 @@ function CityMapContent() {
                 />,
               )
               for (let c = 0; c < lotSlots; c++) {
-                if (rnd(i, j, 320 + c) < 0.15) continue
+                if (rnd(i, j, 320 + c) < 0.05) continue
                 const cx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
                 const cz = lotZ + (rnd(i, j, 330 + c) - 0.5) * 0.22
                 carList.push(
@@ -786,6 +1014,38 @@ function CityMapContent() {
                     x={cx}
                     z={cz}
                     rotationY={lotRot}
+                  />,
+                )
+              }
+              for (let c = 0; c < lotSlots; c++) {
+                if (rnd(i, j, 420 + c) < 0.12) continue
+                const cx1 = lotX - (lotSlots - 1) * 0.6 + c * 1.2
+                const cz1 = lotZ + (rnd(i, j, 430 + c) - 0.5) * 0.22
+                const cx2 = cx1 + Math.sin(lotRot) * 2.35
+                const cz2 = cz1 - Math.cos(lotRot) * 2.35
+                carList.push(
+                  <ParkedCar
+                    key={`pc-mid2-${i}-${j}-${c}`}
+                    x={cx2}
+                    z={cz2}
+                    rotationY={lotRot}
+                  />,
+                )
+              }
+              for (let s = 0; s < 4; s++) {
+                if (rnd(i, j, 440 + s) > 0.38) continue
+                const ang = lotRot + (rnd(i, j, 450 + s) - 0.5) * 0.5
+                const sx = lotX + Math.cos(ang) * (1.9 + s * 0.35)
+                const sz = lotZ + Math.sin(ang) * (1.9 + s * 0.35)
+                standList.push(
+                  <StandingPerson
+                    key={`st-mid-${i}-${j}-${s}`}
+                    x={sx}
+                    z={sz}
+                    rotationY={lotRot + Math.PI / 2}
+                    si={i + s * 3}
+                    sj={j + 20}
+                    salt={460 + s}
                   />,
                 )
               }
@@ -892,6 +1152,50 @@ function CityMapContent() {
               {retailFence}
             </group>,
           )
+          if (rnd(i, j, 715 + k) < 0.28) {
+            const slotsR = 2 + Math.floor(rnd(i, j, 716 + k) * 3)
+            const lotRX = x + Math.cos(rot) * (w * 0.5 + 2.6)
+            const lotRZ = z - Math.sin(rot) * (w * 0.5 + 2.6)
+            const lotRRot = rot + (rnd(i, j, 717 + k) < 0.5 ? 0 : Math.PI / 2)
+            if (isValidBuildingPlot(lotRX, lotRZ, 1.8)) {
+              lotList.push(
+                <ParkingLot
+                  key={`lot-ret-${i}-${j}-${k}`}
+                  x={lotRX}
+                  z={lotRZ}
+                  rotationY={lotRRot}
+                  slots={slotsR}
+                />,
+              )
+              for (let c = 0; c < slotsR; c++) {
+                if (rnd(i, j, 718 + c + k * 7) < 0.08) continue
+                const rcx = lotRX - (slotsR - 1) * 0.6 + c * 1.2
+                const rcz = lotRZ + (rnd(i, j, 719 + c + k * 7) - 0.5) * 0.2
+                carList.push(
+                  <ParkedCar
+                    key={`pc-ret-${i}-${j}-${k}-${c}`}
+                    x={rcx}
+                    z={rcz}
+                    rotationY={lotRRot}
+                  />,
+                )
+              }
+              for (let s = 0; s < 2; s++) {
+                if (rnd(i, j, 728 + s + k) > 0.35) continue
+                standList.push(
+                  <StandingPerson
+                    key={`st-ret-${i}-${j}-${k}-${s}`}
+                    x={lotRX + (rnd(i, j, 729 + s) - 0.5) * 2.2}
+                    z={lotRZ + (rnd(i, j, 730 + s) - 0.5) * 1.8}
+                    rotationY={lotRRot}
+                    si={i + k * 5}
+                    sj={j + s + 80}
+                    salt={735 + s + k}
+                  />,
+                )
+              }
+            }
+          }
         }
       }
     }
@@ -912,8 +1216,57 @@ function CityMapContent() {
       trees: treeNodes,
       parkingLots: lotList,
       parkedCars: carList,
+      parkingStanders: standList,
     }
   }, [midriseMat, mallFacadeMats, pitchedRoofMat])
+
+  const concreteLotDecor = useMemo(() => {
+    const nodes: ReactNode[] = []
+    concreteLots.forEach((lot, idx) => {
+      const hw = lot.w * 0.88 * 0.5
+      const hd = lot.d * 0.88 * 0.5
+      const cols = Math.min(5, Math.max(2, Math.floor(hw / 1.15)))
+      const rows = Math.min(4, Math.max(2, Math.floor(hd / 2.05)))
+      let carN = 0
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (rnd(idx, r * 31 + c, 9600) > 0.48) continue
+          const lx = ((c + 0.5) / cols - 0.5) * 2 * hw * 0.92
+          const lz = ((r + 0.5) / rows - 0.5) * 2 * hd * 0.92
+          const px = lot.cx + lx
+          const pz = lot.cz + lz
+          if (!isValidBuildingPlot(px, pz, 1.0)) continue
+          nodes.push(
+            <ParkedCar
+              key={`pc-conc-${idx}-${carN}`}
+              x={px}
+              z={pz}
+              rotationY={rnd(idx, carN, 9610) * Math.PI * 2}
+            />,
+          )
+          carN++
+        }
+      }
+      for (let s = 0; s < 6; s++) {
+        if (rnd(idx, s, 9700) > 0.44) continue
+        const px = lot.cx + (rnd(idx, s, 9710) - 0.5) * hw * 1.75
+        const pz = lot.cz + (rnd(idx, s, 9720) - 0.5) * hd * 1.75
+        if (!isValidBuildingPlot(px, pz, 0.45)) continue
+        nodes.push(
+          <StandingPerson
+            key={`st-conc-${idx}-${s}`}
+            x={px}
+            z={pz}
+            rotationY={rnd(idx, s, 9730) * Math.PI * 2}
+            si={idx + s * 11}
+            sj={s + 200}
+            salt={9740 + s}
+          />,
+        )
+      }
+    })
+    return nodes
+  }, [concreteLots])
 
   return (
     <group>
@@ -1083,6 +1436,8 @@ function CityMapContent() {
       {trees}
       {parkingLots}
       {parkedCars}
+      {parkingStanders}
+      {concreteLotDecor}
     </group>
   )
 }
