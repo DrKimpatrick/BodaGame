@@ -1,10 +1,69 @@
 import { Cloud, Clouds, Sky, calcPosFromAngles } from '@react-three/drei'
-import { useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 
 /** Slightly hazy equatorial afternoon — clear horizon, readable cumulus. */
 const INCLINATION = 0.52
 const AZIMUTH = 0.42
+
+type BirdDatum = {
+  r: number
+  a0: number
+  y: number
+  spd: number
+  flap: number
+}
+
+function SkyBirds({ count = 32 }: { count?: number }) {
+  const root = useRef<THREE.Group>(null)
+  const data = useMemo<BirdDatum[]>(() => {
+    const out: BirdDatum[] = []
+    for (let i = 0; i < count; i++) {
+      const ring = Math.floor(i / 8)
+      const t = Math.sin(i * 12.9898 + 78.233) * 43758.5453123
+      const r01 = t - Math.floor(t)
+      out.push({
+        r: 580 + ring * 70 + r01 * 40,
+        a0: (i / count) * Math.PI * 2 + r01 * 2.1,
+        y: 88 + (i % 6) * 16 + ring * 10,
+        spd: 0.35 + (i % 4) * 0.12,
+        flap: i * 0.73,
+      })
+    }
+    return out
+  }, [count])
+
+  useFrame(({ clock }) => {
+    const g = root.current
+    if (!g) return
+    const t = clock.elapsedTime
+    g.children.forEach((bird, i) => {
+      const d = data[i]!
+      const a = d.a0 + t * d.spd * 0.07
+      const flap = Math.sin(t * 6 + d.flap) * 1.1
+      bird.position.set(Math.cos(a) * d.r, d.y + flap, Math.sin(a) * d.r)
+      bird.rotation.y = -a + Math.PI / 2
+    })
+  })
+
+  return (
+    <group ref={root}>
+      {data.map((_, i) => (
+        <group key={i}>
+          <mesh position={[0.14, 0, 0]} rotation={[0, 0, -0.5]}>
+            <boxGeometry args={[0.52, 0.07, 0.18]} />
+            <meshBasicMaterial color="#0f172a" toneMapped={false} />
+          </mesh>
+          <mesh position={[-0.14, 0, 0]} rotation={[0, 0, 0.5]}>
+            <boxGeometry args={[0.52, 0.07, 0.18]} />
+            <meshBasicMaterial color="#0f172a" toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
+}
 
 export function HorizonSky() {
   const sunPosition = useMemo(
@@ -17,13 +76,13 @@ export function HorizonSky() {
       <Sky
         distance={85000}
         sunPosition={sunPosition}
-        inclination={INCLINATION}
-        azimuth={AZIMUTH}
         mieCoefficient={0.0028}
         mieDirectionalG={0.88}
         rayleigh={1.35}
         turbidity={3.2}
       />
+
+      <SkyBirds count={36} />
 
       <group position={[0, 480, 0]}>
         <Clouds

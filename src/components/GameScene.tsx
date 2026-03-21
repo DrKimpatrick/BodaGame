@@ -1,9 +1,11 @@
 import type { RapierRigidBody } from '@react-three/rapier'
 import { Physics } from '@react-three/rapier'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import * as THREE from 'three'
 import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
+import { getSunDirection, HorizonSky } from './HorizonSky'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
 
 export function GameScene() {
@@ -11,16 +13,22 @@ export function GameScene() {
   const setSpeedKmh = useGameStore((s) => s.setSpeedKmh)
   const [offroad, setOffroad] = useState(false)
 
+  const sunLightPosition = useMemo(() => {
+    return getSunDirection(new THREE.Vector3()).multiplyScalar(168)
+  }, [])
+
   return (
     <>
-      <color attach="background" args={['#0f1014']} />
-      <fog attach="fog" args={['#0f1014', 45, 240]} />
+      <HorizonSky />
 
-      <ambientLight intensity={0.35} />
+      <color attach="background" args={['#6d8699']} />
+      <fog attach="fog" args={['#8aa9bf', 50, 280]} />
+
+      <ambientLight intensity={0.42} />
       <directionalLight
         castShadow
-        intensity={1.15}
-        position={[18, 28, 12]}
+        intensity={1.12}
+        position={sunLightPosition}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-near={0.5}
         shadow-camera-far={120}
