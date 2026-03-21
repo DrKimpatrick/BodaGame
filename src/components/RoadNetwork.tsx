@@ -10,6 +10,11 @@ import {
   roadStripCenterX,
   roadStripCenterZ,
 } from '@game/cityGrid'
+import {
+  segmentRandom,
+  ZEBRA_HORIZONTAL_SITES,
+  ZEBRA_VERTICAL_SITES,
+} from '@game/roadDecorPlacements'
 import { SIDEWALK_WIDTH } from '@game/roadSpatial'
 
 const Z0 = CITY_START
@@ -203,11 +208,6 @@ function ZebraAcrossHorizontalRoad({ x, cz }: { x: number; cz: number }) {
     )
   }
   return <group>{bars}</group>
-}
-
-function segmentRandom(a: number, b: number, salt: number) {
-  const t = Math.sin(a * 12.9898 + b * 78.233 + salt * 43.758) * 43758.5453123
-  return t - Math.floor(t)
 }
 
 function VerticalRoadStrip({
@@ -409,24 +409,13 @@ export function RoadNetwork() {
     [tarmacMat, wornMat],
   )
 
-  /** Mid-block only: halfway between junctions, never on intersection centres. */
   const zebraCrossings = useMemo(() => {
     const out: ReactElement[] = []
-    for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
-      const cx = roadStripCenterX(vi)
-      for (let j = 0; j < NUM_BLOCKS; j++) {
-        if (segmentRandom(vi, j, 505) > 0.28) continue
-        const z = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
-        out.push(<ZebraAcrossVerticalRoad key={`zv-${vi}-${j}`} cx={cx} z={z} />)
-      }
+    for (const s of ZEBRA_VERTICAL_SITES) {
+      out.push(<ZebraAcrossVerticalRoad key={s.key} cx={s.cx} z={s.z} />)
     }
-    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
-      const cz = roadStripCenterZ(hj)
-      for (let i = 0; i < NUM_BLOCKS; i++) {
-        if (segmentRandom(i, hj, 606) > 0.28) continue
-        const x = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
-        out.push(<ZebraAcrossHorizontalRoad key={`zh-${i}-${hj}`} x={x} cz={cz} />)
-      }
+    for (const s of ZEBRA_HORIZONTAL_SITES) {
+      out.push(<ZebraAcrossHorizontalRoad key={s.key} x={s.x} cz={s.cz} />)
     }
     return out
   }, [])

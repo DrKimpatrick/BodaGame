@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
+import { Pedestrians } from './Pedestrians'
 import { getSunDirection, HorizonSky } from './HorizonSky'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
 
@@ -47,6 +48,7 @@ export function GameScene() {
         />
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
+      <Pedestrians />
     </>
   )
 }
