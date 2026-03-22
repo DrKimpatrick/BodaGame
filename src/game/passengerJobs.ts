@@ -25,6 +25,84 @@ export type RideJob = {
   payoutUgx: number
 }
 
+/** Which axis the on-ground job route fixes first (L-shape elbow). */
+export type RideManhattanOrder = 'xFirst' | 'zFirst'
+
+/** Treat one axis as “done” so the path collapses to a straight segment. */
+export const RIDE_ROUTE_AXIS_EPS = 0.38
+
+const ORDER_SWITCH_MARGIN = 0.14
+
+/** Unit XZ directions along the first leg for each ordering (null = that leg has zero length). */
+export function manhattanFirstLegDirs(
+  bx: number,
+  bz: number,
+  tx: number,
+  tz: number,
+): { xFirst: { x: number; z: number } | null; zFirst: { x: number; z: number } | null } {
+  const dx = tx - bx
+  const dz = tz - bz
+  const ax = Math.abs(dx)
+  const az = Math.abs(dz)
+  let xFirst: { x: number; z: number } | null = null
+  let zFirst: { x: number; z: number } | null = null
+  if (ax >= RIDE_ROUTE_AXIS_EPS) {
+    xFirst = { x: dx / ax, z: 0 }
+  }
+  if (az >= RIDE_ROUTE_AXIS_EPS) {
+    zFirst = { x: 0, z: dz / az }
+  }
+  return { xFirst, zFirst }
+}
+
+/**
+ * Pick L-shape leg order from bike **facing** (unit XZ). Sticky with margin so the route
+ * does not flicker when you are diagonal; switches when the other leg clearly matches better (“re-route”).
+ */
+export function stickyPickManhattanOrder(
+  bx: number,
+  bz: number,
+  tx: number,
+  tz: number,
+  headingX: number,
+  headingZ: number,
+  current: RideManhattanOrder,
+): RideManhattanOrder {
+  const { xFirst, zFirst } = manhattanFirstLegDirs(bx, bz, tx, tz)
+  if (!xFirst && !zFirst) return current
+  if (!xFirst) return 'zFirst'
+  if (!zFirst) return 'xFirst'
+
+  const dotX = xFirst.x * headingX + xFirst.z * headingZ
+  const dotZ = zFirst.x * headingX + zFirst.z * headingZ
+
+  if (current === 'xFirst') {
+    if (dotZ > dotX + ORDER_SWITCH_MARGIN) return 'zFirst'
+    return 'xFirst'
+  }
+  if (dotX > dotZ + ORDER_SWITCH_MARGIN) return 'xFirst'
+  return 'zFirst'
+}
+
+/** Corner UV point for minimap / path (matches {@link manhattanRoutePoints}). */
+export function manhattanElbow(
+  bx: number,
+  bz: number,
+  tx: number,
+  tz: number,
+  order: RideManhattanOrder,
+): { x: number; z: number } {
+  const dx = tx - bx
+  const dz = tz - bz
+  const ax = Math.abs(dx)
+  const az = Math.abs(dz)
+  if (ax < RIDE_ROUTE_AXIS_EPS && az < RIDE_ROUTE_AXIS_EPS) return { x: tx, z: tz }
+  if (ax < RIDE_ROUTE_AXIS_EPS) return { x: tx, z: tz }
+  if (az < RIDE_ROUTE_AXIS_EPS) return { x: tx, z: tz }
+  if (order === 'xFirst') return { x: tx, z: bz }
+  return { x: bx, z: tz }
+}
+
 const STOP_NAMES = [
   'Junction A',
   'Junction B',
@@ -147,17 +225,52 @@ export const CITY_XZ_BOUNDS = {
   span: CITY_TOTAL,
 } as const
 
-/** L-shaped route on XZ plane: (bx,bz) → (tx,bz) → (tx,tz). */
+/**
+ * L-shaped route on XZ from bike to target. Order picks which axis is cleared first
+ * (see {@link stickyPickManhattanOrder}); collapses to a straight segment when one delta is tiny.
+ */
 export function manhattanRoutePoints(
   bx: number,
   bz: number,
   tx: number,
   tz: number,
   y: number,
+  order: RideManhattanOrder,
 ): [number, number, number][] {
+  const dx = tx - bx
+  const dz = tz - bz
+  const ax = Math.abs(dx)
+  const az = Math.abs(dz)
+
+  if (ax < RIDE_ROUTE_AXIS_EPS && az < RIDE_ROUTE_AXIS_EPS) {
+    return [
+      [bx, y, bz],
+      [tx, y, tz],
+    ]
+  }
+  if (ax < RIDE_ROUTE_AXIS_EPS) {
+    return [
+      [bx, y, bz],
+      [tx, y, tz],
+    ]
+  }
+  if (az < RIDE_ROUTE_AXIS_EPS) {
+    return [
+      [bx, y, bz],
+      [tx, y, tz],
+    ]
+  }
+
+  if (order === 'xFirst') {
+    return [
+      [bx, y, bz],
+      [tx, y, bz],
+      [tx, y, tz],
+    ]
+  }
   return [
     [bx, y, bz],
-    [tx, y, bz],
+    [bx, y, tz],
     [tx, y, tz],
   ]
 }

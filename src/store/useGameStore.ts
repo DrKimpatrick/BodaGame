@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { playBloodImpactFeedback } from '../audio/bloodImpactFeedback'
-import { generateRideJob, type RideJob } from '../game/passengerJobs'
+import {
+  generateRideJob,
+  type RideJob,
+  type RideManhattanOrder,
+} from '../game/passengerJobs'
 
 /** Ignore bike↔ped / bike↔car collision penalties until this `performance.now()` (spawn overlap). */
 export const COLLISION_GRACE_MS = 2200
@@ -227,6 +231,10 @@ export type GameState = {
   /** Passenger job (pick up → drop off → pay). */
   rideJob: RideJob | null
   rideJobSerial: number
+  /**
+   * Current L-route elbow axis (synced from {@link JobRouteGuide}) so HUD minimap matches the 3D line.
+   */
+  rideJobRouteOrder: RideManhattanOrder
   /** Throttled bike XZ for HUD minimap / navigation. */
   bikeMapX: number
   bikeMapZ: number
@@ -290,6 +298,7 @@ const initialSession = (): Pick<
   | 'bloodImpactKind'
   | 'rideJob'
   | 'rideJobSerial'
+  | 'rideJobRouteOrder'
   | 'bikeMapX'
   | 'bikeMapZ'
   | 'ridePickupToastNonce'
@@ -310,6 +319,7 @@ const initialSession = (): Pick<
   bloodImpactKind: null,
   rideJob: null,
   rideJobSerial: 0,
+  rideJobRouteOrder: 'xFirst',
   bikeMapX: 0,
   bikeMapZ: 0,
   ridePickupToastNonce: 0,
@@ -412,6 +422,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       rideJob: generateRideJob(serial),
       rideJobSerial: serial,
+      rideJobRouteOrder: 'xFirst',
     })
   },
   completeRidePickup: () => {
@@ -421,6 +432,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       rideJob: { ...j, phase: 'carrying' },
       ridePickupToastNonce: s.ridePickupToastNonce + 1,
       ridePickupToastDestination: j.dropoff.name,
+      rideJobRouteOrder: 'xFirst',
     }))
   },
   completeRideDropoff: () => {

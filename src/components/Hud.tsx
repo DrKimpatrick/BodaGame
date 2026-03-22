@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
-import { CITY_XZ_BOUNDS } from '../game/passengerJobs'
+import { CITY_XZ_BOUNDS, manhattanElbow } from '../game/passengerJobs'
 import {
   approxMetersForFuelPoints,
   CONDITION_BROKEN_AT,
@@ -91,7 +91,7 @@ function RideNextPassengerToast() {
           Fare up to <span className="text-white">{payout.toLocaleString()} UGX</span>
         </p>
         <p className="mt-2 text-xs font-bold uppercase tracking-wider text-sky-200/85">
-          Follow the dashed yellow line on the road
+          Follow the solid red line on the road
         </p>
       </div>
     </div>
@@ -133,7 +133,7 @@ function RidePickupToast() {
           <span className="font-black text-amber-200">{dropName}</span>.
         </p>
         <p className="mt-2 text-xs font-bold uppercase tracking-wider text-emerald-200/90">
-          Follow the solid yellow line on the road
+          Follow the solid blue line on the road
         </p>
       </div>
     </div>
@@ -145,14 +145,20 @@ function RideJobHud() {
   const job = useGameStore((s) => s.rideJob)
   const bx = useGameStore((s) => s.bikeMapX)
   const bz = useGameStore((s) => s.bikeMapZ)
+  const routeOrder = useGameStore((s) => s.rideJobRouteOrder)
   if (!job) return null
 
   const target = job.phase === 'pickup' ? job.pickup : job.dropoff
   const dist = Math.hypot(bx - target.x, bz - target.z)
   const buv = worldToMinimapUv(bx, bz)
   const tuv = worldToMinimapUv(target.x, target.z)
-  const elbow = worldToMinimapUv(target.x, bz)
-  const pathD = `M ${buv.u},${buv.v} L ${elbow.u},${elbow.v} L ${tuv.u},${tuv.v}`
+  const elbowW = manhattanElbow(bx, bz, target.x, target.z, routeOrder)
+  const euv = worldToMinimapUv(elbowW.x, elbowW.z)
+  const pathIsDirect =
+    Math.abs(elbowW.x - target.x) < 0.06 && Math.abs(elbowW.z - target.z) < 0.06
+  const pathD = pathIsDirect
+    ? `M ${buv.u},${buv.v} L ${tuv.u},${tuv.v}`
+    : `M ${buv.u},${buv.v} L ${euv.u},${euv.v} L ${tuv.u},${tuv.v}`
   const bearingDeg = (Math.atan2(target.x - bx, target.z - bz) * 180) / Math.PI
 
   return (
@@ -189,11 +195,14 @@ function RideJobHud() {
               <path
                 d={pathD}
                 fill="none"
-                className="stroke-yellow-300/90"
-                strokeWidth="2.2"
+                className={
+                  job.phase === 'pickup'
+                    ? 'stroke-red-500'
+                    : 'stroke-blue-500'
+                }
+                strokeWidth="3.35"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeDasharray={job.phase === 'pickup' ? '5.5 4' : undefined}
               />
               <g transform={`translate(${tuv.u} ${tuv.v})`}>
                 <path
