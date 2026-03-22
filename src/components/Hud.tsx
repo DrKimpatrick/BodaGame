@@ -53,6 +53,51 @@ function worldToMinimapUv(x: number, z: number): { u: number; v: number } {
   return { u, v: 100 - v }
 }
 
+/** After a successful drop-off — introduces the next pickup + fare. */
+function RideNextPassengerToast() {
+  const nonce = useGameStore((s) => s.rideNextPassengerToastNonce)
+  const pickupName = useGameStore((s) => s.rideNextPassengerPickupName)
+  const payout = useGameStore((s) => s.rideNextPassengerPayoutUgx)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (nonce < 1) return
+    setVisible(true)
+    const t = window.setTimeout(() => setVisible(false), 6000)
+    return () => window.clearTimeout(t)
+  }, [nonce])
+
+  if (!visible || nonce < 1 || !pickupName) return null
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="max-w-[min(100%,420px)] rounded-2xl border-2 border-sky-400/75 border-b-[5px] border-b-sky-950 bg-linear-to-b from-sky-500/95 via-indigo-900/92 to-zinc-950 px-4 py-4 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)] ring-2 ring-sky-200/45 backdrop-blur-md">
+        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border-2 border-sky-200/90 bg-sky-950/50 text-2xl shadow-inner">
+          👋
+        </div>
+        <p className="text-base font-black uppercase leading-tight tracking-wide text-white drop-shadow-md">
+          Next passenger
+        </p>
+        <p className="mt-2 text-sm font-semibold leading-snug text-sky-50/95">
+          Pick up at <span className="font-black text-amber-200">{pickupName}</span> — they’ll have a{' '}
+          <span className="font-black text-red-200">red</span> &{' '}
+          <span className="font-black text-sky-200">blue</span> coat, bag, and wave you down.
+        </p>
+        <p className="mt-2 font-mono text-sm font-black text-emerald-200">
+          Fare up to <span className="text-white">{payout.toLocaleString()} UGX</span>
+        </p>
+        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-sky-200/85">
+          Follow the dashed yellow line on the road
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /** Full-screen friendly banner when pickup completes (nonce from store). */
 function RidePickupToast() {
   const nonce = useGameStore((s) => s.ridePickupToastNonce)
@@ -150,13 +195,28 @@ function RideJobHud() {
                 strokeLinejoin="round"
                 strokeDasharray={job.phase === 'pickup' ? '5.5 4' : undefined}
               />
-              <circle
-                cx={tuv.u}
-                cy={tuv.v}
-                r="3.2"
-                className="fill-emerald-400/95 stroke-emerald-950"
-                strokeWidth="0.8"
-              />
+              <g transform={`translate(${tuv.u} ${tuv.v})`}>
+                <path
+                  d="M0 -6.2C3.5 -6.2 6 -3.4 6 0.2c0 2.9-6 9.2-6 9.2S-6 3.1-6 0.2c0-3.6 2.5-6.2 6-6.2z"
+                  className={
+                    job.phase === 'pickup'
+                      ? 'fill-rose-500 stroke-rose-950'
+                      : 'fill-teal-500 stroke-teal-950'
+                  }
+                  strokeWidth="0.7"
+                />
+                <circle
+                  cx="0"
+                  cy="-2.8"
+                  r="2.15"
+                  className={
+                    job.phase === 'pickup'
+                      ? 'fill-rose-100 stroke-rose-300/80'
+                      : 'fill-teal-100 stroke-teal-300/80'
+                  }
+                  strokeWidth="0.35"
+                />
+              </g>
               <circle
                 cx={buv.u}
                 cy={buv.v}
@@ -206,7 +266,7 @@ function RideJobHud() {
           </div>
         </div>
         <p className="mt-1.5 text-center text-[8px] font-bold uppercase tracking-wide text-zinc-500">
-          Look for the red & blue coat + gold ring · Slow to pick up / drop off · Dashed line = to
+          Look for red & blue coat, bag, wave + gold ring · Slow to pick up / drop off · Dashed = to
           passenger, solid = to drop-off
         </p>
       </div>
@@ -992,6 +1052,7 @@ export function Hud() {
       <ConditionRideOverlays level={conditionAlert} />
       <BloodImpactOverlay />
       <RidePickupToast />
+      <RideNextPassengerToast />
       <RideJobHud />
       <div
         className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"

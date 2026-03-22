@@ -237,6 +237,10 @@ export type GameState = {
   /** Bumped when pickup completes — HUD shows “you reached your passenger”. */
   ridePickupToastNonce: number
   ridePickupToastDestination: string
+  /** Bumped after drop-off when the next job is assigned. */
+  rideNextPassengerToastNonce: number
+  rideNextPassengerPickupName: string
+  rideNextPassengerPayoutUgx: number
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -290,6 +294,9 @@ const initialSession = (): Pick<
   | 'bikeMapZ'
   | 'ridePickupToastNonce'
   | 'ridePickupToastDestination'
+  | 'rideNextPassengerToastNonce'
+  | 'rideNextPassengerPickupName'
+  | 'rideNextPassengerPayoutUgx'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -307,6 +314,9 @@ const initialSession = (): Pick<
   bikeMapZ: 0,
   ridePickupToastNonce: 0,
   ridePickupToastDestination: '',
+  rideNextPassengerToastNonce: 0,
+  rideNextPassengerPickupName: '',
+  rideNextPassengerPayoutUgx: 0,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -419,6 +429,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const label = `Fare — ${j.dropoff.name}`
     get().earnUgx(j.payoutUgx, label)
     get().assignRideJob()
+    const next = get().rideJob
+    if (next) {
+      set((s) => ({
+        rideNextPassengerToastNonce: s.rideNextPassengerToastNonce + 1,
+        rideNextPassengerPickupName: next.pickup.name,
+        rideNextPassengerPayoutUgx: next.payoutUgx,
+      }))
+    }
   },
 }))
 

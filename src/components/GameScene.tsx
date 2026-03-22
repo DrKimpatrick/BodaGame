@@ -11,6 +11,7 @@ import { RoadTraffic } from './RoadTraffic'
 import { getSunDirection, HorizonSky } from './HorizonSky'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
 import { JobRouteGuide } from './JobRouteGuide'
+import { JobTargetPin } from './JobTargetPin'
 import { JobWaitingPassenger } from './JobWaitingPassenger'
 
 export function GameScene() {
@@ -57,6 +58,7 @@ export function GameScene() {
         <Pedestrians />
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
+      <JobTargetPin />
       <JobWaitingPassenger />
     </>
   )

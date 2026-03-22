@@ -27,3 +27,9 @@ export const jobPassengerPantsMat = new THREE.MeshStandardMaterial({
   roughness: 0.84,
   metalness: 0.03,
 })
+
+export const jobPassengerBagMat = new THREE.MeshStandardMaterial({
+  color: '#78350f',
+  roughness: 0.9,
+  metalness: 0.02,
+})
