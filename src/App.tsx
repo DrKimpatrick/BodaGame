@@ -19,6 +19,7 @@ import {
   evaluateFinancialGameOver,
   isBikeBrokenDown,
   isProgressPristine,
+  isTankEmpty,
   useGameStore,
   type FinancialGameOverResult,
 } from './store/useGameStore'
@@ -67,9 +68,11 @@ function ThawInvalidate({ frozen }: { frozen: boolean }) {
 
 function GameCanvas({ onWebglReady }: { onWebglReady?: () => void }) {
   const condition = useGameStore((s) => s.condition)
+  const fuel = useGameStore((s) => s.fuel)
   const hudModalFreezesWorld = useGameStore((s) => s.hudModalFreezesWorld)
+  const tankEmpty = isTankEmpty(fuel)
   const freezeWorld =
-    isBikeBrokenDown(condition) || hudModalFreezesWorld
+    isBikeBrokenDown(condition) || hudModalFreezesWorld || tankEmpty
 
   return (
     <Canvas

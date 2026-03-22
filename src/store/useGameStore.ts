@@ -104,6 +104,11 @@ export function normalizeTankFuel(fuel: number): number {
   return Math.round(v * 10_000) / 10_000
 }
 
+/** True when the tank has no usable fuel (ride / score gain use this threshold). */
+export function isTankEmpty(fuel: number): boolean {
+  return normalizeTankFuel(fuel) <= 1e-4
+}
+
 export function normalizeCondition(c: number): number {
   const v = Math.max(0, Math.min(CONDITION_MAX, c))
   return Math.round(v * 10_000) / 10_000
@@ -364,6 +369,8 @@ export type GameState = {
    */
   hudModalFreezesWorld: boolean
   setHudModalFreezesWorld: (freeze: boolean) => void
+  /** Incremented on {@link resetSession} so HUD can close local modals. */
+  hudDismissModalsNonce: number
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -451,6 +458,7 @@ const initialSession = (): Pick<
   | 'rideScore'
   | 'rideScorePopups'
   | 'hudModalFreezesWorld'
+  | 'hudDismissModalsNonce'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -490,6 +498,7 @@ const initialSession = (): Pick<
   rideScore: 0,
   rideScorePopups: [],
   hudModalFreezesWorld: false,
+  hudDismissModalsNonce: 0,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -500,9 +509,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     } catch {
       /* */
     }
+    const nonce = get().hudDismissModalsNonce + 1
     set({
       ...initialSession(),
       collisionPenaltiesAfterMs: nextCollisionPenaltyDeadline(),
+      hudDismissModalsNonce: nonce,
     })
     get().assignRideJob()
   },

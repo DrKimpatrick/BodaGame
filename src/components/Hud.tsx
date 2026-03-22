@@ -20,9 +20,11 @@ import {
   CONDITION_MAX,
   CONDITION_TERRIBLE_AT,
   CONDITION_WARN_AT,
+  evaluateFinancialGameOver,
   formatDistanceShort,
   FUEL_MAX,
   isBikeBrokenDown,
+  isTankEmpty,
   maxUgxToFillRemaining,
   maxUgxToRepairRemaining,
   normalizeCondition,
@@ -1263,6 +1265,7 @@ export function Hud() {
   const ledger = useGameStore((s) => s.ledger)
   const buyFuel = useGameStore((s) => s.buyFuel)
   const buyRepair = useGameStore((s) => s.buyRepair)
+  const hudDismissModalsNonce = useGameStore((s) => s.hudDismissModalsNonce)
 
   const [refuelOpen, setRefuelOpen] = useState(false)
   /** Whole tank points to buy (slider + Pay). Starts at max when you open Refuel. */
@@ -1301,7 +1304,10 @@ export function Hud() {
     setRefuelOpen(true)
   }, [maxUgxTank, repairMandatory])
 
+  const fuelEmptyMandatory = isTankEmpty(fuel)
+
   const closeRefuel = useCallback(() => {
+    if (isTankEmpty(useGameStore.getState().fuel)) return
     setRefuelOpen(false)
     if (isBikeBrokenDown(useGameStore.getState().condition)) setRepairOpen(true)
   }, [])
@@ -1328,9 +1334,25 @@ export function Hud() {
     if (repairMandatory) setRepairOpen(true)
   }, [repairMandatory])
 
+  /** Empty tank: pause is handled in Canvas/Physics; open refuel when player can afford fuel. */
+  useEffect(() => {
+    if (!isTankEmpty(fuel)) return
+    if (repairMandatory) return
+    const st = useGameStore.getState()
+    if (evaluateFinancialGameOver(st).over) return
+    if (money < UGX_PER_FUEL_UNIT) return
+    setRefuelOpen(true)
+  }, [fuel, repairMandatory, money])
+
   useEffect(() => {
     useGameStore.getState().setHudModalFreezesWorld(refuelOpen || repairOpen)
   }, [refuelOpen, repairOpen])
+
+  useEffect(() => {
+    if (hudDismissModalsNonce < 1) return
+    setRefuelOpen(false)
+    setRepairOpen(false)
+  }, [hudDismissModalsNonce])
 
   useEffect(() => {
     return () => {
@@ -1503,7 +1525,7 @@ export function Hud() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       if (refuelOpen) {
-        closeRefuel()
+        if (!isTankEmpty(useGameStore.getState().fuel)) closeRefuel()
         return
       }
       if (repairOpen && repairMandatory) return
@@ -1690,9 +1712,9 @@ export function Hud() {
         <>
           <button
             type="button"
-            aria-label="Close refuel"
+            aria-label={fuelEmptyMandatory ? 'Tank empty — refuel required' : 'Close refuel'}
             className="pointer-events-auto fixed inset-0 z-[300] bg-black/60 backdrop-blur-[2px]"
-            onClick={closeRefuel}
+            onClick={fuelEmptyMandatory ? undefined : closeRefuel}
           />
           <div
             className="pointer-events-none fixed inset-0 z-[310] flex items-center justify-center p-3 sm:p-4"
@@ -1727,16 +1749,31 @@ export function Hud() {
                     </h2>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={closeRefuel}
-                  className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
-                  aria-label="Close"
-                >
-                  ×
-                </button>
+                {fuelEmptyMandatory ? (
+                  <span
+                    className="rounded-lg border border-amber-500/50 bg-amber-950/80 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-amber-200/95"
+                    title="Buy fuel to continue"
+                  >
+                    Required
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={closeRefuel}
+                    className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             </div>
+
+            {fuelEmptyMandatory ? (
+              <p className="mx-3 mt-1 rounded-lg border border-orange-500/40 bg-orange-950/50 px-2 py-1.5 text-center text-[10px] font-bold leading-snug text-orange-100/95">
+                Tank empty — ride paused. Add fuel to get moving again.
+              </p>
+            ) : null}
 
             <div className="flex flex-col gap-1.5 overflow-hidden px-3 pb-3 pt-1.5 text-left">
               <div className="grid shrink-0 grid-cols-2 gap-1.5">
