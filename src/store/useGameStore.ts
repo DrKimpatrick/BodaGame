@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { playBloodImpactFeedback } from '../audio/bloodImpactFeedback'
 
 /** Ignore bike↔ped / bike↔car collision penalties until this `performance.now()` (spawn overlap). */
 export const COLLISION_GRACE_MS = 2200
@@ -58,6 +59,9 @@ export type WalletTransaction = {
   amountUgx: number
   label: string
 }
+
+/** Bike hit a walker vs got struck by traffic — drives HUD blood splatter intensity. */
+export type BloodImpactKind = 'pedestrian' | 'vehicle'
 
 function nextId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -212,6 +216,10 @@ export type GameState = {
   buyFuel: (ugx: number) => void
   /** Spend up to `ugx` to restore condition; only charges for points that fit below CONDITION_MAX. */
   buyRepair: (ugx: number) => void
+  /** HUD-only red flash (ped knock vs car strike). */
+  bloodImpactNonce: number
+  bloodImpactKind: BloodImpactKind | null
+  triggerBloodImpactFlash: (kind: BloodImpactKind) => void
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -257,6 +265,8 @@ const initialSession = (): Pick<
   | 'ledger'
   | 'collisionPenaltiesAfterMs'
   | 'bikeAwayFromSpawn'
+  | 'bloodImpactNonce'
+  | 'bloodImpactKind'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -266,6 +276,8 @@ const initialSession = (): Pick<
   /** Until `resetSession()` runs from `main`, ignore collisions (import order / first physics tick). */
   collisionPenaltiesAfterMs: Number.POSITIVE_INFINITY,
   bikeAwayFromSpawn: false,
+  bloodImpactNonce: 0,
+  bloodImpactKind: null,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -342,6 +354,13 @@ export const useGameStore = create<GameState>((set, get) => ({
         label: `Bike repair (+${p.conditionAdd.toFixed(1)}% condition)`,
       }),
     })
+  },
+  triggerBloodImpactFlash: (kind) => {
+    playBloodImpactFeedback(kind)
+    set((s) => ({
+      bloodImpactNonce: s.bloodImpactNonce + 1,
+      bloodImpactKind: kind,
+    }))
   },
 }))
 

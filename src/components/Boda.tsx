@@ -438,6 +438,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         st.setCondition(
           Math.max(0, st.condition - CONDITION_LOSS_VEHICLE),
         )
+        st.triggerBloodImpactFlash('vehicle')
         return
       }
       if (ud?.kind === 'pedestrian') {
@@ -448,6 +449,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         stunnedUntil.current = now + PEDESTRIAN_STUN_MS
         const st = useGameStore.getState()
         st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
+        st.triggerBloodImpactFlash('pedestrian')
       }
     },
     [],

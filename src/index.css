@@ -12,3 +12,72 @@ body,
 #root {
   max-width: none;
 }
+
+@keyframes impact-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  12% {
+    transform: translate3d(-5px, 3px, 0) rotate(-0.4deg);
+  }
+  24% {
+    transform: translate3d(4px, -2px, 0) rotate(0.35deg);
+  }
+  36% {
+    transform: translate3d(-3px, 2px, 0) rotate(-0.25deg);
+  }
+  48% {
+    transform: translate3d(3px, -1px, 0) rotate(0.2deg);
+  }
+  60% {
+    transform: translate3d(-2px, 1px, 0);
+  }
+  72% {
+    transform: translate3d(1px, -1px, 0);
+  }
+}
+
+@keyframes impact-shake-strong {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  10% {
+    transform: translate3d(-10px, 6px, 0) rotate(-0.9deg);
+  }
+  20% {
+    transform: translate3d(9px, -5px, 0) rotate(0.75deg);
+  }
+  30% {
+    transform: translate3d(-8px, 4px, 0) rotate(-0.55deg);
+  }
+  40% {
+    transform: translate3d(7px, -4px, 0) rotate(0.5deg);
+  }
+  50% {
+    transform: translate3d(-5px, 3px, 0) rotate(-0.35deg);
+  }
+  60% {
+    transform: translate3d(4px, -2px, 0) rotate(0.25deg);
+  }
+  70% {
+    transform: translate3d(-3px, 2px, 0);
+  }
+  80% {
+    transform: translate3d(2px, -1px, 0);
+  }
+  90% {
+    transform: translate3d(-1px, 1px, 0);
+  }
+}
+
+.impact-shake {
+  animation: impact-shake 0.32s ease-out;
+  will-change: transform;
+}
+
+.impact-shake-strong {
+  animation: impact-shake-strong 0.46s cubic-bezier(0.22, 0.82, 0.28, 1);
+  will-change: transform;
+}

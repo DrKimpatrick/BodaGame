@@ -71,7 +71,7 @@ function App() {
   }, [])
 
   return (
-    <div className="relative h-full w-full bg-[#0f1014]">
+    <div className="relative h-full w-full bg-[#0f1014]" data-game-root>
       {showPostWipeNotice ? (
         <div
           className="pointer-events-auto fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))]"

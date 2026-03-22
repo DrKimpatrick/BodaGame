@@ -426,6 +426,51 @@ function ConditionRideOverlays({ level }: { level: ConditionAlertLevel }) {
   )
 }
 
+/** Brief red splatter / vignette when the bike hits a pedestrian or is struck by a car. */
+function BloodImpactOverlay() {
+  const nonce = useGameStore((s) => s.bloodImpactNonce)
+  const kind = useGameStore((s) => s.bloodImpactKind)
+  const [alpha, setAlpha] = useState(0)
+
+  const fadeMs = kind === 'vehicle' ? 560 : 380
+
+  useEffect(() => {
+    if (nonce === 0 || kind === null) return
+    const peak = kind === 'vehicle' ? 0.54 : 0.36
+    const holdMs = kind === 'vehicle' ? 90 : 70
+    setAlpha(peak)
+    const t = window.setTimeout(() => setAlpha(0), holdMs)
+    return () => window.clearTimeout(t)
+  }, [nonce, kind])
+
+  if (nonce === 0) return null
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-25 transition-opacity ease-out"
+      style={{
+        opacity: alpha,
+        transitionDuration: `${fadeMs}ms`,
+      }}
+      aria-hidden
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_70%_at_40%_36%,rgba(220,38,38,0.72)_0%,rgba(120,20,20,0.35)_42%,transparent_68%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_55%_45%_at_82%_58%,rgba(185,28,28,0.5)_0%,transparent_58%)]" />
+      <div className="absolute inset-x-0 top-0 h-[44%] bg-linear-to-b from-red-950/60 via-red-900/18 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-1/4 bg-linear-to-t from-red-950/40 to-transparent" />
+      {kind === 'vehicle' ? (
+        <div
+          className="absolute inset-0 opacity-70 mix-blend-multiply"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(108deg, transparent, transparent 3px, rgba(90,10,10,0.12) 3px, rgba(90,10,10,0.12) 5px)',
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 function ConditionArcadeTile({
   value,
   stress,
@@ -773,6 +818,7 @@ export function Hud() {
   return (
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
       <ConditionRideOverlays level={conditionAlert} />
+      <BloodImpactOverlay />
       <div
         className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"
         style={{
