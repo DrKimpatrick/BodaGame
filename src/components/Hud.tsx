@@ -450,8 +450,85 @@ function RefuelSectionTitle({ children }: { children: ReactNode }) {
   )
 }
 
+/** Section headers inside the workshop / repair modal (teal, larger). */
+function WorkshopSectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5 py-2">
+      <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-teal-400 shadow-[0_0_10px_rgba(45,212,191,0.5)]" />
+      <span className="text-[11px] font-black uppercase tracking-[0.14em] text-teal-100 sm:text-xs">
+        {children}
+      </span>
+      <span className="h-px min-w-[20px] flex-1 bg-linear-to-r from-teal-500/45 via-teal-500/15 to-transparent" />
+    </div>
+  )
+}
+
 const gameArcadeBtn =
   'rounded-xl border-2 font-black uppercase tracking-wide transition-[transform,box-shadow,border-width] duration-100 active:translate-y-1'
+
+/** Hardcoded level ladder (UI only — not tied to game state). */
+function HardcodedLevelsPanel() {
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border-2 border-violet-500/40 border-b-4 border-b-violet-950 bg-linear-to-b from-violet-950/55 via-zinc-950/95 to-black/92 px-3 py-2.5 shadow-[0_5px_0_rgba(49,46,129,0.72)] ring-1 ring-violet-400/20 backdrop-blur-md"
+      aria-label="Levels preview"
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-violet-300/45 to-transparent" />
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-200/95">
+        Levels
+      </p>
+      <p className="mt-0.5 text-[8px] font-semibold uppercase tracking-wider text-zinc-500">
+        Preview · not saved yet
+      </p>
+      <ul className="mt-2 space-y-2">
+        <li className="rounded-lg border-2 border-amber-500/50 bg-linear-to-r from-amber-950/50 to-black/50 px-2 py-1.5 ring-1 ring-amber-400/15">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wide text-amber-200">
+              Level 1
+            </span>
+            <span className="shrink-0 rounded bg-emerald-500/20 px-1.5 py-px font-mono text-[8px] font-black uppercase text-emerald-300">
+              Active
+            </span>
+          </div>
+          <p className="mt-0.5 text-[9px] font-medium leading-snug text-zinc-300">
+            Starter city access — you’re riding here now.
+          </p>
+        </li>
+        <li className="rounded-lg border border-zinc-600/70 bg-black/45 px-2 py-1.5 opacity-95">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0 text-sm opacity-80" aria-hidden>
+              🔒
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
+                Level 2 · Locked
+              </p>
+              <p className="mt-0.5 text-[9px] font-semibold leading-snug text-zinc-400">
+                Make <span className="font-mono font-black text-violet-300/95">two</span> successful
+                passenger deliveries (pickup → drop-off) to unlock Level 2.
+              </p>
+            </div>
+          </div>
+        </li>
+        <li className="rounded-lg border border-zinc-700/60 bg-black/35 px-2 py-1.5">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0 text-sm opacity-70" aria-hidden>
+              🔒
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wide text-zinc-600">
+                Level 3+ · Locked
+              </p>
+              <p className="mt-0.5 text-[9px] leading-snug text-zinc-600">
+                Higher tiers stay locked until you advance. (Coming later.)
+              </p>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  )
+}
 
 /** Chunky arcade-style fuel tiles (press opens refuel where useful). */
 function FuelGameButtons({
@@ -1064,38 +1141,41 @@ export function Hud() {
       <RideNextPassengerToast />
       <RideJobHud />
       <div
-        className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"
+        className="absolute left-4 top-4 flex max-w-[min(100vw-2rem,300px)] flex-col gap-2"
         style={{
           marginTop: 'max(0px, env(safe-area-inset-top))',
           marginLeft: 'max(0px, env(safe-area-inset-left))',
         }}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-300/55 to-transparent" />
-        <div className="relative flex gap-3">
-          <div
-            className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-amber-400/50 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-500/70 to-amber-950 shadow-[0_4px_0_rgba(69,26,3,0.88)] ring-1 ring-amber-200/35"
-            aria-hidden
-          >
-            <WalletIcon className="h-7 w-7 text-amber-50 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)]" />
-          </div>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-[10px] font-black uppercase italic tracking-[0.2em] text-amber-100/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.85)]">
-                Wallet
-              </p>
-              <UgandaFlagBadge
-                className="h-4 w-6 shrink-0 rounded-sm"
-                title="Uganda"
-              />
+        <div className="relative overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-300/55 to-transparent" />
+          <div className="relative flex gap-3">
+            <div
+              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-amber-400/50 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-500/70 to-amber-950 shadow-[0_4px_0_rgba(69,26,3,0.88)] ring-1 ring-amber-200/35"
+              aria-hidden
+            >
+              <WalletIcon className="h-7 w-7 text-amber-50 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)]" />
             </div>
-            <p className="mt-1 font-mono text-2xl font-black tabular-nums leading-none text-amber-50 drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
-              {money.toLocaleString()}
-            </p>
-            <p className="mt-1 text-[9px] font-black uppercase tracking-[0.28em] text-amber-400/85">
-              UGX
-            </p>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[10px] font-black uppercase italic tracking-[0.2em] text-amber-100/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.85)]">
+                  Wallet
+                </p>
+                <UgandaFlagBadge
+                  className="h-4 w-6 shrink-0 rounded-sm"
+                  title="Uganda"
+                />
+              </div>
+              <p className="mt-1 font-mono text-2xl font-black tabular-nums leading-none text-amber-50 drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
+                {money.toLocaleString()}
+              </p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-[0.28em] text-amber-400/85">
+                UGX
+              </p>
+            </div>
           </div>
         </div>
+        <HardcodedLevelsPanel />
       </div>
 
       <div
@@ -1225,11 +1305,11 @@ export function Hud() {
           <button
             type="button"
             aria-label="Close refuel"
-            className="pointer-events-auto fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+            className="pointer-events-auto fixed inset-0 z-[300] bg-black/60 backdrop-blur-[2px]"
             onClick={closeRefuel}
           />
           <div
-            className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
+            className="pointer-events-none fixed inset-0 z-[310] flex items-center justify-center p-3 sm:p-4"
             style={{
               paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
@@ -1515,52 +1595,52 @@ export function Hud() {
           <button
             type="button"
             aria-label="Close repair"
-            className="pointer-events-auto fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px]"
+            className="pointer-events-auto fixed inset-0 z-[300] bg-black/60 backdrop-blur-[2px]"
             onClick={() => {
               if (!repairMandatory) setRepairOpen(false)
             }}
           />
           <div
-            className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4"
+            className="pointer-events-none fixed inset-0 z-[310] flex items-center justify-center p-3 sm:p-4"
             style={{
               paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
             }}
           >
             <div
-              className="pointer-events-auto flex max-h-[min(90dvh,680px)] w-full max-w-[380px] flex-col overflow-hidden rounded-2xl border-2 border-teal-500/35 bg-linear-to-b from-teal-950/95 via-zinc-950 to-black shadow-[0_0_48px_rgba(45,212,191,0.12),0_16px_48px_rgba(0,0,0,0.65)] ring-2 ring-teal-400/15"
+              className="pointer-events-auto flex max-h-[min(94dvh,820px)] w-full max-w-[min(calc(100vw-1.25rem),544px)] flex-col overflow-hidden rounded-2xl border-2 border-teal-400/45 bg-linear-to-b from-teal-950/95 via-zinc-950 to-black shadow-[0_0_60px_rgba(45,212,191,0.15),0_22px_60px_rgba(0,0,0,0.75)] ring-2 ring-teal-400/22 sm:max-w-[min(calc(100vw-2rem),576px)]"
               role="dialog"
               aria-modal="true"
               aria-labelledby="repair-modal-title"
             >
-              <div className="relative shrink-0 bg-linear-to-r from-teal-600/25 via-teal-500/10 to-transparent px-3 py-2">
-                <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-teal-300/50 to-transparent" />
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-teal-400/40 bg-teal-950/80">
-                      <WrenchIcon className="h-5 w-5 text-teal-200" />
+              <div className="relative shrink-0 bg-linear-to-r from-teal-600/30 via-teal-500/12 to-transparent px-4 py-3 sm:px-5">
+                <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-teal-300/55 to-transparent" />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border-2 border-teal-400/45 bg-teal-950/85 shadow-inner ring-1 ring-teal-300/20">
+                      <WrenchIcon className="h-6 w-6 text-teal-200" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[8px] font-black uppercase tracking-[0.3em] text-teal-200/70">
+                      <p className="text-[9px] font-black uppercase tracking-[0.28em] text-teal-300/90 sm:text-[10px]">
                         Workshop
                       </p>
                       <h2
                         id="repair-modal-title"
-                        className="text-base font-black uppercase italic tracking-wide text-teal-100 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)]"
+                        className="text-lg font-black uppercase italic tracking-wide text-teal-50 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)] sm:text-xl"
                       >
                         Repair bike
                       </h2>
                     </div>
                   </div>
                   {repairMandatory ? (
-                    <span className="shrink-0 rounded-md border border-red-500/50 bg-red-950/90 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-red-200">
+                    <span className="shrink-0 rounded-lg border-2 border-red-500/55 bg-red-950/95 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_16px_rgba(239,68,68,0.25)]">
                       Required
                     </span>
                   ) : (
                     <button
                       type="button"
                       onClick={() => setRepairOpen(false)}
-                      className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
+                      className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-3 py-1.5 text-lg leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
                       aria-label="Close"
                     >
                       ×
@@ -1570,104 +1650,120 @@ export function Hud() {
               </div>
 
               {repairMandatory ? (
-                <div className="shrink-0 border-b border-red-600/45 bg-red-950/85 px-3 py-2">
-                  <p className="text-center text-[10px] font-black uppercase leading-snug tracking-wide text-red-100">
-                    Breakdown — ride is stopped and the city is frozen. Repair above{' '}
-                    {CONDITION_BROKEN_AT}% to continue.
+                <div className="shrink-0 border-b border-red-500/40 bg-red-950/95 px-4 py-3 sm:px-5">
+                  <p className="text-center text-[11px] font-semibold leading-relaxed text-red-50 sm:text-sm">
+                    <span className="font-black uppercase tracking-wide text-red-200">
+                      Breakdown
+                    </span>
+                    <span className="text-red-100/90">
+                      {' '}
+                      — Ride paused and the city is frozen until condition is above{' '}
+                    </span>
+                    <span className="font-mono font-black text-white">{CONDITION_BROKEN_AT}%</span>
+                    <span className="text-red-100/90">.</span>
                   </p>
                 </div>
               ) : null}
 
-              <div className="flex flex-col gap-1.5 overflow-hidden px-3 pb-3 pt-1.5 text-left">
-                <div className="grid shrink-0 grid-cols-2 gap-1.5">
-                  <div className="rounded-lg border-2 border-teal-600/35 border-b-4 border-b-teal-950 bg-linear-to-b from-teal-900/50 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(15,118,110,0.75)] ring-1 ring-teal-400/15">
-                    <p className="text-[7px] font-black uppercase tracking-widest text-teal-300/80">
-                      Condition max
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-3 text-left sm:gap-3.5 sm:px-5 sm:pb-5 sm:pt-4">
+                <div className="grid shrink-0 grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
+                  <div className="rounded-xl border-2 border-teal-500/40 border-b-[5px] border-b-teal-950 bg-linear-to-b from-teal-900/55 to-black/85 px-3 py-2.5 shadow-[0_4px_0_rgba(15,118,110,0.72)] ring-1 ring-teal-400/18 sm:min-h-[108px]">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-teal-300/90">
+                      Condition now
                     </p>
-                    <p className="font-mono text-base font-black tabular-nums leading-tight text-teal-100">
-                      {CONDITION_MAX}%
+                    <p className="mt-1 font-mono text-2xl font-black tabular-nums leading-none text-teal-50 sm:text-[1.65rem]">
+                      {condNorm.toFixed(1)}
+                      <span className="text-lg font-black text-teal-400/90">%</span>
                     </p>
-                    <p className="mt-0.5 text-[7px] font-bold uppercase leading-tight text-teal-400/70">
-                      {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX = +1 pt
+                    <p className="mt-1.5 text-[9px] font-semibold leading-snug text-zinc-400">
+                      Max <span className="font-mono font-bold text-zinc-300">{CONDITION_MAX}%</span>
+                      {' · '}
+                      <span className="font-mono text-teal-200/90">
+                        {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX
+                      </span>{' '}
+                      per +1 pt
                     </p>
                   </div>
-                  <div className="rounded-lg border-2 border-amber-600/40 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-900/40 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(120,53,15,0.8)] ring-1 ring-amber-400/20">
-                    <p className="text-[7px] font-black uppercase tracking-widest text-amber-300/80">
+                  <div className="rounded-xl border-2 border-amber-500/45 border-b-[5px] border-b-amber-950 bg-linear-to-b from-amber-900/45 to-black/85 px-3 py-2.5 shadow-[0_4px_0_rgba(120,53,15,0.78)] ring-1 ring-amber-400/22 sm:min-h-[108px]">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-300/90">
                       Wallet
                     </p>
-                    <p className="font-mono text-xs font-black leading-tight tabular-nums text-amber-100">
+                    <p className="mt-1 font-mono text-xl font-black tabular-nums leading-none text-amber-50 sm:text-2xl">
                       {money.toLocaleString()}
                     </p>
-                    <p className="mt-0.5 text-[7px] font-bold uppercase text-amber-500/75">
-                      UGX
+                    <p className="mt-1.5 text-[10px] font-black uppercase tracking-wider text-amber-500/85">
+                      UGX available
                     </p>
                   </div>
-                </div>
-
-                <div className="shrink-0 rounded-lg border-2 border-emerald-600/35 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-950/60 to-black/85 px-2 py-1.5 shadow-[0_3px_0_rgba(6,78,59,0.75)] ring-1 ring-emerald-400/15">
-                  <p className="text-[7px] font-black uppercase tracking-[0.15em] text-emerald-400/85">
-                    Can still restore
-                  </p>
-                  <p className="font-mono text-sm font-black leading-tight text-emerald-100">
-                    {(Math.round((CONDITION_MAX - condNorm) * 10) / 10).toFixed(1)}{' '}
-                    <span className="text-xs font-bold text-emerald-400/90">pts</span>
-                  </p>
-                  {maxUgxRepair > 0 ? (
-                    <p className="mt-0.5 text-[8px] font-bold uppercase leading-tight text-emerald-300/75">
-                      Full fix cap{' '}
-                      <span className="font-mono text-emerald-100">
-                        UGX {maxUgxRepair.toLocaleString()}
-                      </span>
+                  <div className="rounded-xl border-2 border-emerald-500/40 border-b-[5px] border-b-emerald-950 bg-linear-to-b from-emerald-950/55 to-black/85 px-3 py-2.5 shadow-[0_4px_0_rgba(6,78,59,0.72)] ring-1 ring-emerald-400/18 sm:min-h-[108px]">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300/90">
+                      Headroom
                     </p>
-                  ) : (
-                    <p className="mt-0.5 text-[9px] font-black uppercase text-zinc-500">
-                      Bike mint
+                    <p className="mt-1 font-mono text-xl font-black tabular-nums leading-none text-emerald-100 sm:text-2xl">
+                      {(Math.round((CONDITION_MAX - condNorm) * 10) / 10).toFixed(1)}
+                      <span className="text-sm font-bold text-emerald-400/90"> pts</span>
                     </p>
-                  )}
+                    {maxUgxRepair > 0 ? (
+                      <p className="mt-1.5 text-[9px] font-semibold leading-snug text-emerald-200/85">
+                        Full repair cap{' '}
+                        <span className="font-mono font-bold text-white">
+                          {maxUgxRepair.toLocaleString()} UGX
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-[10px] font-black uppercase text-zinc-500">
+                        Bike mint
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {!canRepair ? (
-                  <div className="shrink-0 rounded-lg border-2 border-zinc-600 bg-zinc-950/90 px-2 py-3 text-center">
-                    <p className="text-xs font-black uppercase italic tracking-wide text-zinc-400">
+                  <div className="shrink-0 rounded-xl border-2 border-zinc-600/80 bg-zinc-950/95 px-4 py-4 text-center ring-1 ring-zinc-500/20">
+                    <p className="text-sm font-black uppercase italic tracking-wide text-zinc-300">
                       {maxUgxRepair <= 0 ? 'Condition full' : 'No cash'}
                     </p>
-                    <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-600">
+                    <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                       {maxUgxRepair <= 0
-                        ? 'Ride on!'
-                        : 'Earn UGX to repair'}
+                        ? 'You’re good to ride.'
+                        : 'Earn UGX to repair your bike.'}
                     </p>
                   </div>
                 ) : repairPartialOnly ? (
-                  <div className="flex shrink-0 flex-col gap-1">
-                    <p className="text-center text-[9px] font-bold uppercase tracking-wide text-teal-200/80">
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <p className="text-center text-[11px] font-bold uppercase tracking-wide text-teal-200/90">
                       Partial repair only
+                    </p>
+                    <p className="text-center text-[10px] font-medium leading-snug text-zinc-500">
+                      Wallet covers part of a full fix — pay what you can now.
                     </p>
                     <button
                       type="button"
                       onClick={() => buyRepair(maxUgxRepair)}
-                      className={`${gameArcadeBtn} w-full border-cyan-500/50 border-b-[5px] border-b-cyan-950 bg-linear-to-b from-cyan-500 to-cyan-800 py-2 text-xs text-cyan-950 shadow-[0_5px_0_rgba(8,51,68,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,51,68,0.9)]`}
+                      className={`${gameArcadeBtn} w-full border-cyan-500/50 border-b-[6px] border-b-cyan-950 bg-linear-to-b from-cyan-500 to-cyan-800 py-2.5 text-sm text-cyan-950 shadow-[0_6px_0_rgba(8,51,68,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,51,68,0.9)] sm:text-base`}
                     >
                       Pay {maxUgxRepair.toLocaleString()} UGX
-                      <span className="mt-0.5 block text-[9px] font-mono font-black normal-case tracking-normal">
-                        +{(maxUgxRepair / UGX_PER_CONDITION_UNIT).toFixed(2)} pts
+                      <span className="mt-1 block text-[10px] font-mono font-black normal-case tracking-normal">
+                        +{(maxUgxRepair / UGX_PER_CONDITION_UNIT).toFixed(2)} condition pts
                       </span>
                     </button>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1 overflow-hidden">
-                    <RefuelSectionTitle>Repair load</RefuelSectionTitle>
-                    <p className="shrink-0 text-center text-[8px] font-bold uppercase leading-tight tracking-wide text-zinc-500">
-                      Slide left · less repair · lower cost
+                  <div className="flex flex-col gap-2 overflow-hidden">
+                    <WorkshopSectionTitle>Repair load</WorkshopSectionTitle>
+                    <p className="shrink-0 text-center text-[10px] font-semibold leading-snug text-zinc-400 sm:text-[11px]">
+                      Use the slider: drag <span className="text-teal-300/90">left</span> for a smaller
+                      repair and <span className="text-amber-200/90">lower cost</span>.
                     </p>
                     {maxWholeRepairPoints >= 1 ? (
-                      <div className="shrink-0 rounded-lg border-2 border-violet-600/30 border-b-4 border-b-violet-950 bg-linear-to-b from-violet-950/50 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(49,46,129,0.75)] ring-1 ring-violet-400/15">
-                        <div className="flex items-center justify-between font-mono text-xs font-black text-violet-200">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-violet-400/90">
+                      <div className="shrink-0 rounded-xl border-2 border-violet-500/35 border-b-[5px] border-b-violet-950 bg-linear-to-b from-violet-950/55 to-black/90 px-3 py-2.5 shadow-[0_4px_0_rgba(49,46,129,0.78)] ring-1 ring-violet-400/18">
+                        <div className="flex items-center justify-between font-mono text-sm font-black text-violet-100">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-violet-300/95">
                             Points
                           </span>
                           <span className="tabular-nums">
                             {previewRepairPts}{' '}
-                            <span className="text-violet-500/80">/</span>{' '}
+                            <span className="text-violet-500/75">/</span>{' '}
                             {maxWholeRepairPoints}
                           </span>
                         </div>
@@ -1682,12 +1778,12 @@ export function Hud() {
                             setRepairPointsToAdd(v)
                             setRepairPointsStr(String(v))
                           }}
-                          className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-full bg-black/60 accent-violet-400 ring-1 ring-inset ring-violet-500/25 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-teal-300 [&::-webkit-slider-thumb]:bg-teal-400"
+                          className="mt-2.5 h-3 w-full cursor-pointer appearance-none rounded-full bg-black/65 accent-violet-400 ring-1 ring-inset ring-violet-500/30 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-teal-300 [&::-webkit-slider-thumb]:bg-teal-400 [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(45,212,191,0.45)]"
                         />
                       </div>
                     ) : null}
 
-                    <RefuelSectionTitle>Manual entry</RefuelSectionTitle>
+                    <WorkshopSectionTitle>Manual entry</WorkshopSectionTitle>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -1718,7 +1814,7 @@ export function Hud() {
                         setRepairPointsToAdd(v)
                         setRepairPointsStr(String(v))
                       }}
-                      className="shrink-0 w-full rounded-lg border-2 border-b-4 border-zinc-600 border-b-zinc-900 bg-zinc-900/90 px-2 py-1.5 text-center font-mono text-base font-black tabular-nums text-teal-100 shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)] outline-none ring-1 ring-zinc-500/30 placeholder:text-zinc-600 focus:border-teal-500/50 focus:ring-teal-400/30"
+                      className="shrink-0 w-full rounded-xl border-2 border-b-[5px] border-zinc-600 border-b-zinc-900 bg-zinc-900/95 px-3 py-2.5 text-center font-mono text-lg font-black tabular-nums text-teal-100 shadow-[inset_0_2px_8px_rgba(0,0,0,0.55)] outline-none ring-1 ring-zinc-500/35 placeholder:text-zinc-600 focus:border-teal-500/55 focus:ring-teal-400/35 sm:text-xl"
                     />
                     {!repairPointsDraft.valid && repairPointsStr.trim() !== '' ? (
                       <p className="shrink-0 text-center text-[9px] font-black uppercase text-rose-400">
@@ -1727,27 +1823,33 @@ export function Hud() {
                     ) : null}
 
                     {repairPurchasePreview && previewRepairPts >= 1 ? (
-                      <div className="shrink-0 rounded-lg border-2 border-teal-500/40 border-b-4 border-b-teal-950 bg-linear-to-b from-teal-950/40 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(15,118,110,0.65)] ring-1 ring-teal-400/25">
-                        <p className="text-center font-mono text-xs font-black text-teal-100">
-                          +{repairPurchasePreview.conditionAdd.toFixed(2)}{' '}
-                          <span className="text-[10px] uppercase text-teal-400/80">
+                      <div className="shrink-0 rounded-xl border-2 border-teal-500/45 border-b-[5px] border-b-teal-950 bg-linear-to-b from-teal-950/50 to-black/90 px-3 py-2.5 shadow-[0_4px_0_rgba(15,118,110,0.68)] ring-1 ring-teal-400/28">
+                        <p className="text-center font-mono text-sm font-black text-teal-50 sm:text-base">
+                          +{repairPurchasePreview.conditionAdd.toFixed(2)}
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-teal-400/90 sm:text-xs">
+                            {' '}
                             % condition
                           </span>
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
-                          <span>
-                            Cost{' '}
-                            <span className="font-mono text-teal-200">
-                              {repairPurchasePreview.spendUgx.toLocaleString()}
-                            </span>
-                          </span>
-                          <span className="text-zinc-700">|</span>
-                          <span>
-                            After{' '}
-                            <span className="font-mono text-emerald-400">
-                              {repairPurchasePreview.balanceAfter.toLocaleString()}
-                            </span>
-                          </span>
+                        <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-lg border border-teal-500/25 bg-black/35 p-2">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                              Cost
+                            </p>
+                            <p className="font-mono text-sm font-black tabular-nums text-teal-200 sm:text-base">
+                              {repairPurchasePreview.spendUgx.toLocaleString()}{' '}
+                              <span className="text-[10px] font-bold text-zinc-500">UGX</span>
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                              Wallet after
+                            </p>
+                            <p className="font-mono text-sm font-black tabular-nums text-emerald-300 sm:text-base">
+                              {repairPurchasePreview.balanceAfter.toLocaleString()}{' '}
+                              <span className="text-[10px] font-bold text-zinc-500">UGX</span>
+                            </p>
+                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -1756,15 +1858,15 @@ export function Hud() {
                       type="button"
                       disabled={!canPayRepairPoints}
                       onClick={onRepairPaySubmit}
-                      className={`${gameArcadeBtn} shrink-0 border-lime-500/60 border-b-[5px] border-b-lime-950 bg-linear-to-b from-lime-400 via-lime-500 to-lime-700 py-2 text-xs text-lime-950 shadow-[0_5px_0_rgba(54,83,20,0.95)] active:border-b-2 active:shadow-[0_2px_0_rgba(54,83,20,0.95)] disabled:translate-y-0 disabled:border-b-[5px] disabled:opacity-40 disabled:shadow-[0_5px_0_rgba(54,83,20,0.95)]`}
+                      className={`${gameArcadeBtn} shrink-0 border-lime-500/60 border-b-[6px] border-b-lime-950 bg-linear-to-b from-lime-400 via-lime-500 to-lime-700 py-2.5 text-sm text-lime-950 shadow-[0_6px_0_rgba(54,83,20,0.95)] active:border-b-2 active:shadow-[0_2px_0_rgba(54,83,20,0.95)] disabled:translate-y-0 disabled:border-b-[6px] disabled:opacity-40 disabled:shadow-[0_6px_0_rgba(54,83,20,0.95)] sm:py-3 sm:text-base`}
                     >
                       {repairPurchasePreview && repairPurchasePreview.spendUgx > 0
                         ? `Pay ${repairPurchasePreview.spendUgx.toLocaleString()} UGX`
                         : 'Pay'}
                     </button>
 
-                    <RefuelSectionTitle>Quick buy</RefuelSectionTitle>
-                    <div className="grid shrink-0 grid-cols-4 gap-1">
+                    <WorkshopSectionTitle>Quick buy</WorkshopSectionTitle>
+                    <div className="grid shrink-0 grid-cols-4 gap-1.5 sm:gap-2">
                       {REPAIR_POINT_PRESETS.map((pts) => {
                         const capped = Math.min(pts, maxWholeRepairPoints)
                         const p = previewRepairPurchase(
@@ -1782,7 +1884,7 @@ export function Hud() {
                             disabled={
                               !canRepair || capped < 1 || p.spendUgx <= 0
                             }
-                            className={`${gameArcadeBtn} border-fuchsia-600/45 border-b-4 border-b-fuchsia-950 bg-linear-to-b from-fuchsia-800/80 to-fuchsia-950 px-1 py-1.5 text-[10px] text-fuchsia-100 shadow-[0_4px_0_rgba(74,4,78,0.85)] active:border-b-2 active:shadow-[0_2px_0_rgba(74,4,78,0.85)] disabled:opacity-35`}
+                            className={`${gameArcadeBtn} border-fuchsia-600/45 border-b-[5px] border-b-fuchsia-950 bg-linear-to-b from-fuchsia-800/85 to-fuchsia-950 px-1 py-2 text-[11px] text-fuchsia-100 shadow-[0_5px_0_rgba(74,4,78,0.88)] active:border-b-2 active:shadow-[0_2px_0_rgba(74,4,78,0.88)] disabled:opacity-35 sm:text-xs`}
                           >
                             +{pts}
                           </button>
@@ -1804,16 +1906,16 @@ export function Hud() {
                           ? `Pay UGX ${fillRepairPreview.spendUgx.toLocaleString()} to max condition`
                           : undefined
                       }
-                      className={`${gameArcadeBtn} shrink-0 border-sky-500/50 border-b-4 border-b-sky-950 bg-linear-to-b from-sky-500 to-sky-800 py-1.5 text-[10px] text-sky-50 shadow-[0_4px_0_rgba(8,47,73,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,47,73,0.9)] disabled:opacity-35`}
+                      className={`${gameArcadeBtn} shrink-0 border-sky-500/50 border-b-[5px] border-b-sky-950 bg-linear-to-b from-sky-500 to-sky-800 py-2 text-[11px] text-sky-50 shadow-[0_5px_0_rgba(8,47,73,0.92)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,47,73,0.92)] disabled:opacity-35 sm:text-xs`}
                     >
                       Full fix —{' '}
                       {fillRepairPreview.spendUgx > 0
                         ? `${fillRepairPreview.spendUgx.toLocaleString()} UGX`
                         : '—'}
                     </button>
-                    <p className="shrink-0 text-center text-[7px] font-bold uppercase leading-tight tracking-wider text-zinc-600">
-                      × {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX/pt · capped by
-                      100% condition and wallet
+                    <p className="shrink-0 px-1 text-center text-[9px] font-semibold uppercase leading-snug tracking-wide text-zinc-500 sm:text-[10px]">
+                      {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX per point · max{' '}
+                      {CONDITION_MAX}% condition · also limited by wallet
                     </p>
                   </div>
                 )}
