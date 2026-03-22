@@ -15,7 +15,7 @@ type BirdDatum = {
   flap: number
 }
 
-function SkyBirds({ count = 32 }: { count?: number }) {
+function SkyBirds({ count = 16 }: { count?: number }) {
   const root = useRef<THREE.Group>(null)
   const data = useMemo<BirdDatum[]>(() => {
     const out: BirdDatum[] = []
@@ -82,18 +82,18 @@ export function HorizonSky() {
         turbidity={3.2}
       />
 
-      <SkyBirds count={36} />
+      <SkyBirds count={16} />
 
       <group position={[0, 480, 0]}>
         <Clouds
           material={THREE.MeshBasicMaterial}
-          limit={200}
-          frustumCulled={false}
+          limit={72}
+          frustumCulled
         >
           <Cloud
             seed={11}
             position={[0, 220, -3200]}
-            segments={44}
+            segments={26}
             bounds={[5200, 200, 1100]}
             volume={720}
             fade={2200}
@@ -104,7 +104,7 @@ export function HorizonSky() {
           <Cloud
             seed={22}
             position={[2800, 160, 200]}
-            segments={40}
+            segments={24}
             bounds={[3600, 240, 950]}
             volume={640}
             fade={1900}
@@ -115,7 +115,7 @@ export function HorizonSky() {
           <Cloud
             seed={33}
             position={[-3000, 200, 600]}
-            segments={42}
+            segments={26}
             bounds={[4000, 220, 1000]}
             volume={680}
             fade={2000}
@@ -126,7 +126,7 @@ export function HorizonSky() {
           <Cloud
             seed={44}
             position={[800, 260, 2800]}
-            segments={38}
+            segments={22}
             bounds={[3200, 180, 850]}
             volume={560}
             fade={1700}
@@ -137,7 +137,7 @@ export function HorizonSky() {
           <Cloud
             seed={55}
             position={[-1200, 140, -1400]}
-            segments={36}
+            segments={22}
             bounds={[2400, 160, 700]}
             volume={480}
             fade={1500}

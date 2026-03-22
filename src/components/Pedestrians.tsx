@@ -115,19 +115,19 @@ function SimpleWalker({
 
   return (
     <group scale={scale} position={[0, -0.33, 0]}>
-      <mesh position={[0, 1.38, 0]} castShadow material={skinMat}>
+      <mesh position={[0, 1.38, 0]} material={skinMat}>
         <sphereGeometry args={[0.12, 8, 8]} />
       </mesh>
-      <mesh position={[0, 0.98, 0]} castShadow material={shirtMat}>
+      <mesh position={[0, 0.98, 0]} material={shirtMat}>
         <boxGeometry args={[0.3, 0.48, 0.18]} />
       </mesh>
       <group ref={legL} position={[-0.08, 0.68, 0]}>
-        <mesh position={[0, -0.16, 0]} castShadow material={pantsMat}>
+        <mesh position={[0, -0.16, 0]} material={pantsMat}>
           <boxGeometry args={[0.1, 0.36, 0.1]} />
         </mesh>
       </group>
       <group ref={legR} position={[0.08, 0.68, 0]}>
-        <mesh position={[0, -0.16, 0]} castShadow material={pantsMat}>
+        <mesh position={[0, -0.16, 0]} material={pantsMat}>
           <boxGeometry args={[0.1, 0.36, 0.1]} />
         </mesh>
       </group>

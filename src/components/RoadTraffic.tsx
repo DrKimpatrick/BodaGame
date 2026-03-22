@@ -679,10 +679,10 @@ function TrafficCarFourDoor({
   const bpH = seamH + 0.1
   return (
     <group>
-      <mesh position={[xl - 0.008, y, 0]} castShadow receiveShadow material={trafficDoorSeamMat}>
+      <mesh position={[xl - 0.008, y, 0]} receiveShadow material={trafficDoorSeamMat}>
         <boxGeometry args={[0.052, bpH, 0.085]} />
       </mesh>
-      <mesh position={[xr + 0.008, y, 0]} castShadow receiveShadow material={trafficDoorSeamMat}>
+      <mesh position={[xr + 0.008, y, 0]} receiveShadow material={trafficDoorSeamMat}>
         <boxGeometry args={[0.052, bpH, 0.085]} />
       </mesh>
       <mesh position={[xl, y, zFrontSeam]} castShadow={false} material={trafficDoorSeamMat}>
@@ -697,16 +697,16 @@ function TrafficCarFourDoor({
       <mesh position={[xr, y, zRearSeam]} castShadow={false} material={trafficDoorSeamMat}>
         <boxGeometry args={[0.038, seamH, 0.05]} />
       </mesh>
-      <mesh position={[xl + 0.022, y + 0.025, zFrontHandle]} castShadow material={trafficHandleMat}>
+      <mesh position={[xl + 0.022, y + 0.025, zFrontHandle]} material={trafficHandleMat}>
         <boxGeometry args={[0.05, 0.042, 0.13]} />
       </mesh>
-      <mesh position={[xl + 0.022, y + 0.025, zRearHandle]} castShadow material={trafficHandleMat}>
+      <mesh position={[xl + 0.022, y + 0.025, zRearHandle]} material={trafficHandleMat}>
         <boxGeometry args={[0.05, 0.042, 0.13]} />
       </mesh>
-      <mesh position={[xr - 0.022, y + 0.025, zFrontHandle]} castShadow material={trafficHandleMat}>
+      <mesh position={[xr - 0.022, y + 0.025, zFrontHandle]} material={trafficHandleMat}>
         <boxGeometry args={[0.05, 0.042, 0.13]} />
       </mesh>
-      <mesh position={[xr - 0.022, y + 0.025, zRearHandle]} castShadow material={trafficHandleMat}>
+      <mesh position={[xr - 0.022, y + 0.025, zRearHandle]} material={trafficHandleMat}>
         <boxGeometry args={[0.05, 0.042, 0.13]} />
       </mesh>
     </group>
@@ -733,7 +733,7 @@ function TrafficSlidingDoorSide({
       <mesh position={[xl, y, zPanel]} castShadow={false} material={trafficDoorSeamMat}>
         <boxGeometry args={[0.04, tall, widthZ]} />
       </mesh>
-      <mesh position={[xl + 0.026, y - 0.05, zPanel]} castShadow material={trafficHandleMat}>
+      <mesh position={[xl + 0.026, y - 0.05, zPanel]} material={trafficHandleMat}>
         <boxGeometry args={[0.055, 0.04, 0.22]} />
       </mesh>
     </group>
@@ -785,10 +785,10 @@ function WheelAxleX({
 }) {
   return (
     <group position={[x, y, z]}>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow material={tireMat}>
+      <mesh rotation={[0, 0, Math.PI / 2]} receiveShadow material={tireMat}>
         <cylinderGeometry args={[radius, radius, width, 18]} />
       </mesh>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow material={rimMat}>
+      <mesh rotation={[0, 0, Math.PI / 2]} material={rimMat}>
         <cylinderGeometry args={[radius * 0.52, radius * 0.52, width + 0.04, 12]} />
       </mesh>
     </group>
@@ -849,23 +849,23 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'taxi':
       return (
         <group scale={[0.94, 0.98, 0.98]}>
-          <mesh position={[0, 0.38, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.38, 0]} receiveShadow>
             <boxGeometry args={[1.72, 0.5, 4.05]} />
             <meshStandardMaterial color="#facc15" roughness={0.52} metalness={0.12} envMapIntensity={0.95} />
           </mesh>
-          <mesh position={[0, 0.62, 0.92]} castShadow material={glassMat}>
+          <mesh position={[0, 0.62, 0.92]} material={glassMat}>
             <boxGeometry args={[1.52, 0.34, 0.95]} />
           </mesh>
-          <mesh position={[0, 0.58, -0.95]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.58, -0.95]} material={glassRearMat}>
             <boxGeometry args={[1.48, 0.28, 0.72]} />
           </mesh>
-          <mesh position={[0.89, 0.52, 0.15]} castShadow material={glassMat}>
+          <mesh position={[0.89, 0.52, 0.15]} material={glassMat}>
             <boxGeometry args={[0.095, 0.24, 1.88]} />
           </mesh>
-          <mesh position={[-0.89, 0.52, 0.15]} castShadow material={glassMat}>
+          <mesh position={[-0.89, 0.52, 0.15]} material={glassMat}>
             <boxGeometry args={[0.095, 0.24, 1.88]} />
           </mesh>
-          <mesh position={[0, 0.42, -0.35]} castShadow>
+          <mesh position={[0, 0.42, -0.35]} >
             <boxGeometry args={[1.74, 0.08, 1.6]} />
             <meshStandardMaterial color="#111827" roughness={0.75} />
           </mesh>
@@ -892,24 +892,24 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'pickup':
       return (
         <group scale={[0.86, 0.96, 0.94]}>
-          <mesh position={[0, 0.42, 0.55]} castShadow receiveShadow>
+          <mesh position={[0, 0.42, 0.55]} receiveShadow>
             <boxGeometry args={[1.95, 0.58, 2.35]} />
             <meshStandardMaterial color="#6b7280" roughness={0.62} metalness={0.2} envMapIntensity={0.88} />
           </mesh>
-          <mesh position={[0, 0.4, -1.35]} castShadow receiveShadow>
+          <mesh position={[0, 0.4, -1.35]} receiveShadow>
             <boxGeometry args={[1.9, 0.45, 2.1]} />
             <meshStandardMaterial color="#9ca3af" roughness={0.7} metalness={0.1} envMapIntensity={0.82} />
           </mesh>
-          <mesh position={[0, 0.6, 1.05]} castShadow material={glassMat}>
+          <mesh position={[0, 0.6, 1.05]} material={glassMat}>
             <boxGeometry args={[1.76, 0.32, 0.88]} />
           </mesh>
-          <mesh position={[0, 0.52, -0.35]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.52, -0.35]} material={glassRearMat}>
             <boxGeometry args={[1.65, 0.22, 0.55]} />
           </mesh>
-          <mesh position={[1, 0.48, 0.65]} castShadow material={glassMat}>
+          <mesh position={[1, 0.48, 0.65]} material={glassMat}>
             <boxGeometry args={[0.09, 0.22, 1.08]} />
           </mesh>
-          <mesh position={[-1, 0.48, 0.65]} castShadow material={glassMat}>
+          <mesh position={[-1, 0.48, 0.65]} material={glassMat}>
             <boxGeometry args={[0.09, 0.22, 1.08]} />
           </mesh>
           <TrafficCarFourDoor
@@ -943,35 +943,35 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'bus':
       return (
         <group scale={[0.71, 0.94, 0.9]}>
-          <mesh position={[0, 0.78, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.78, 0]} receiveShadow>
             <boxGeometry args={[2.45, 1.38, 9.6]} />
             <meshStandardMaterial color="#1d4ed8" roughness={0.48} metalness={0.14} envMapIntensity={0.9} />
           </mesh>
-          <mesh position={[0, 0.95, 0]} castShadow>
+          <mesh position={[0, 0.95, 0]} >
             <boxGeometry args={[2.35, 0.55, 8.8]} />
             <meshStandardMaterial color="#93c5fd" roughness={0.25} metalness={0.22} envMapIntensity={1.05} />
           </mesh>
-          <mesh position={[0, 0.98, 4.35]} castShadow material={glassMat}>
+          <mesh position={[0, 0.98, 4.35]} material={glassMat}>
             <boxGeometry args={[2.28, 0.48, 0.75]} />
           </mesh>
-          <mesh position={[0, 0.96, -4.35]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.96, -4.35]} material={glassRearMat}>
             <boxGeometry args={[2.26, 0.45, 0.7]} />
           </mesh>
-          <mesh position={[1.22, 0.5, 0]} castShadow>
+          <mesh position={[1.22, 0.5, 0]} >
             <boxGeometry args={[0.07, 0.85, 9.5]} />
             <meshStandardMaterial color="#cbd5e1" roughness={0.5} metalness={0.12} envMapIntensity={0.68} />
           </mesh>
           {[-3.35, -2.05, -0.75, 0.55, 1.85, 3.15].map((bz, i) => (
-            <mesh key={`bw-r-${i}`} position={[1.21, 0.82, bz]} castShadow material={glassMat}>
+            <mesh key={`bw-r-${i}`} position={[1.21, 0.82, bz]} material={glassMat}>
               <boxGeometry args={[0.1, 0.52, 0.88]} />
             </mesh>
           ))}
           {[-3.35, -2.05, -0.75, 0.55, 1.85, 3.15].map((bz, i) => (
-            <mesh key={`bw-l-${i}`} position={[-1.21, 0.82, bz]} castShadow material={glassMat}>
+            <mesh key={`bw-l-${i}`} position={[-1.21, 0.82, bz]} material={glassMat}>
               <boxGeometry args={[0.1, 0.52, 0.88]} />
             </mesh>
           ))}
-          <mesh position={[1.18, 0.45, 3.65]} castShadow material={trafficDoorSeamMat}>
+          <mesh position={[1.18, 0.45, 3.65]} material={trafficDoorSeamMat}>
             <boxGeometry args={[0.09, 0.75, 0.12]} />
           </mesh>
           <WheelsSix
@@ -987,17 +987,17 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'trailer':
       return (
         <group scale={[0.66, 0.92, 0.88]}>
-          <mesh position={[0, 0.52, 2.15]} castShadow receiveShadow>
+          <mesh position={[0, 0.52, 2.15]} receiveShadow>
             <boxGeometry args={[2.05, 1.12, 2.65]} />
             <meshStandardMaterial color="#b91c1c" roughness={0.55} metalness={0.17} envMapIntensity={0.9} />
           </mesh>
-          <mesh position={[0, 0.7, 2.62]} castShadow material={glassMat}>
+          <mesh position={[0, 0.7, 2.62]} material={glassMat}>
             <boxGeometry args={[1.86, 0.4, 0.88]} />
           </mesh>
-          <mesh position={[1.01, 0.55, 2.1]} castShadow material={glassMat}>
+          <mesh position={[1.01, 0.55, 2.1]} material={glassMat}>
             <boxGeometry args={[0.09, 0.3, 1.32]} />
           </mesh>
-          <mesh position={[-1.01, 0.55, 2.1]} castShadow material={glassMat}>
+          <mesh position={[-1.01, 0.55, 2.1]} material={glassMat}>
             <boxGeometry args={[0.09, 0.3, 1.32]} />
           </mesh>
           <TrafficCarFourDoor
@@ -1017,11 +1017,11 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
             radius={0.4}
             tireWidth={0.28}
           />
-          <mesh position={[0, 0.62, -2.9]} castShadow receiveShadow>
+          <mesh position={[0, 0.62, -2.9]} receiveShadow>
             <boxGeometry args={[2.2, 1.05, 7.2]} />
             <meshStandardMaterial color="#57534e" roughness={0.72} metalness={0.08} envMapIntensity={0.55} />
           </mesh>
-          <mesh position={[0, 0.95, -2.9]} castShadow>
+          <mesh position={[0, 0.95, -2.9]} >
             <boxGeometry args={[2.15, 0.08, 7.1]} />
             <meshStandardMaterial
               color="#fbbf24"
@@ -1044,16 +1044,16 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'bicycle':
       return (
         <group scale={0.95}>
-          <mesh position={[0, 0.45, 0]} castShadow>
+          <mesh position={[0, 0.45, 0]} >
             <cylinderGeometry args={[0.38, 0.38, 0.04, 12]} />
             <meshStandardMaterial color="#374151" roughness={0.65} envMapIntensity={0.5} />
           </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.32, 0]} castShadow>
+          <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.32, 0]} >
             <cylinderGeometry args={[0.03, 0.03, 1.15, 6]} />
             <meshStandardMaterial color="#1f2937" roughness={0.6} envMapIntensity={0.45} />
           </mesh>
           <group position={[0, 0.22, 0.42]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
+            <mesh receiveShadow material={tireMat}>
               <cylinderGeometry args={[0.36, 0.36, 0.1, 18]} />
             </mesh>
             <mesh material={rimMat}>
@@ -1061,7 +1061,7 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
             </mesh>
           </group>
           <group position={[0, 0.22, -0.42]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
+            <mesh receiveShadow material={tireMat}>
               <cylinderGeometry args={[0.36, 0.36, 0.1, 18]} />
             </mesh>
             <mesh material={rimMat}>
@@ -1073,36 +1073,36 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'motorbike':
       return (
         <group>
-          <mesh position={[0, 0.38, 0.05]} castShadow receiveShadow>
+          <mesh position={[0, 0.38, 0.05]} receiveShadow>
             <boxGeometry args={[0.52, 0.42, 1.85]} />
             <meshStandardMaterial color="#dc2626" roughness={0.45} metalness={0.22} envMapIntensity={0.85} />
           </mesh>
-          <mesh position={[0, 0.56, 0.58]} castShadow material={glassMat}>
+          <mesh position={[0, 0.56, 0.58]} material={glassMat}>
             <boxGeometry args={[0.38, 0.26, 0.44]} />
           </mesh>
-          <mesh position={[0.27, 0.52, 0.35]} castShadow material={glassMat}>
+          <mesh position={[0.27, 0.52, 0.35]} material={glassMat}>
             <boxGeometry args={[0.06, 0.16, 0.28]} />
           </mesh>
-          <mesh position={[-0.27, 0.52, 0.35]} castShadow material={glassMat}>
+          <mesh position={[-0.27, 0.52, 0.35]} material={glassMat}>
             <boxGeometry args={[0.06, 0.16, 0.28]} />
           </mesh>
-          <mesh position={[0.265, 0.42, 0.12]} castShadow material={trafficDoorSeamMat}>
+          <mesh position={[0.265, 0.42, 0.12]} material={trafficDoorSeamMat}>
             <boxGeometry args={[0.035, 0.2, 0.06]} />
           </mesh>
-          <mesh position={[-0.265, 0.42, 0.12]} castShadow material={trafficDoorSeamMat}>
+          <mesh position={[-0.265, 0.42, 0.12]} material={trafficDoorSeamMat}>
             <boxGeometry args={[0.035, 0.2, 0.06]} />
           </mesh>
-          <mesh position={[0.272, 0.44, 0.22]} castShadow material={trafficHandleMat}>
+          <mesh position={[0.272, 0.44, 0.22]} material={trafficHandleMat}>
             <boxGeometry args={[0.04, 0.032, 0.08]} />
           </mesh>
-          <mesh position={[-0.272, 0.44, 0.22]} castShadow material={trafficHandleMat}>
+          <mesh position={[-0.272, 0.44, 0.22]} material={trafficHandleMat}>
             <boxGeometry args={[0.04, 0.032, 0.08]} />
           </mesh>
-          <mesh position={[0, 0.48, -0.35]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.48, -0.35]} material={glassRearMat}>
             <boxGeometry args={[0.28, 0.14, 0.22]} />
           </mesh>
           <group position={[0, 0.19, 0.66]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
+            <mesh receiveShadow material={tireMat}>
               <cylinderGeometry args={[0.33, 0.33, 0.12, 18]} />
             </mesh>
             <mesh material={rimMat}>
@@ -1110,7 +1110,7 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
             </mesh>
           </group>
           <group position={[0, 0.19, -0.64]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
+            <mesh receiveShadow material={tireMat}>
               <cylinderGeometry args={[0.34, 0.34, 0.12, 18]} />
             </mesh>
             <mesh material={rimMat}>
@@ -1123,23 +1123,23 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'sedan':
       return (
         <group scale={[0.96, 0.98, 0.97]}>
-          <mesh position={[0, 0.36, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.36, 0]} receiveShadow>
             <boxGeometry args={[1.68, 0.48, 3.85]} />
             <meshStandardMaterial color="#1e3a5f" roughness={0.5} metalness={0.26} envMapIntensity={1.05} />
           </mesh>
-          <mesh position={[0, 0.59, 0.82]} castShadow material={glassMat}>
+          <mesh position={[0, 0.59, 0.82]} material={glassMat}>
             <boxGeometry args={[1.5, 0.3, 0.92]} />
           </mesh>
-          <mesh position={[0, 0.56, -0.88]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.56, -0.88]} material={glassRearMat}>
             <boxGeometry args={[1.46, 0.26, 0.68]} />
           </mesh>
-          <mesh position={[0.86, 0.5, 0.05]} castShadow material={glassMat}>
+          <mesh position={[0.86, 0.5, 0.05]} material={glassMat}>
             <boxGeometry args={[0.092, 0.22, 1.68]} />
           </mesh>
-          <mesh position={[-0.86, 0.5, 0.05]} castShadow material={glassMat}>
+          <mesh position={[-0.86, 0.5, 0.05]} material={glassMat}>
             <boxGeometry args={[0.092, 0.22, 1.68]} />
           </mesh>
-          <mesh position={[0, 0.4, -0.32]} castShadow>
+          <mesh position={[0, 0.4, -0.32]} >
             <boxGeometry args={[1.7, 0.07, 1.45]} />
             <meshStandardMaterial color="#0f172a" roughness={0.78} envMapIntensity={0.4} />
           </mesh>
@@ -1166,28 +1166,28 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'van':
       return (
         <group scale={[0.82, 0.95, 0.94]}>
-          <mesh position={[0, 0.52, 0.1]} castShadow receiveShadow>
+          <mesh position={[0, 0.52, 0.1]} receiveShadow>
             <boxGeometry args={[1.92, 1.05, 4.35]} />
             <meshStandardMaterial color="#e8e4dc" roughness={0.58} metalness={0.1} envMapIntensity={0.82} />
           </mesh>
-          <mesh position={[0, 0.64, 1.42]} castShadow material={glassMat}>
+          <mesh position={[0, 0.64, 1.42]} material={glassMat}>
             <boxGeometry args={[1.78, 0.44, 0.88]} />
           </mesh>
-          <mesh position={[0, 0.62, -0.35]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.62, -0.35]} material={glassRearMat}>
             <boxGeometry args={[1.72, 0.36, 0.62]} />
           </mesh>
-          <mesh position={[0.98, 0.58, 0.2]} castShadow material={glassMat}>
+          <mesh position={[0.98, 0.58, 0.2]} material={glassMat}>
             <boxGeometry args={[0.088, 0.4, 3.28]} />
           </mesh>
-          <mesh position={[-0.98, 0.58, 0.2]} castShadow material={glassMat}>
+          <mesh position={[-0.98, 0.58, 0.2]} material={glassMat}>
             <boxGeometry args={[0.088, 0.4, 3.28]} />
           </mesh>
-          <mesh position={[0.97, 0.45, 0]} castShadow>
+          <mesh position={[0.97, 0.45, 0]} >
             <boxGeometry args={[0.05, 0.55, 4.1]} />
             <meshStandardMaterial color="#cbd5e1" roughness={0.5} metalness={0.12} envMapIntensity={0.78} />
           </mesh>
           <TrafficSlidingDoorSide halfW={0.94} y={0.52} zPanel={-0.35} widthZ={1.55} tall={0.62} />
-          <mesh position={[-0.99, 0.48, -0.35]} castShadow material={trafficDoorSeamMat}>
+          <mesh position={[-0.99, 0.48, -0.35]} material={trafficDoorSeamMat}>
             <boxGeometry args={[0.06, 0.5, 0.1]} />
           </mesh>
           <WheelsFour
@@ -1204,23 +1204,23 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'suv':
       return (
         <group scale={[0.82, 0.96, 0.95]}>
-          <mesh position={[0, 0.48, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.48, 0]} receiveShadow>
             <boxGeometry args={[1.98, 0.72, 4.2]} />
             <meshStandardMaterial color="#292524" roughness={0.55} metalness={0.22} envMapIntensity={0.92} />
           </mesh>
-          <mesh position={[0, 0.74, 0.62]} castShadow material={glassMat}>
+          <mesh position={[0, 0.74, 0.62]} material={glassMat}>
             <boxGeometry args={[1.82, 0.4, 1.05]} />
           </mesh>
-          <mesh position={[0, 0.72, -0.95]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.72, -0.95]} material={glassRearMat}>
             <boxGeometry args={[1.78, 0.32, 0.75]} />
           </mesh>
-          <mesh position={[1, 0.62, 0.1]} castShadow material={glassMat}>
+          <mesh position={[1, 0.62, 0.1]} material={glassMat}>
             <boxGeometry args={[0.09, 0.3, 1.88]} />
           </mesh>
-          <mesh position={[-1, 0.62, 0.1]} castShadow material={glassMat}>
+          <mesh position={[-1, 0.62, 0.1]} material={glassMat}>
             <boxGeometry args={[0.09, 0.3, 1.88]} />
           </mesh>
-          <mesh position={[0, 0.88, -0.35]} castShadow receiveShadow>
+          <mesh position={[0, 0.88, -0.35]} receiveShadow>
             <boxGeometry args={[1.88, 0.22, 1.5]} />
             <meshStandardMaterial color="#44403c" roughness={0.62} envMapIntensity={0.55} />
           </mesh>
@@ -1247,31 +1247,31 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     case 'matatu':
       return (
         <group scale={[0.74, 0.94, 0.9]}>
-          <mesh position={[0, 0.62, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.62, 0]} receiveShadow>
             <boxGeometry args={[2.05, 1.05, 5.4]} />
             <meshStandardMaterial color="#ca8a04" roughness={0.52} metalness={0.12} envMapIntensity={0.88} />
           </mesh>
-          <mesh position={[0, 0.78, 0.15]} castShadow>
+          <mesh position={[0, 0.78, 0.15]} >
             <boxGeometry args={[1.95, 0.42, 4.85]} />
             <meshStandardMaterial color="#fef08a" roughness={0.35} metalness={0.14} envMapIntensity={0.95} />
           </mesh>
-          <mesh position={[0, 0.8, 2.42]} castShadow material={glassMat}>
+          <mesh position={[0, 0.8, 2.42]} material={glassMat}>
             <boxGeometry args={[1.92, 0.38, 0.72]} />
           </mesh>
-          <mesh position={[0, 0.78, -2.35]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.78, -2.35]} material={glassRearMat}>
             <boxGeometry args={[1.9, 0.36, 0.65]} />
           </mesh>
-          <mesh position={[1.03, 0.42, 0]} castShadow>
+          <mesh position={[1.03, 0.42, 0]} >
             <boxGeometry args={[0.05, 0.65, 5.2]} />
             <meshStandardMaterial color="#94a3b8" roughness={0.45} metalness={0.15} envMapIntensity={0.72} />
           </mesh>
           {[-2.15, -0.85, 0.45, 1.75].map((mz, i) => (
-            <mesh key={`mt-l-${i}`} position={[-1.02, 0.72, mz]} castShadow material={glassMat}>
+            <mesh key={`mt-l-${i}`} position={[-1.02, 0.72, mz]} material={glassMat}>
               <boxGeometry args={[0.09, 0.42, 0.82]} />
             </mesh>
           ))}
           <TrafficSlidingDoorSide halfW={1.01} y={0.48} zPanel={-0.55} widthZ={1.35} tall={0.58} />
-          <mesh position={[0, 0.58, 2.35]} castShadow>
+          <mesh position={[0, 0.58, 2.35]} >
             <boxGeometry args={[1.98, 0.12, 0.85]} />
             <meshStandardMaterial color="#15803d" roughness={0.55} envMapIntensity={0.5} />
           </mesh>
@@ -1288,20 +1288,20 @@ function VehicleMesh({ kind }: { kind: VehicleKind }) {
     default:
       return (
         <group>
-          <mesh position={[0, 0.35, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.35, 0]} receiveShadow>
             <boxGeometry args={[1.6, 0.5, 3.6]} />
             <meshStandardMaterial color="#64748b" roughness={0.65} metalness={0.18} envMapIntensity={0.85} />
           </mesh>
-          <mesh position={[0, 0.54, 0.65]} castShadow material={glassMat}>
+          <mesh position={[0, 0.54, 0.65]} material={glassMat}>
             <boxGeometry args={[1.45, 0.26, 0.85]} />
           </mesh>
-          <mesh position={[0, 0.5, -0.7]} castShadow material={glassRearMat}>
+          <mesh position={[0, 0.5, -0.7]} material={glassRearMat}>
             <boxGeometry args={[1.4, 0.22, 0.55]} />
           </mesh>
-          <mesh position={[0.82, 0.48, 0.02]} castShadow material={glassMat}>
+          <mesh position={[0.82, 0.48, 0.02]} material={glassMat}>
             <boxGeometry args={[0.088, 0.2, 1.55]} />
           </mesh>
-          <mesh position={[-0.82, 0.48, 0.02]} castShadow material={glassMat}>
+          <mesh position={[-0.82, 0.48, 0.02]} material={glassMat}>
             <boxGeometry args={[0.088, 0.2, 1.55]} />
           </mesh>
           <TrafficCarFourDoor

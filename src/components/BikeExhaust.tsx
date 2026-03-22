@@ -25,8 +25,8 @@ const AIR_EMITTERS_LOCAL = [
   new THREE.Vector3(0.32, 0.22, -0.55),
 ]
 
-const EXHAUST_COUNT = 26
-const AIR_COUNT = 40
+const EXHAUST_COUNT = 16
+const AIR_COUNT = 24
 const TOTAL = EXHAUST_COUNT + AIR_COUNT
 
 type Props = {

@@ -36,7 +36,8 @@ export function GameScene() {
         castShadow
         intensity={1.12}
         position={sunLightPosition}
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize={[512, 512]}
+        shadow-normalBias={0.06}
         shadow-camera-near={0.5}
         shadow-camera-far={130}
         shadow-camera-left={-shadowHalf}
