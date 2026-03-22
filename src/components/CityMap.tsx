@@ -21,7 +21,6 @@ import {
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
 import { BuildingNameLabel } from './BuildingNameLabel'
-import { BuildingPerimeterFence } from './BuildingPerimeterFence'
 import {
   BoxBuildingWindowGrids,
   CylinderCurtainPanels,
@@ -37,20 +36,13 @@ import { IntersectionTrafficPair } from './TrafficLight'
 const TRAFFIC_LIGHT_CORNER =
   ROAD_W / 2 + SIDEWALK_WIDTH * 0.55
 
-/** Map coords from design brief → world XZ (±200 → inside playable city). */
-const MAP_COORD_SCALE = (CITY_TOTAL * 0.38) / 200
-const LANDMARK_MAPEERA: [number, number] = [
-  200 * MAP_COORD_SCALE,
-  200 * MAP_COORD_SCALE,
-]
-const LANDMARK_STANBIC: [number, number] = [
-  -200 * MAP_COORD_SCALE,
-  200 * MAP_COORD_SCALE,
-]
-const LANDMARK_NSSF: [number, number] = [
-  200 * MAP_COORD_SCALE,
-  -200 * MAP_COORD_SCALE,
-]
+/**
+ * Landmark towers on fixed block centers — fully inside building plots, not on tarmac.
+ * (Scaled “brief” coords sat between blocks and overlapped road shoulders, e.g. Mapeera.)
+ */
+const LANDMARK_MAPEERA: [number, number] = blockCenter(8, 8)
+const LANDMARK_STANBIC: [number, number] = blockCenter(1, 8)
+const LANDMARK_NSSF: [number, number] = blockCenter(8, 1)
 
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
@@ -774,6 +766,51 @@ function footprintClearOfTarmac(
   return true
 }
 
+/** Parking slab half-extents (matches `ParkingLot` footprint). */
+const PARKING_LOT_DEPTH = 3.2
+
+/**
+ * Find a compound parking placement beside a building: off tarmac, lot corners clear of roads.
+ */
+function findParkingNearBuilding(
+  cx: number,
+  cz: number,
+  halfW: number,
+  halfD: number,
+  rot: number,
+  preferredSlots: number,
+): { x: number; z: number; rot: number; slots: number } | null {
+  for (let slots = preferredSlots; slots >= 2; slots--) {
+    const lotHalfW = (slots * 1.2 + 1) / 2
+    const lotHalfD = PARKING_LOT_DEPTH / 2
+    const gap = Math.max(halfW, halfD) + lotHalfD + 0.95
+    const candidates: { x: number; z: number; rot: number }[] = [
+      { x: cx + Math.cos(rot) * gap, z: cz - Math.sin(rot) * gap, rot },
+      { x: cx - Math.cos(rot) * gap, z: cz + Math.sin(rot) * gap, rot: rot + Math.PI },
+      {
+        x: cx + Math.sin(rot) * gap,
+        z: cz + Math.cos(rot) * gap,
+        rot: rot + Math.PI / 2,
+      },
+      {
+        x: cx - Math.sin(rot) * gap,
+        z: cz - Math.cos(rot) * gap,
+        rot: rot - Math.PI / 2,
+      },
+      { x: cx + gap, z: cz, rot: 0 },
+      { x: cx - gap, z: cz, rot: 0 },
+      { x: cx, z: cz + gap, rot: Math.PI / 2 },
+      { x: cx, z: cz - gap, rot: Math.PI / 2 },
+    ]
+    for (const c of candidates) {
+      if (!isValidBuildingPlot(c.x, c.z, 1.95)) continue
+      if (!footprintClearOfTarmac(c.x, c.z, lotHalfW, lotHalfD, c.rot, 0.22)) continue
+      return { ...c, slots }
+    }
+  }
+  return null
+}
+
 /** Extra world units beyond `CITY_TOTAL` on the grass plane (half = border strip width). */
 const GROUND_MARGIN = 80
 const HALF_GROUND = (CITY_TOTAL + GROUND_MARGIN) / 2
@@ -980,6 +1017,63 @@ function CityMapContent() {
     const carList: ReactNode[] = []
     const standList: ReactNode[] = []
 
+    const addParkingCompound = (
+      keyBase: string,
+      placement: { x: number; z: number; rot: number; slots: number },
+      si: number,
+      sj: number,
+      salt: number,
+    ) => {
+      const { x: lotX, z: lotZ, rot: lotRot, slots: lotSlots } = placement
+      lotList.push(
+        <ParkingLot
+          key={`${keyBase}-lot`}
+          x={lotX}
+          z={lotZ}
+          rotationY={lotRot}
+          slots={lotSlots}
+        />,
+      )
+      for (let c = 0; c < lotSlots; c++) {
+        if (rnd(si, sj, salt + c) < 0.06) continue
+        const rcx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
+        const rcz = lotZ + (rnd(si, sj, salt + 20 + c) - 0.5) * 0.22
+        carList.push(
+          <ParkedCar
+            key={`${keyBase}-c-${c}`}
+            x={rcx}
+            z={rcz}
+            rotationY={lotRot}
+          />,
+        )
+        if (rnd(si, sj, salt + 120 + c) < 0.14) continue
+        const rcx2 = rcx + Math.sin(lotRot) * 2.35
+        const rcz2 = rcz - Math.cos(lotRot) * 2.35
+        carList.push(
+          <ParkedCar
+            key={`${keyBase}-c2-${c}`}
+            x={rcx2}
+            z={rcz2}
+            rotationY={lotRot}
+          />,
+        )
+      }
+      for (let s = 0; s < 3; s++) {
+        if (rnd(si, sj, salt + 40 + s) > 0.42) continue
+        standList.push(
+          <StandingPerson
+            key={`${keyBase}-st-${s}`}
+            x={lotX + (rnd(si, sj, salt + 50 + s) - 0.5) * 2.1}
+            z={lotZ + (rnd(si, sj, salt + 60 + s) - 0.5) * 1.5}
+            rotationY={lotRot + Math.PI / 2}
+            si={si + s * 2}
+            sj={sj + 90}
+            salt={salt + 70 + s}
+          />,
+        )
+      }
+    }
+
     for (let i = 0; i < NUM_BLOCKS; i++) {
       for (let j = 0; j < NUM_BLOCKS; j++) {
         const [bcx, bcz] = blockCenter(i, j)
@@ -991,98 +1085,18 @@ function CityMapContent() {
           const fd = 5 + rnd(i, j, 20) * 2
           if (footprintClearOfTarmac(bcx, bcz, fw / 2, fd / 2, 0)) {
             const lotSlots = 3 + Math.floor(rnd(i, j, 301) * 3)
-            const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
-            const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
-            if (isValidBuildingPlot(lotX, lotZ, 2.2)) {
-              const lotRot = rnd(i, j, 304) < 0.5 ? 0 : Math.PI / 2
-              lotList.push(
-                <ParkingLot
-                  key={`lot-mid-${i}-${j}`}
-                  x={lotX}
-                  z={lotZ}
-                  rotationY={lotRot}
-                  slots={lotSlots}
-                />,
-              )
-              for (let c = 0; c < lotSlots; c++) {
-                if (rnd(i, j, 320 + c) < 0.05) continue
-                const cx = lotX - (lotSlots - 1) * 0.6 + c * 1.2
-                const cz = lotZ + (rnd(i, j, 330 + c) - 0.5) * 0.22
-                carList.push(
-                  <ParkedCar
-                    key={`pc-mid-${i}-${j}-${c}`}
-                    x={cx}
-                    z={cz}
-                    rotationY={lotRot}
-                  />,
-                )
-              }
-              for (let c = 0; c < lotSlots; c++) {
-                if (rnd(i, j, 420 + c) < 0.12) continue
-                const cx1 = lotX - (lotSlots - 1) * 0.6 + c * 1.2
-                const cz1 = lotZ + (rnd(i, j, 430 + c) - 0.5) * 0.22
-                const cx2 = cx1 + Math.sin(lotRot) * 2.35
-                const cz2 = cz1 - Math.cos(lotRot) * 2.35
-                carList.push(
-                  <ParkedCar
-                    key={`pc-mid2-${i}-${j}-${c}`}
-                    x={cx2}
-                    z={cz2}
-                    rotationY={lotRot}
-                  />,
-                )
-              }
-              for (let s = 0; s < 4; s++) {
-                if (rnd(i, j, 440 + s) > 0.38) continue
-                const ang = lotRot + (rnd(i, j, 450 + s) - 0.5) * 0.5
-                const sx = lotX + Math.cos(ang) * (1.9 + s * 0.35)
-                const sz = lotZ + Math.sin(ang) * (1.9 + s * 0.35)
-                standList.push(
-                  <StandingPerson
-                    key={`st-mid-${i}-${j}-${s}`}
-                    x={sx}
-                    z={sz}
-                    rotationY={lotRot + Math.PI / 2}
-                    si={i + s * 3}
-                    sj={j + 20}
-                    salt={460 + s}
-                  />,
-                )
-              }
+            const midParking = findParkingNearBuilding(
+              bcx,
+              bcz,
+              fw / 2,
+              fd / 2,
+              0,
+              lotSlots,
+            )
+            if (midParking) {
+              addParkingCompound(`lot-mid-${i}-${j}`, midParking, i, j, 300)
             }
             const midFloors = 8 + Math.floor(rnd(i, j, 18) * 4)
-            const mallFence =
-              namedMid?.facade === 'acacia' || namedMid?.facade === 'garden' ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.15}
-                    height={2.15}
-                    variant="mesh"
-                  />
-                </group>
-              ) : namedMid && !namedMid.facade ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.1}
-                    height={2.05}
-                    variant="solid"
-                  />
-                </group>
-              ) : rnd(i, j, 888) < 0.11 ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.05}
-                    height={rnd(i, j, 889) < 0.5 ? 1.95 : 2.15}
-                    variant={rnd(i, j, 890) < 0.5 ? 'mesh' : 'solid'}
-                  />
-                </group>
-              ) : null
 
             midList.push(
               <group key={`mid-${i}-${j}`}>
@@ -1097,7 +1111,6 @@ function CityMapContent() {
                     namedMid?.facade ? mallFacadeMats[namedMid.facade] : undefined
                   }
                 />
-                {mallFence}
               </group>,
             )
             continue
@@ -1125,18 +1138,6 @@ function CityMapContent() {
             WALL_TONES[Math.floor(rnd(i, j, 60 + k) * WALL_TONES.length)]
 
           const rk = uuidv4()
-          const retailFence =
-            rnd(i, j, 700 + k) < 0.09 ? (
-              <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-                <BuildingPerimeterFence
-                  halfWidth={w / 2}
-                  halfDepth={d / 2}
-                  margin={0.88}
-                  height={1.88}
-                  variant={rnd(i, j, 701 + k) < 0.52 ? 'mesh' : 'solid'}
-                />
-              </group>
-            ) : null
           retailList.push(
             <group key={rk}>
               <GenericCommercialBlock
@@ -1149,56 +1150,36 @@ function CityMapContent() {
                 pitchedRoof={pitchedRoof}
                 rotationY={rot}
               />
-              {retailFence}
             </group>,
           )
-          if (rnd(i, j, 715 + k) < 0.28) {
-            const slotsR = 2 + Math.floor(rnd(i, j, 716 + k) * 3)
-            const lotRX = x + Math.cos(rot) * (w * 0.5 + 2.6)
-            const lotRZ = z - Math.sin(rot) * (w * 0.5 + 2.6)
-            const lotRRot = rot + (rnd(i, j, 717 + k) < 0.5 ? 0 : Math.PI / 2)
-            if (isValidBuildingPlot(lotRX, lotRZ, 1.8)) {
-              lotList.push(
-                <ParkingLot
-                  key={`lot-ret-${i}-${j}-${k}`}
-                  x={lotRX}
-                  z={lotRZ}
-                  rotationY={lotRRot}
-                  slots={slotsR}
-                />,
-              )
-              for (let c = 0; c < slotsR; c++) {
-                if (rnd(i, j, 718 + c + k * 7) < 0.08) continue
-                const rcx = lotRX - (slotsR - 1) * 0.6 + c * 1.2
-                const rcz = lotRZ + (rnd(i, j, 719 + c + k * 7) - 0.5) * 0.2
-                carList.push(
-                  <ParkedCar
-                    key={`pc-ret-${i}-${j}-${k}-${c}`}
-                    x={rcx}
-                    z={rcz}
-                    rotationY={lotRRot}
-                  />,
-                )
-              }
-              for (let s = 0; s < 2; s++) {
-                if (rnd(i, j, 728 + s + k) > 0.35) continue
-                standList.push(
-                  <StandingPerson
-                    key={`st-ret-${i}-${j}-${k}-${s}`}
-                    x={lotRX + (rnd(i, j, 729 + s) - 0.5) * 2.2}
-                    z={lotRZ + (rnd(i, j, 730 + s) - 0.5) * 1.8}
-                    rotationY={lotRRot}
-                    si={i + k * 5}
-                    sj={j + s + 80}
-                    salt={735 + s + k}
-                  />,
-                )
-              }
-            }
+          const slotsR = 2 + Math.floor(rnd(i, j, 716 + k) * 4)
+          const retailPark = findParkingNearBuilding(
+            x,
+            z,
+            w / 2,
+            d / 2,
+            rot,
+            slotsR,
+          )
+          if (retailPark) {
+            addParkingCompound(
+              `lot-ret-${i}-${j}-${k}`,
+              retailPark,
+              i + k * 3,
+              j + k * 5,
+              710 + k * 11,
+            )
           }
         }
       }
     }
+
+    const lmMapeera = findParkingNearBuilding(mx, mz, 3.35, 1.75, 0, 5)
+    if (lmMapeera) addParkingCompound('lot-lm-mapeera', lmMapeera, 11, 91, 9000)
+    const lmStanbic = findParkingNearBuilding(sx, sz, 6.2, 6.2, 0, 6)
+    if (lmStanbic) addParkingCompound('lot-lm-stanbic', lmStanbic, 12, 92, 9100)
+    const lmNssf = findParkingNearBuilding(nx, nz, 2.95, 2.55, 0, 5)
+    if (lmNssf) addParkingCompound('lot-lm-nssf', lmNssf, 13, 93, 9200)
 
     const treePts = sampleGreenZoneTreePositions()
     const treeNodes = treePts.map(([tx, tz], idx) => (
@@ -1218,7 +1199,17 @@ function CityMapContent() {
       parkedCars: carList,
       parkingStanders: standList,
     }
-  }, [midriseMat, mallFacadeMats, pitchedRoofMat])
+  }, [
+    midriseMat,
+    mallFacadeMats,
+    pitchedRoofMat,
+    mx,
+    mz,
+    sx,
+    sz,
+    nx,
+    nz,
+  ])
 
   const concreteLotDecor = useMemo(() => {
     const nodes: ReactNode[] = []
@@ -1402,34 +1393,6 @@ function CityMapContent() {
         subtitle="Workers House"
         width={8}
       />
-
-      <group position={[mx, 0, mz]}>
-        <BuildingPerimeterFence
-          halfWidth={2.75}
-          halfDepth={1.65}
-          margin={1.1}
-          height={2.1}
-          variant="mesh"
-        />
-      </group>
-      <group position={[sx, 0, sz]}>
-        <BuildingPerimeterFence
-          halfWidth={6.35}
-          halfDepth={6.35}
-          margin={1.45}
-          height={2.4}
-          variant="solid"
-        />
-      </group>
-      <group position={[nx, 0, nz]}>
-        <BuildingPerimeterFence
-          halfWidth={3.85}
-          halfDepth={2.95}
-          margin={1.02}
-          height={2.02}
-          variant="mesh"
-        />
-      </group>
 
       {midrise}
       {retail}
