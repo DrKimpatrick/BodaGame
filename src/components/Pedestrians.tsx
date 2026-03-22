@@ -25,9 +25,33 @@ import {
 /** Lying-down knockdown, then stand and resume pathing. */
 const PED_KNOCKDOWN_RECOVERY_MS = 5000
 
+/** Reused across all pedestrians — avoids thousands of `new Quaternion/Euler` per frame (GC churn). */
+const _pedQ = new THREE.Quaternion()
+const _pedE = new THREE.Euler()
+const _pedUp = new THREE.Vector3(0, 1, 0)
+
 const SHIRTS = ['#c2410c', '#1d4ed8', '#047857', '#7c3aed', '#b45309', '#0f766e', '#be185d', '#4f46e5']
 const PANTS = ['#1e293b', '#292524', '#334155', '#44403c', '#27272a']
 const SKINS = ['#c4a574', '#8d5524', '#e0ac69', '#5c3a21', '#b8936a', '#6b4423']
+
+/** One `MeshStandardMaterial` per palette colour — avoids hundreds of duplicate materials. */
+const pedMatSkin = new Map<string, THREE.MeshStandardMaterial>()
+const pedMatShirt = new Map<string, THREE.MeshStandardMaterial>()
+const pedMatPants = new Map<string, THREE.MeshStandardMaterial>()
+
+function sharedPedMaterial(
+  cache: Map<string, THREE.MeshStandardMaterial>,
+  color: string,
+  roughness: number,
+  metalness: number,
+): THREE.MeshStandardMaterial {
+  let m = cache.get(color)
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness, metalness })
+    cache.set(color, m)
+  }
+  return m
+}
 
 function pick<T>(arr: T[], seed: number, salt: number): T {
   const i = Math.min(arr.length - 1, Math.floor(segmentRandom(seed, salt, 77) * arr.length))
@@ -59,9 +83,9 @@ function pedCollisionHandler(
     if (!rb) return
     const t = rb.translation()
     const r = rb.rotation()
-    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
-    const eq = new THREE.Euler().setFromQuaternion(q, 'YXZ')
-    freezeRef.current = { x: t.x, y: t.y, z: t.z, yaw: eq.y }
+    _pedQ.set(r.x, r.y, r.z, r.w)
+    _pedE.setFromQuaternion(_pedQ, 'YXZ')
+    freezeRef.current = { x: t.x, y: t.y, z: t.z, yaw: _pedE.y }
   }
 }
 
@@ -78,33 +102,9 @@ function SimpleWalker({
   const legL = useRef<THREE.Group>(null)
   const legR = useRef<THREE.Group>(null)
 
-  const skinMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: pick(SKINS, seed, 1),
-        roughness: 0.66,
-        metalness: 0.02,
-      }),
-    [seed],
-  )
-  const shirtMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: pick(SHIRTS, seed, 2),
-        roughness: 0.78,
-        metalness: 0.04,
-      }),
-    [seed],
-  )
-  const pantsMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: pick(PANTS, seed, 3),
-        roughness: 0.82,
-        metalness: 0.03,
-      }),
-    [seed],
-  )
+  const skinMat = sharedPedMaterial(pedMatSkin, pick(SKINS, seed, 1), 0.66, 0.02)
+  const shirtMat = sharedPedMaterial(pedMatShirt, pick(SHIRTS, seed, 2), 0.78, 0.04)
+  const pantsMat = sharedPedMaterial(pedMatPants, pick(PANTS, seed, 3), 0.82, 0.03)
 
   useFrame(({ clock }) => {
     if (legsFrozenRef?.current) return
@@ -116,7 +116,7 @@ function SimpleWalker({
   return (
     <group scale={scale} position={[0, -0.33, 0]}>
       <mesh position={[0, 1.38, 0]} castShadow material={skinMat}>
-        <sphereGeometry args={[0.12, 10, 10]} />
+        <sphereGeometry args={[0.12, 8, 8]} />
       </mesh>
       <mesh position={[0, 0.98, 0]} castShadow material={shirtMat}>
         <boxGeometry args={[0.3, 0.48, 0.18]} />
@@ -182,10 +182,9 @@ function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }
         const f = freezeRef.current
         const pitch = THREE.MathUtils.lerp(0, 1.42, e)
         const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
-        const q = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-        )
-        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        _pedE.set(pitch, f.yaw, roll, 'YXZ')
+        _pedQ.setFromEuler(_pedE)
+        rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
         rb.setTranslation(
           {
             x: f.x,
@@ -203,8 +202,8 @@ function CrosserVertical({ site, idx }: { site: ZebraVerticalSite; idx: number }
     const vx = Math.cos(t) * half * speed
     const ry = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
     rb.setTranslation({ x, y: 0.075, z }, true)
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
-    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+    _pedQ.setFromAxisAngle(_pedUp, ry)
+    rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
   })
 
   return (
@@ -276,10 +275,9 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
         const f = freezeRef.current
         const pitch = THREE.MathUtils.lerp(0, 1.42, e)
         const roll = Math.sin(f.yaw * 2.7 + idx) * 0.2 * e
-        const q = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-        )
-        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        _pedE.set(pitch, f.yaw, roll, 'YXZ')
+        _pedQ.setFromEuler(_pedE)
+        rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
         rb.setTranslation(
           {
             x: f.x,
@@ -296,8 +294,8 @@ function CrosserHorizontal({ site, idx }: { site: ZebraHorizontalSite; idx: numb
     const vz = Math.cos(t) * half * speed
     const ry = vz >= 0 ? 0 : Math.PI
     rb.setTranslation({ x: site.x + xOff, y: 0.075, z }, true)
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
-    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+    _pedQ.setFromAxisAngle(_pedUp, ry)
+    rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
   })
 
   return (
@@ -381,10 +379,9 @@ function SidewalkWalkerVertical({
         const f = freezeRef.current
         const pitch = THREE.MathUtils.lerp(0, 1.42, e)
         const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
-        const q = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-        )
-        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        _pedE.set(pitch, f.yaw, roll, 'YXZ')
+        _pedQ.setFromEuler(_pedE)
+        rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
         rb.setTranslation(
           {
             x: f.x,
@@ -402,8 +399,8 @@ function SidewalkWalkerVertical({
     const vz = Math.cos(t)
     const ry = vz >= 0 ? 0 : Math.PI
     rb.setTranslation({ x: slot.x + xSpread, y: 0.055, z }, true)
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
-    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+    _pedQ.setFromAxisAngle(_pedUp, ry)
+    rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
   })
 
   return (
@@ -484,10 +481,9 @@ function SidewalkWalkerHorizontal({
         const f = freezeRef.current
         const pitch = THREE.MathUtils.lerp(0, 1.42, e)
         const roll = Math.sin(f.yaw * 2.7) * 0.2 * e
-        const q = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(pitch, f.yaw, roll, 'YXZ'),
-        )
-        rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+        _pedE.set(pitch, f.yaw, roll, 'YXZ')
+        _pedQ.setFromEuler(_pedE)
+        rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
         rb.setTranslation(
           {
             x: f.x,
@@ -505,8 +501,8 @@ function SidewalkWalkerHorizontal({
     const vx = Math.cos(t)
     const ry = vx >= 0 ? -Math.PI / 2 : Math.PI / 2
     rb.setTranslation({ x, y: 0.055, z: slot.z + zSpread }, true)
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry)
-    rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+    _pedQ.setFromAxisAngle(_pedUp, ry)
+    rb.setRotation({ x: _pedQ.x, y: _pedQ.y, z: _pedQ.z, w: _pedQ.w }, true)
   })
 
   return (

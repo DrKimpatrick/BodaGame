@@ -17,6 +17,9 @@ import {
 } from '@game/cityGrid'
 import { segmentRandom } from '@game/roadDecorPlacements'
 
+const _trafficYawQ = new THREE.Quaternion()
+const _trafficUp = new THREE.Vector3(0, 1, 0)
+
 const X0 = CITY_START
 const Z0 = CITY_START
 const X1 = CITY_START + CITY_TOTAL
@@ -599,8 +602,16 @@ function applyAgentToRigidBody(
 ) {
   if (world.getRigidBody(rb.handle) == null) return
   rb.setTranslation({ x: a.x, y: 0.09, z: a.z }, true)
-  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad)
-  rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
+  _trafficYawQ.setFromAxisAngle(_trafficUp, yawRad)
+  rb.setRotation(
+    {
+      x: _trafficYawQ.x,
+      y: _trafficYawQ.y,
+      z: _trafficYawQ.z,
+      w: _trafficYawQ.w,
+    },
+    true,
+  )
 }
 
 const tireMat = new THREE.MeshStandardMaterial({
@@ -1410,6 +1421,7 @@ export function RoadTraffic() {
 
       const alive = integrateAgent(a, dt, ov, oh, rng, sp)
       if (!alive) {
+        const prevKind = a.kind
         const wasV = i < NUM_V_SLOTS
         const salt = Math.floor(performance.now() + i) % 997
         if (wasV) {
@@ -1432,7 +1444,8 @@ export function RoadTraffic() {
         a = agents[i]!
         yawBuf[i] = headingToYaw(a.heading)
         spdBuf[i] = a.speed
-        setRenderTick((t) => t + 1)
+        /** Avoid React re-rendering all traffic slots when only physics state changed. */
+        if (a.kind !== prevKind) setRenderTick((t) => t + 1)
       }
 
       if (agents[i])

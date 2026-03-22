@@ -263,6 +263,7 @@ useGameStore.subscribe((state) => {
   if (typeof sessionStorage === 'undefined') return
   if (isProgressPristine(state)) return
   try {
+    if (sessionStorage.getItem(SESSION_STORAGE_PROGRESS_KEY) === '1') return
     sessionStorage.setItem(SESSION_STORAGE_PROGRESS_KEY, '1')
   } catch {
     /* private mode */

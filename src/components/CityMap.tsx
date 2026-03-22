@@ -468,6 +468,50 @@ const parkedCarHandleMat = new THREE.MeshStandardMaterial({
   envMapIntensity: 0.95,
 })
 
+const parkedCarSillMat = new THREE.MeshStandardMaterial({
+  color: '#475569',
+  roughness: 0.55,
+  metalness: 0.22,
+  envMapIntensity: 0.75,
+})
+
+const parkedCarPillarMat = new THREE.MeshStandardMaterial({
+  color: '#1e293b',
+  roughness: 0.65,
+  metalness: 0.15,
+  envMapIntensity: 0.5,
+})
+
+const parkedCarSeamMat = new THREE.MeshStandardMaterial({
+  color: '#334155',
+  roughness: 0.7,
+  metalness: 0.2,
+})
+
+const parkedCarHeadlampMat = new THREE.MeshStandardMaterial({
+  color: '#fffef5',
+  emissive: '#fff3c4',
+  emissiveIntensity: 2.4,
+  toneMapped: false,
+})
+
+/** One body+cabin material per paint swatch (was 2 unique materials × every parked car). */
+const parkedCarBodyByPaint = new Map<string, THREE.MeshStandardMaterial>()
+
+function sharedParkedCarPaintMat(paint: string): THREE.MeshStandardMaterial {
+  let m = parkedCarBodyByPaint.get(paint)
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      color: paint,
+      roughness: 0.41,
+      metalness: 0.35,
+      envMapIntensity: 1.035,
+    })
+    parkedCarBodyByPaint.set(paint, m)
+  }
+  return m
+}
+
 const PARKED_PAINT = ['#94a3b8', '#cbd5e1', '#64748b', '#78716c', '#1e3a5f', '#334155'] as const
 
 function ParkedCarWheel({
@@ -486,10 +530,10 @@ function ParkedCarWheel({
   return (
     <group position={[x, y, z]}>
       <mesh rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow material={parkedCarTireMat}>
-        <cylinderGeometry args={[radius, radius, width, 16]} />
+        <cylinderGeometry args={[radius, radius, width, 10]} />
       </mesh>
       <mesh rotation={[0, 0, Math.PI / 2]} castShadow material={parkedCarRimMat}>
-        <cylinderGeometry args={[radius * 0.52, radius * 0.52, width + 0.028, 10]} />
+        <cylinderGeometry args={[radius * 0.52, radius * 0.52, width + 0.028, 8]} />
       </mesh>
     </group>
   )
@@ -498,7 +542,7 @@ function ParkedCarWheel({
 function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: number }) {
   const paint =
     PARKED_PAINT[Math.floor(Math.abs(Math.sin(x * 14.2 + z * 91.7)) * PARKED_PAINT.length) % PARKED_PAINT.length]
-  const sill = '#475569'
+  const paintMat = sharedParkedCarPaintMat(paint)
   const halfW = 0.44
   const wy = 0.132
   const wr = 0.128
@@ -510,34 +554,16 @@ function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: numbe
     <RigidBody type="fixed" colliders={false} position={[x, 0, z]} rotation={[0, rotationY, 0]}>
       <group>
         {/* Lower sill / rocker */}
-        <mesh position={[0, 0.175, 0]} castShadow receiveShadow>
+        <mesh position={[0, 0.175, 0]} castShadow receiveShadow material={parkedCarSillMat}>
           <boxGeometry args={[0.86, 0.14, 1.64]} />
-          <meshStandardMaterial
-            color={sill}
-            roughness={0.55}
-            metalness={0.22}
-            envMapIntensity={0.75}
-          />
         </mesh>
         {/* Main body */}
-        <mesh position={[0, 0.34, 0]} castShadow receiveShadow>
+        <mesh position={[0, 0.34, 0]} castShadow receiveShadow material={paintMat}>
           <boxGeometry args={[0.88, 0.2, 1.68]} />
-          <meshStandardMaterial
-            color={paint}
-            roughness={0.42}
-            metalness={0.34}
-            envMapIntensity={1.02}
-          />
         </mesh>
         {/* Cabin / roof block */}
-        <mesh position={[0, 0.545, 0.04]} castShadow receiveShadow>
+        <mesh position={[0, 0.545, 0.04]} castShadow receiveShadow material={paintMat}>
           <boxGeometry args={[0.74, 0.19, 0.88]} />
-          <meshStandardMaterial
-            color={paint}
-            roughness={0.4}
-            metalness={0.36}
-            envMapIntensity={1.05}
-          />
         </mesh>
         {/* Windshield */}
         <mesh position={[0, 0.52, 0.52]} castShadow material={parkedCarGlassMat}>
@@ -561,30 +587,24 @@ function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: numbe
           <boxGeometry args={[0.038, 0.13, 0.36]} />
         </mesh>
         {/* B-pillars */}
-        <mesh position={[halfW + 0.012, 0.52, -0.02]} castShadow receiveShadow>
+        <mesh position={[halfW + 0.012, 0.52, -0.02]} castShadow receiveShadow material={parkedCarPillarMat}>
           <boxGeometry args={[0.055, 0.175, 0.065]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.65} metalness={0.15} envMapIntensity={0.5} />
         </mesh>
-        <mesh position={[-halfW - 0.012, 0.52, -0.02]} castShadow receiveShadow>
+        <mesh position={[-halfW - 0.012, 0.52, -0.02]} castShadow receiveShadow material={parkedCarPillarMat}>
           <boxGeometry args={[0.055, 0.175, 0.065]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.65} metalness={0.15} envMapIntensity={0.5} />
         </mesh>
         {/* Door cut-lines (seams) */}
-        <mesh position={[halfW + 0.015, 0.36, 0.12]} castShadow={false}>
+        <mesh position={[halfW + 0.015, 0.36, 0.12]} castShadow={false} material={parkedCarSeamMat}>
           <boxGeometry args={[0.024, 0.22, 0.04]} />
-          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
         </mesh>
-        <mesh position={[halfW + 0.015, 0.36, -0.38]} castShadow={false}>
+        <mesh position={[halfW + 0.015, 0.36, -0.38]} castShadow={false} material={parkedCarSeamMat}>
           <boxGeometry args={[0.024, 0.22, 0.04]} />
-          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
         </mesh>
-        <mesh position={[-halfW - 0.015, 0.36, 0.12]} castShadow={false}>
+        <mesh position={[-halfW - 0.015, 0.36, 0.12]} castShadow={false} material={parkedCarSeamMat}>
           <boxGeometry args={[0.024, 0.22, 0.04]} />
-          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
         </mesh>
-        <mesh position={[-halfW - 0.015, 0.36, -0.38]} castShadow={false}>
+        <mesh position={[-halfW - 0.015, 0.36, -0.38]} castShadow={false} material={parkedCarSeamMat}>
           <boxGeometry args={[0.024, 0.22, 0.04]} />
-          <meshStandardMaterial color="#334155" roughness={0.7} metalness={0.2} />
         </mesh>
         {/* Door pulls */}
         <mesh position={[halfW + 0.028, 0.385, 0.26]} castShadow material={parkedCarHandleMat}>
@@ -600,23 +620,11 @@ function ParkedCar({ x, z, rotationY }: { x: number; z: number; rotationY: numbe
           <boxGeometry args={[0.04, 0.035, 0.1]} />
         </mesh>
         {/* Headlamps */}
-        <mesh position={[0.3, 0.355, 0.805]} castShadow={false}>
+        <mesh position={[0.3, 0.355, 0.805]} castShadow={false} material={parkedCarHeadlampMat}>
           <boxGeometry args={[0.1, 0.065, 0.038]} />
-          <meshStandardMaterial
-            color="#fffef5"
-            emissive="#fff3c4"
-            emissiveIntensity={2.4}
-            toneMapped={false}
-          />
         </mesh>
-        <mesh position={[-0.3, 0.355, 0.805]} castShadow={false}>
+        <mesh position={[-0.3, 0.355, 0.805]} castShadow={false} material={parkedCarHeadlampMat}>
           <boxGeometry args={[0.1, 0.065, 0.038]} />
-          <meshStandardMaterial
-            color="#fffef5"
-            emissive="#fff3c4"
-            emissiveIntensity={2.4}
-            toneMapped={false}
-          />
         </mesh>
         {/* Wheels */}
         <ParkedCarWheel x={halfW - 0.02} y={wy} z={fz} radius={wr} width={tw} />

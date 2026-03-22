@@ -441,7 +441,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const dt = Math.min(delta, 0.05)
 
     const t = body.translation()
-    if (!useGameStore.getState().bikeAwayFromSpawn) {
+    const store = useGameStore.getState()
+    if (!store.bikeAwayFromSpawn) {
       const d = Math.hypot(t.x - BIKE_SPAWN_XZ.x, t.z - BIKE_SPAWN_XZ.z)
       if (d > BIKE_SPAWN_PED_CLEAR_M) {
         useGameStore.setState({ bikeAwayFromSpawn: true })
@@ -471,7 +472,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       yaw.current += steer * TURN_SPEED * turnScale * dt
     }
 
-    const fuelLeft = useGameStore.getState().fuel
+    const fuelLeft = store.fuel
 
     if (drivable) {
       if (fuelLeft > 0) {

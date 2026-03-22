@@ -1,10 +1,19 @@
-import { Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import * as THREE from 'three'
 import { GameScene } from './components/GameScene'
 import { Hud } from './components/Hud'
 import { isProgressPristine, useGameStore } from './store/useGameStore'
+
+/** HDR / PMREM loads async — split from main bundle and don’t block first paint. */
+const CityEnvironment = lazy(async () => {
+  const { Environment } = await import('@react-three/drei')
+  return {
+    default: function CityEnvironmentInner() {
+      return <Environment preset="city" environmentIntensity={0.55} />
+    },
+  }
+})
 
 function App() {
   const resetSession = useGameStore((s) => s.resetSession)
@@ -58,13 +67,15 @@ function App() {
         shadows
         className="h-full w-full"
         camera={{ fov: 52, near: 0.1, far: 420 }}
-        dpr={[1, 1.75]}
+        dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.shadowMap.type = THREE.PCFShadowMap
         }}
       >
-        <Environment preset="city" environmentIntensity={0.55} />
+        <Suspense fallback={null}>
+          <CityEnvironment />
+        </Suspense>
         <GameScene />
       </Canvas>
       <Hud />

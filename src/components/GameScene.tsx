@@ -2,6 +2,7 @@ import type { RapierRigidBody } from '@react-three/rapier'
 import { Physics } from '@react-three/rapier'
 import { useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { CITY_TOTAL } from '@game/cityGrid'
 import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
@@ -20,6 +21,9 @@ export function GameScene() {
     return getSunDirection(new THREE.Vector3()).multiplyScalar(168)
   }, [])
 
+  /** Tight ortho frustum around playable city → better shadow texel use than ±110 with a huge map. */
+  const shadowHalf = CITY_TOTAL / 2 + 48
+
   return (
     <>
       <HorizonSky />
@@ -32,13 +36,13 @@ export function GameScene() {
         castShadow
         intensity={1.12}
         position={sunLightPosition}
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[1024, 1024]}
         shadow-camera-near={0.5}
-        shadow-camera-far={120}
-        shadow-camera-left={-110}
-        shadow-camera-right={110}
-        shadow-camera-top={110}
-        shadow-camera-bottom={-110}
+        shadow-camera-far={130}
+        shadow-camera-left={-shadowHalf}
+        shadow-camera-right={shadowHalf}
+        shadow-camera-top={shadowHalf}
+        shadow-camera-bottom={-shadowHalf}
       />
 
       <Physics gravity={[0, -16, 0]} interpolate={false}>

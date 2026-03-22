@@ -57,12 +57,16 @@ export function BuildingNameLabel({
   width = 7.5,
 }: Props) {
   const meshRef = useRef<THREE.Mesh>(null)
+  const frameSkip = useRef(0)
   const { camera } = useThree()
   const map = useMemo(() => textureForLabel(title, subtitle), [title, subtitle])
   const aspect = (subtitle ? 168 : 118) / 512
   const h = width * aspect
 
+  /** Billboards don’t need 60fps; every 3rd frame cuts CPU for many skyline labels. */
   useFrame(() => {
+    frameSkip.current = (frameSkip.current + 1) % 3
+    if (frameSkip.current !== 0) return
     const m = meshRef.current
     if (!m) return
     m.lookAt(camera.position)

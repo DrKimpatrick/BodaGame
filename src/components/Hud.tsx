@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
 import {
   approxMetersForFuelPoints,
@@ -352,12 +353,16 @@ function clampPoints(pts: number, max: number): number {
 }
 
 export function Hud() {
-  const money = useGameStore((s) => s.money)
-  const fuel = useGameStore((s) => s.fuel)
-  const condition = useGameStore((s) => s.condition)
-  const speedKmh = useGameStore((s) => s.speedKmh)
-  const ledger = useGameStore((s) => s.ledger)
-  const buyFuel = useGameStore((s) => s.buyFuel)
+  const { money, fuel, condition, speedKmh, ledger, buyFuel } = useGameStore(
+    useShallow((s) => ({
+      money: s.money,
+      fuel: s.fuel,
+      condition: s.condition,
+      speedKmh: s.speedKmh,
+      ledger: s.ledger,
+      buyFuel: s.buyFuel,
+    })),
+  )
 
   const [refuelOpen, setRefuelOpen] = useState(false)
   /** Whole tank points to buy (slider + Pay). Starts at max when you open Refuel. */
