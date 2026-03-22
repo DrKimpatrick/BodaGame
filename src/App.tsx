@@ -22,8 +22,35 @@ import {
 } from './store/useGameStore'
 
 const SPLASH_ART = encodeURI('/textures/BorderTo-Boda23.jpg')
+const LOADING_VIDEO = '/textures/bodavideo.mp4'
 
 type BootPhase = 'splash' | 'loading' | 'playing'
+
+/** Muted looping backdrop on the loading overlay (game music stays separate). */
+function LoadingBackdropVideo() {
+  const ref = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const v = ref.current
+    if (!v) return
+    v.defaultMuted = true
+    v.muted = true
+    const p = v.play()
+    if (p) void p.catch(() => {})
+  }, [])
+  return (
+    <video
+      ref={ref}
+      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+      src={LOADING_VIDEO}
+      autoPlay
+      muted
+      playsInline
+      loop
+      preload="auto"
+      aria-hidden
+    />
+  )
+}
 
 /** After `frameloop="demand"`, nudge one frame when unfreezing so the loop reliably restarts. */
 function ThawInvalidate({ frozen }: { frozen: boolean }) {
@@ -224,23 +251,30 @@ function App() {
 
       {phase === 'loading' ? (
         <div
-          className="fixed inset-0 z-55 flex flex-col items-center justify-end gap-3 bg-black/80 px-8 pb-[max(2.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
+          className="fixed inset-0 z-55 flex flex-col overflow-hidden"
           role="status"
           aria-live="polite"
           aria-busy="true"
         >
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-zinc-400">
-            Loading world
-          </p>
-          <div className="h-2.5 w-full max-w-md overflow-hidden rounded-full border border-zinc-600/80 bg-zinc-900 shadow-inner">
-            <div
-              className="h-full rounded-full bg-linear-to-r from-amber-600 via-amber-400 to-amber-500 transition-[width] duration-150 ease-out"
-              style={{ width: `${barPercent}%` }}
-            />
+          <LoadingBackdropVideo />
+          <div
+            className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/92 via-black/72 to-black/55 backdrop-blur-[2px]"
+            aria-hidden
+          />
+          <div className="relative z-10 flex h-full w-full flex-col items-center justify-end gap-3 px-8 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+            <p className="text-xs font-bold uppercase tracking-[0.28em] text-zinc-300 drop-shadow-md">
+              Loading world
+            </p>
+            <div className="h-2.5 w-full max-w-md overflow-hidden rounded-full border border-zinc-500/70 bg-zinc-950/80 shadow-inner ring-1 ring-black/40">
+              <div
+                className="h-full rounded-full bg-linear-to-r from-amber-600 via-amber-400 to-amber-500 transition-[width] duration-150 ease-out"
+                style={{ width: `${barPercent}%` }}
+              />
+            </div>
+            <p className="font-mono text-sm tabular-nums text-amber-200/95 drop-shadow-md">
+              {Math.round(barPercent)}%
+            </p>
           </div>
-          <p className="font-mono text-sm tabular-nums text-amber-200/90">
-            {Math.round(barPercent)}%
-          </p>
         </div>
       ) : null}
 

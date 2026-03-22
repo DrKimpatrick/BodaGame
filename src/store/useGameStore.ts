@@ -18,7 +18,7 @@ export const BIKE_SPAWN_PED_CLEAR_M = 2.85
 export const FUEL_MAX = 100
 
 /** Starting wallet (Ugandan shillings). */
-export const STARTING_MONEY_UGX = 50_000
+export const STARTING_MONEY_UGX = 100_000
 
 /**
  * Cost to add 1 tank point. Full refill from empty = FUEL_MAX * UGX_PER_FUEL_UNIT.

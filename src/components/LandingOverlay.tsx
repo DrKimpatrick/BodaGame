@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { useGameStore } from '../store/useGameStore'
 
 type LandingOverlayProps = {
   artSrc: string
@@ -142,6 +143,21 @@ function DecorativeSpeedometer() {
   )
 }
 
+function SplashWalletBalance({ money }: { money: number }) {
+  return (
+    <div
+      className="min-w-21 rounded-2xl border border-amber-500/50 bg-zinc-950/85 px-2.5 py-2 text-center shadow-lg ring-1 ring-amber-400/25 backdrop-blur-md"
+      aria-label={`Wallet balance ${money.toLocaleString()} Ugandan shillings`}
+    >
+      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200/90">Wallet</p>
+      <p className="mt-1 font-mono text-[11px] font-black tabular-nums leading-none text-amber-100 sm:text-xs">
+        {money.toLocaleString()}
+      </p>
+      <p className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500">UGX</p>
+    </div>
+  )
+}
+
 function DecorativeFuelIcon() {
   return (
     <div
@@ -189,6 +205,7 @@ function DecorativeFuelIcon() {
 }
 
 export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOverlayProps) {
+  const money = useGameStore((s) => s.money)
   const [tab, setTab] = useState<TabId>('fuel')
   const baseId = useId()
   const tabPanelId = `${baseId}-panel`
@@ -246,8 +263,9 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
           </div>
         </div>
 
-        <div className="pointer-events-none absolute left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex flex-wrap items-start justify-between gap-3">
+        <div className="pointer-events-none absolute left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex items-start justify-between gap-2 sm:gap-3">
           <DecorativeSpeedometer />
+          <SplashWalletBalance money={money} />
           <DecorativeFuelIcon />
         </div>
       </div>
