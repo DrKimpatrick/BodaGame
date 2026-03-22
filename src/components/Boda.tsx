@@ -56,9 +56,13 @@ const OFFROAD_REVERSE_SCALE = 0.95
 const PEDESTRIAN_STUN_MS = 520
 /** Car hit: strong slow + stun only (no ragdoll / wreck — avoids physics + graphics issues). */
 const VEHICLE_STUN_MS = 720
+/** Glancing a fixed building: short throttle lock. */
+const BUILDING_STUN_MS = 260
 const CONDITION_LOSS_PEDESTRIAN = 6
 /** Vehicle strike — much harsher than a pedestrian knock. */
 const CONDITION_LOSS_VEHICLE = 32
+/** Static building / wall scrape — small wear. */
+const CONDITION_LOSS_BUILDING = 3.5
 /** Each distinct pothole strike — small wear (stacks over a bad road). */
 const CONDITION_LOSS_POTHOLE = 2.2
 
@@ -425,6 +429,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const lastFuelPos = useRef<{ x: number; z: number } | null>(null)
   /** Car hits can spam `onCollisionEnter` while overlapping. */
   const noVehicleBumpUntil = useRef(0)
+  /** Building hits while sliding along a wall. */
+  const noBuildingBumpUntil = useRef(0)
   /** Pedestrian hits can spam collision events while overlapping. */
   const noPedestrianStunUntil = useRef(0)
   /** Throttle ignored until this time (walker / vehicle bump). */
@@ -433,6 +439,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const potholeHitCooldownUntil = useRef(0)
   /** Decays 0→1 after a pothole strike — extra mesh dip / wobble. */
   const potholeJolt = useRef(0)
+  /** Decays after hitting static geometry — rebound pitch / roll. */
+  const buildingHitJolt = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -455,6 +463,20 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           Math.max(0, st.condition - CONDITION_LOSS_VEHICLE),
         )
         st.triggerBloodImpactFlash('vehicle')
+        return
+      }
+      if (ud?.kind === 'building') {
+        if (now < useGameStore.getState().collisionPenaltiesAfterMs) return
+        if (now < noBuildingBumpUntil.current) return
+        noBuildingBumpUntil.current = now + 520
+        speed.current *= 0.42
+        stunnedUntil.current = Math.max(
+          stunnedUntil.current,
+          now + BUILDING_STUN_MS,
+        )
+        buildingHitJolt.current = 1
+        const st = useGameStore.getState()
+        st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_BUILDING))
         return
       }
       if (ud?.kind === 'pedestrian') {
@@ -623,8 +645,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       surf.roll
     enginePhase.current += dt * 88
 
-    const j = potholeJolt.current
+    const jp = potholeJolt.current
     potholeJolt.current *= Math.exp(-17 * dt)
+    const jb = buildingHitJolt.current
+    buildingHitJolt.current *= Math.exp(-20 * dt)
 
     const braking = throttle <= 0 && speed.current > 0.35
     const accelerating = throttle > 0 && speed.current >= 0
@@ -640,11 +664,14 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     const g = visualRef.current
     if (g) {
-      const potholeWobble = Math.sin(enginePhase.current * 0.52) * 0.15 * j
-      g.rotation.z = bankSmoothed.current + potholeWobble
+      const potholeWobble = Math.sin(enginePhase.current * 0.52) * 0.15 * jp
+      const buildingWobble = Math.sin(enginePhase.current * 0.88) * 0.24 * jb
+      g.rotation.z = bankSmoothed.current + potholeWobble + buildingWobble
       g.rotation.x =
-        pitchSmoothed.current + j * (-0.38 - speed01 * 0.16)
-      g.position.y = yOffSmoothed.current - j * 0.062
+        pitchSmoothed.current +
+        jp * (-0.38 - speed01 * 0.16) +
+        jb * (0.36 + speed01 * 0.28)
+      g.position.y = yOffSmoothed.current - jp * 0.062 - jb * 0.028
     }
 
     const kmh = Math.round(speedAbs * 3.6)

@@ -288,6 +288,7 @@ function GenericCommercialBlock({
       colliders={false}
       position={position}
       rotation={[0, rotationY, 0]}
+      userData={{ kind: 'building' }}
     >
       <group>
         <mesh
@@ -370,7 +371,12 @@ function MidriseTextured({
   }, [bodyMaterial, facadeMaterial])
 
   return (
-    <RigidBody type="fixed" colliders={false} position={[cx, 0, cz]}>
+    <RigidBody
+      type="fixed"
+      colliders={false}
+      position={[cx, 0, cz]}
+      userData={{ kind: 'building' }}
+    >
       <group>
         <mesh position={[0, meshCenterY, 0]} castShadow receiveShadow material={boxMaterials}>
           <boxGeometry args={[fw, h, fd]} />
@@ -1314,15 +1320,30 @@ function CityMapContent() {
         position={[0, 0.07, 0]}
       />
 
-      <RigidBody type="fixed" position={[mx, 0, mz]} colliders={false}>
+      <RigidBody
+        type="fixed"
+        position={[mx, 0, mz]}
+        colliders={false}
+        userData={{ kind: 'building' }}
+      >
         <MapeeraBuilding material={mapeeraMat} />
         <CuboidCollider args={[3.4, 14, 3.2]} position={[0, 12, 0]} />
       </RigidBody>
-      <RigidBody type="fixed" position={[sx, 0, sz]} colliders={false}>
+      <RigidBody
+        type="fixed"
+        position={[sx, 0, sz]}
+        colliders={false}
+        userData={{ kind: 'building' }}
+      >
         <StanbicBankTower material={stanbicMat} />
         <CylinderCollider args={[13.5, 5.85]} position={[0, 13.5, 0]} />
       </RigidBody>
-      <RigidBody type="fixed" position={[nx, 0, nz]} colliders={false}>
+      <RigidBody
+        type="fixed"
+        position={[nx, 0, nz]}
+        colliders={false}
+        userData={{ kind: 'building' }}
+      >
         <NSSFGlassTower />
         <CuboidCollider args={[4.2, 11, 5]} position={[0, 11, 0]} />
       </RigidBody>
