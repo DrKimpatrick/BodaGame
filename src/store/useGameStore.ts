@@ -42,15 +42,15 @@ export const CONDITION_BROKEN_AT = 5
 
 /**
  * Cost to restore 1 condition point. Full repair from 0 = CONDITION_MAX * UGX_PER_CONDITION_UNIT.
- * Mirrors fuel pricing.
+ * Kept lower than fuel unit so repairs sting less than filling the tank.
  */
-export const UGX_PER_CONDITION_UNIT = 500
+export const UGX_PER_CONDITION_UNIT = 280
 
 /**
  * Tank fuel points consumed per world unit (XZ) travelled while moving.
  * Must match consumption in Boda physics.
  */
-export const FUEL_PER_WORLD_METER = 0.042
+export const FUEL_PER_WORLD_METER = 0.128
 
 const LEDGER_CAP = 200
 
@@ -102,6 +102,62 @@ export function normalizeCondition(c: number): number {
 
 export function isBikeBrokenDown(condition: number): boolean {
   return normalizeCondition(condition) <= CONDITION_BROKEN_AT
+}
+
+/**
+ * Smallest whole UGX spend that adds enough condition to leave breakdown ({@link CONDITION_BROKEN_AT}).
+ * 0 if already above the threshold.
+ */
+export function minUgxToClearBikeBreakdown(condition: number): number {
+  const c = normalizeCondition(condition)
+  if (c > CONDITION_BROKEN_AT) return 0
+  const gap = CONDITION_BROKEN_AT - c
+  return Math.max(1, Math.floor(gap * UGX_PER_CONDITION_UNIT) + 1)
+}
+
+export type FinancialGameOverResult =
+  | { over: false }
+  | {
+      over: true
+      reason: 'breakdown_no_cash' | 'stranded_no_fuel'
+      needUgx: number
+      shortfallUgx: number
+    }
+
+/**
+ * True when the run is unwinnable with current wallet: cannot afford the minimum repair to ride again,
+ * or (if not broken down) empty tank and cannot afford even one fuel unit while the tank has room.
+ */
+export function evaluateFinancialGameOver(
+  s: Pick<GameState, 'money' | 'fuel' | 'condition'>,
+): FinancialGameOverResult {
+  const wallet = moneyInt(s.money)
+  const minRepair = minUgxToClearBikeBreakdown(s.condition)
+  if (minRepair > 0 && wallet < minRepair) {
+    return {
+      over: true,
+      reason: 'breakdown_no_cash',
+      needUgx: minRepair,
+      shortfallUgx: minRepair - wallet,
+    }
+  }
+  if (!isBikeBrokenDown(s.condition)) {
+    const f = normalizeTankFuel(s.fuel)
+    const roomForFuel = maxUgxToFillRemaining(s.fuel)
+    if (
+      f <= 1e-4 &&
+      roomForFuel >= UGX_PER_FUEL_UNIT &&
+      wallet < UGX_PER_FUEL_UNIT
+    ) {
+      return {
+        over: true,
+        reason: 'stranded_no_fuel',
+        needUgx: UGX_PER_FUEL_UNIT,
+        shortfallUgx: UGX_PER_FUEL_UNIT - wallet,
+      }
+    }
+  }
+  return { over: false }
 }
 
 function moneyInt(m: number): number {
@@ -249,6 +305,12 @@ export type GameState = {
   rideNextPassengerToastNonce: number
   rideNextPassengerPickupName: string
   rideNextPassengerPayoutUgx: number
+  /** Successful passenger drop-offs (pickup → drop-off) in this session. */
+  rideCompletedDeliveries: number
+  /** Bumped when a rider tier milestone is hit (2 / 5 / 10 deliveries). */
+  riderLevelUpToastNonce: number
+  /** Last milestone level for the toast (2, 3, or 4). */
+  riderLevelUpToastLevel: number
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -265,7 +327,8 @@ export function isProgressPristine(s: GameState): boolean {
     moneyInt(s.money) === STARTING_MONEY_UGX &&
     normalizeTankFuel(s.fuel) >= FUEL_MAX - 0.02 &&
     normalizeCondition(s.condition) >= CONDITION_MAX - 0.02 &&
-    s.ledger.length === 0
+    s.ledger.length === 0 &&
+    s.rideCompletedDeliveries === 0
   )
 }
 
@@ -306,6 +369,9 @@ const initialSession = (): Pick<
   | 'rideNextPassengerToastNonce'
   | 'rideNextPassengerPickupName'
   | 'rideNextPassengerPayoutUgx'
+  | 'rideCompletedDeliveries'
+  | 'riderLevelUpToastNonce'
+  | 'riderLevelUpToastLevel'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -327,6 +393,9 @@ const initialSession = (): Pick<
   rideNextPassengerToastNonce: 0,
   rideNextPassengerPickupName: '',
   rideNextPassengerPayoutUgx: 0,
+  rideCompletedDeliveries: 0,
+  riderLevelUpToastNonce: 0,
+  riderLevelUpToastLevel: 0,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -440,15 +509,35 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!j || j.phase !== 'carrying') return
     const label = `Fare — ${j.dropoff.name}`
     get().earnUgx(j.payoutUgx, label)
-    get().assignRideJob()
-    const next = get().rideJob
-    if (next) {
-      set((s) => ({
-        rideNextPassengerToastNonce: s.rideNextPassengerToastNonce + 1,
-        rideNextPassengerPickupName: next.pickup.name,
-        rideNextPassengerPayoutUgx: next.payoutUgx,
-      }))
+
+    const s0 = get()
+    const deliveries = s0.rideCompletedDeliveries + 1
+    let riderLevelUpToastNonce = s0.riderLevelUpToastNonce
+    let riderLevelUpToastLevel = s0.riderLevelUpToastLevel
+    if (deliveries === 2) {
+      riderLevelUpToastNonce += 1
+      riderLevelUpToastLevel = 2
+    } else if (deliveries === 5) {
+      riderLevelUpToastNonce += 1
+      riderLevelUpToastLevel = 3
+    } else if (deliveries === 10) {
+      riderLevelUpToastNonce += 1
+      riderLevelUpToastLevel = 4
     }
+
+    const serial = s0.rideJobSerial + 1
+    const nextJob = generateRideJob(serial)
+    set({
+      rideJob: nextJob,
+      rideJobSerial: serial,
+      rideJobRouteOrder: 'xFirst',
+      rideCompletedDeliveries: deliveries,
+      riderLevelUpToastNonce,
+      riderLevelUpToastLevel,
+      rideNextPassengerToastNonce: s0.rideNextPassengerToastNonce + 1,
+      rideNextPassengerPickupName: nextJob.pickup.name,
+      rideNextPassengerPayoutUgx: nextJob.payoutUgx,
+    })
   },
 }))
 

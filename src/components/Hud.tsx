@@ -98,6 +98,62 @@ function RideNextPassengerToast() {
   )
 }
 
+const RIDER_LEVEL_UP_COPY: Record<
+  2 | 3 | 4,
+  { headline: string; detail: string }
+> = {
+  2: {
+    headline: 'Level 2 unlocked',
+    detail:
+      'Two safe passenger deliveries complete. You’re cleared for cross-town jobs and busier streets.',
+  },
+  3: {
+    headline: 'Level 3 unlocked',
+    detail:
+      'Five deliveries — the city knows your helmet. Higher-tier fares and trickier routes open up.',
+  },
+  4: {
+    headline: 'Level 4 unlocked',
+    detail:
+      'Ten clean drop-offs. VIP board unlocked — premium passengers and peak bonuses are live.',
+  },
+}
+
+/** Shown once per milestone after a successful drop-off (2 / 5 / 10 deliveries). */
+function RiderLevelUpToast() {
+  const nonce = useGameStore((s) => s.riderLevelUpToastNonce)
+  const level = useGameStore((s) => s.riderLevelUpToastLevel)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (nonce < 1 || level < 2) return
+    setVisible(true)
+    const t = window.setTimeout(() => setVisible(false), 7000)
+    return () => window.clearTimeout(t)
+  }, [nonce, level])
+
+  const copy = level === 2 || level === 3 || level === 4 ? RIDER_LEVEL_UP_COPY[level] : null
+  if (!visible || !copy) return null
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-[48] flex justify-center px-3 pt-[min(30vh,200px)] sm:pt-[min(26vh,220px)]"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="max-w-[min(100%,400px)] rounded-2xl border-2 border-violet-400/85 border-b-[5px] border-b-violet-950 bg-linear-to-b from-violet-600/95 via-indigo-900/95 to-zinc-950 px-4 py-3 text-center shadow-[0_12px_40px_rgba(0,0,0,0.5)] ring-2 ring-violet-200/40 backdrop-blur-md">
+        <p className="font-mono text-[9px] font-black uppercase tracking-[0.35em] text-violet-200/90">
+          Rider rank
+        </p>
+        <p className="mt-1 text-lg font-black uppercase italic tracking-wide text-white drop-shadow-md">
+          {copy.headline}
+        </p>
+        <p className="mt-2 text-[13px] font-semibold leading-snug text-violet-50/95">{copy.detail}</p>
+      </div>
+    </div>
+  )
+}
+
 /** Full-screen friendly banner when pickup completes (nonce from store). */
 function RidePickupToast() {
   const nonce = useGameStore((s) => s.ridePickupToastNonce)
@@ -466,41 +522,60 @@ function WorkshopSectionTitle({ children }: { children: ReactNode }) {
 const gameArcadeBtn =
   'rounded-xl border-2 font-black uppercase tracking-wide transition-[transform,box-shadow,border-width] duration-100 active:translate-y-1'
 
-/** Hardcoded level ladder (UI only — not tied to game state). */
+/** Compact level ladder — unlock rows from {@link rideCompletedDeliveries}. */
 function HardcodedLevelsPanel() {
+  const d = useGameStore((s) => s.rideCompletedDeliveries)
+  const row = (
+    n: number,
+    label: string,
+    unlocked: boolean,
+    lockHint: string,
+    current: boolean,
+  ) => (
+    <li
+      className={`flex items-center gap-1 rounded px-1 py-px ${
+        current
+          ? 'bg-amber-500/10 ring-1 ring-amber-500/20'
+          : unlocked
+            ? 'text-zinc-300'
+            : 'text-zinc-500'
+      }`}
+    >
+      <span className="font-mono font-black text-amber-200/95">{n}</span>
+      {unlocked ? (
+        <span className="text-emerald-400/90">✓</span>
+      ) : (
+        <span className="text-[8px] opacity-75" aria-hidden>
+          🔒
+        </span>
+      )}
+      <span className="min-w-0 truncate font-semibold">{label}</span>
+      {!unlocked ? (
+        <span className="ml-auto min-w-0 truncate pl-0.5 text-[6px] font-medium text-zinc-600">
+          {lockHint}
+        </span>
+      ) : null}
+    </li>
+  )
+
   return (
     <div
       className="relative w-full max-w-[200px] overflow-hidden rounded-lg border border-violet-500/35 bg-zinc-950/92 px-1.5 py-1 shadow-md ring-1 ring-violet-500/15 backdrop-blur-sm"
-      aria-label="Levels preview"
+      aria-label="Rider levels"
     >
       <div className="flex items-center justify-between gap-1 border-b border-violet-500/20 pb-0.5">
         <span className="text-[8px] font-black uppercase tracking-widest text-violet-300/90">
           Levels
         </span>
-        <span className="font-mono text-[6px] font-bold uppercase text-zinc-600">Demo</span>
+        <span className="font-mono text-[6px] font-bold uppercase text-zinc-500">
+          {d} del
+        </span>
       </div>
       <ul className="mt-1 space-y-0.5 text-[7px] leading-tight">
-        <li className="flex items-center gap-1 rounded bg-amber-500/10 px-1 py-px ring-1 ring-amber-500/20">
-          <span className="font-mono font-black text-amber-200/95">1</span>
-          <span className="text-emerald-400/90">✓</span>
-          <span className="min-w-0 truncate font-semibold text-zinc-300">Active</span>
-        </li>
-        <li className="flex items-start gap-1 rounded px-1 py-px text-zinc-500">
-          <span className="shrink-0 font-mono font-black">2</span>
-          <span className="shrink-0 text-[8px] opacity-75" aria-hidden>
-            🔒
-          </span>
-          <span className="min-w-0 text-zinc-400">
-            <span className="font-mono font-bold text-violet-400/90">2</span> deliveries → L2
-          </span>
-        </li>
-        <li className="flex items-center gap-1 rounded px-1 py-px text-zinc-600">
-          <span className="font-mono font-black">3+</span>
-          <span className="text-[8px] opacity-60" aria-hidden>
-            🔒
-          </span>
-          <span className="truncate">Locked</span>
-        </li>
+        {row(1, 'Rookie', true, '', d < 2)}
+        {row(2, 'City', d >= 2, '2 del', d >= 2 && d < 5)}
+        {row(3, 'Regular', d >= 5, '5 del', d >= 5 && d < 10)}
+        {row(4, 'VIP', d >= 10, '10 del', d >= 10)}
       </ul>
     </div>
   )
@@ -1114,6 +1189,7 @@ export function Hud() {
       <ConditionRideOverlays level={conditionAlert} />
       <BloodImpactOverlay />
       <RidePickupToast />
+      <RiderLevelUpToast />
       <RideNextPassengerToast />
       <RideJobHud />
       <div

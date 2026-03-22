@@ -16,9 +16,11 @@ import {
   trySplashIntroAutoplay,
 } from './audio/gameMusic'
 import {
+  evaluateFinancialGameOver,
   isBikeBrokenDown,
   isProgressPristine,
   useGameStore,
+  type FinancialGameOverResult,
 } from './store/useGameStore'
 
 const SPLASH_ART = encodeURI('/textures/BorderTo-Boda23.jpg')
@@ -87,10 +89,14 @@ function GameCanvas({ onWebglReady }: { onWebglReady?: () => void }) {
   )
 }
 
+type GameOverPayload = Extract<FinancialGameOverResult, { over: true }>
+
 function App() {
   useGameRootButtonClickSound()
   const resetSession = useGameStore((s) => s.resetSession)
   const [showPostWipeNotice, setShowPostWipeNotice] = useState(false)
+  const [financialGameOver, setFinancialGameOver] = useState<GameOverPayload | null>(null)
+  const financialGameOverLatched = useRef(false)
   const [phase, setPhase] = useState<BootPhase>('splash')
   const [splashImageReady, setSplashImageReady] = useState(false)
   const [webglReady, setWebglReady] = useState(false)
@@ -141,6 +147,25 @@ function App() {
   useEffect(() => {
     if (phase !== 'playing') return
     startGameplayMusic()
+  }, [phase])
+
+  useEffect(() => {
+    if (phase !== 'playing') {
+      financialGameOverLatched.current = false
+      setFinancialGameOver(null)
+      return
+    }
+    const sync = () => {
+      if (financialGameOverLatched.current) return
+      const r = evaluateFinancialGameOver(useGameStore.getState())
+      if (r.over) {
+        financialGameOverLatched.current = true
+        setFinancialGameOver(r)
+        pauseAllMusic()
+      }
+    }
+    sync()
+    return useGameStore.subscribe(sync)
   }, [phase])
 
   useEffect(() => {
@@ -210,6 +235,13 @@ function App() {
 
   const barPercent =
     phase === 'loading' ? Math.min(100, Math.max(0, progress)) : 0
+
+  const restartRunAfterGameOver = () => {
+    resetSession()
+    financialGameOverLatched.current = false
+    setFinancialGameOver(null)
+    startGameplayMusic()
+  }
 
   return (
     <div className="relative h-full w-full bg-[#0f1014]" data-game-root>
@@ -286,6 +318,60 @@ function App() {
           <GameCanvas onWebglReady={() => setWebglReady(true)} />
         </div>
       )}
+
+      {phase === 'playing' && financialGameOver ? (
+        <div
+          className="pointer-events-auto fixed inset-0 z-420 flex flex-col items-center justify-center gap-6 bg-black/88 px-6 py-10 text-center backdrop-blur-md"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="game-over-title"
+        >
+          <h2
+            id="game-over-title"
+            className="text-xl font-bold uppercase tracking-[0.2em] text-amber-200"
+          >
+            Game over
+          </h2>
+          <p className="max-w-md text-sm leading-relaxed text-zinc-200">
+            {financialGameOver.reason === 'breakdown_no_cash' ? (
+              <>
+                Repairs to get your bike moving again cost at least{' '}
+                <span className="font-mono text-white">
+                  {financialGameOver.needUgx.toLocaleString()} UGX
+                </span>
+                , but your wallet only has{' '}
+                <span className="font-mono text-white">
+                  {(financialGameOver.needUgx - financialGameOver.shortfallUgx).toLocaleString()} UGX
+                </span>{' '}
+                (short by{' '}
+                <span className="font-mono text-amber-300">
+                  {financialGameOver.shortfallUgx.toLocaleString()} UGX
+                </span>
+                ).
+              </>
+            ) : (
+              <>
+                Your tank is empty. You need at least{' '}
+                <span className="font-mono text-white">
+                  {financialGameOver.needUgx.toLocaleString()} UGX
+                </span>{' '}
+                to buy fuel, but you only have{' '}
+                <span className="font-mono text-white">
+                  {(financialGameOver.needUgx - financialGameOver.shortfallUgx).toLocaleString()} UGX
+                </span>
+                .
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={restartRunAfterGameOver}
+            className="rounded-xl border border-amber-500/60 bg-amber-600/30 px-8 py-3 text-sm font-bold uppercase tracking-wide text-amber-100 hover:bg-amber-600/45"
+          >
+            Restart game
+          </button>
+        </div>
+      ) : null}
 
       {phase === 'playing' ? <Hud /> : null}
     </div>

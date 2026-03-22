@@ -190,8 +190,9 @@ function manhattanStripMeters(a: RideStop, b: RideStop): number {
 }
 
 const MIN_LEG_M = 38
-const PAYOUT_BASE = 4_500
-const PAYOUT_PER_100M = 1_800
+/** Fares scaled so a typical job comfortably covers fuel burn + wear (repairs are cheaper per pt). */
+const PAYOUT_BASE = 28_000
+const PAYOUT_PER_100M = 11_000
 
 /**
  * Deterministic job from serial. Pickup / drop are on murram shoulders beside carriageways, not in lanes.
@@ -208,14 +209,14 @@ export function generateRideJob(serial: number): RideJob {
 
   const m = manhattanStripMeters(pickup, dropoff)
   const payoutUgx = Math.floor(
-    PAYOUT_BASE + (m / 100) * PAYOUT_PER_100M + segmentRandom(serial, 0, 905) * 2_200,
+    PAYOUT_BASE + (m / 100) * PAYOUT_PER_100M + segmentRandom(serial, 0, 905) * 9_000,
   )
 
   return {
     phase: 'pickup',
     pickup,
     dropoff,
-    payoutUgx: Math.max(6_000, payoutUgx),
+    payoutUgx: Math.max(42_000, payoutUgx),
   }
 }
 

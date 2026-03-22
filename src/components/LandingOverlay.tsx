@@ -25,7 +25,7 @@ const ABOUT_TABS = [
   },
   {
     id: 'condition' as const,
-    label: 'Car condition',
+    label: 'Bike condition',
     short: 'HP',
     accent: 'text-orange-300',
     border: 'border-orange-500/45',
