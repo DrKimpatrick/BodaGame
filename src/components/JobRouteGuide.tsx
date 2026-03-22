@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { type RefObject, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { RapierRigidBody } from '@react-three/rapier'
+import { Line2, LineGeometry, LineMaterial } from 'three-stdlib'
 import {
   manhattanRoutePoints,
   stickyPickManhattanOrder,
@@ -9,23 +10,33 @@ import {
 } from '@game/passengerJobs'
 import { useGameStore } from '../store/useGameStore'
 
-const ROUTE_Y = 0.13
+/** Slightly above road top (~0.06) so the stroke clears tarmac without z-fighting. */
+const ROUTE_Y = 0.085
 
-/** To passenger — solid red on tarmac. */
-const routeMatPickup = new THREE.LineBasicMaterial({
-  color: '#ef4444',
-  transparent: true,
-  opacity: 0.97,
-  depthWrite: false,
-})
-
-/** To drop-off — solid blue after passenger is on board. */
-const routeMatDropoff = new THREE.LineBasicMaterial({
-  color: '#2563eb',
-  transparent: true,
-  opacity: 0.97,
-  depthWrite: false,
-})
+/**
+ * Wide dashed “paint” on the ground. Plain THREE.Line is ~1px in WebGL and reads as invisible
+ * from the chase cam; Line2 + LineMaterial uses mesh quads with world-space width.
+ */
+function routeLineMaterial(
+  color: number,
+  linewidth: number,
+  dashSize: number,
+  gapSize: number,
+): LineMaterial {
+  return new LineMaterial({
+    color,
+    linewidth,
+    worldUnits: true,
+    dashed: true,
+    dashScale: 1,
+    dashSize,
+    gapSize,
+    transparent: false,
+    opacity: 1,
+    depthWrite: false,
+    depthTest: true,
+  })
+}
 
 /**
  * L-shaped route on the ground from bike to current job target (pickup or drop-off).
@@ -36,23 +47,32 @@ export function JobRouteGuide({
 }: {
   rigidBodyRef: RefObject<RapierRigidBody | null>
 }) {
-  const geom = useMemo(() => new THREE.BufferGeometry(), [])
-  const linePickup = useMemo(() => {
-    const ln = new THREE.Line(geom, routeMatPickup)
-    ln.frustumCulled = false
-    return ln
-  }, [geom])
-  const lineDropoff = useMemo(() => {
-    const ln = new THREE.Line(geom, routeMatDropoff)
-    ln.frustumCulled = false
-    ln.visible = false
-    return ln
-  }, [geom])
-  const pos = useRef<Float32Array>(new Float32Array(9))
-  const posAttr = useMemo(
-    () => new THREE.BufferAttribute(pos.current, 3),
+  const lineGeom = useMemo(() => new LineGeometry(), [])
+  const matPickup = useMemo(
+    () => routeLineMaterial(0xdc2626, 0.52, 0.26, 0.4),
     [],
   )
+  const matDropoff = useMemo(
+    () => routeLineMaterial(0x1d4ed8, 0.6, 0.48, 0.32),
+    [],
+  )
+
+  const linePickup = useMemo(() => {
+    const ln = new Line2(lineGeom, matPickup)
+    ln.frustumCulled = false
+    ln.renderOrder = 18
+    return ln
+  }, [lineGeom, matPickup])
+
+  const lineDropoff = useMemo(() => {
+    const ln = new Line2(lineGeom, matDropoff)
+    ln.frustumCulled = false
+    ln.renderOrder = 18
+    ln.visible = false
+    return ln
+  }, [lineGeom, matDropoff])
+
+  const flatPos = useRef(new Float32Array(9))
 
   const orderRef = useRef<RideManhattanOrder>('xFirst')
   const navKeyRef = useRef('')
@@ -60,11 +80,12 @@ export function JobRouteGuide({
   const forwardTmp = useMemo(() => new THREE.Vector3(), [])
 
   useLayoutEffect(() => {
-    geom.setAttribute('position', posAttr)
     return () => {
-      geom.dispose()
+      lineGeom.dispose()
+      matPickup.dispose()
+      matDropoff.dispose()
     }
-  }, [geom, posAttr])
+  }, [lineGeom, matPickup, matDropoff])
 
   useFrame(() => {
     const job = useGameStore.getState().rideJob
@@ -108,15 +129,15 @@ export function JobRouteGuide({
     }
 
     const pts = manhattanRoutePoints(t.x, t.z, tx, tz, ROUTE_Y, orderRef.current)
-    const arr = pos.current
+    const fp = flatPos.current
     let i = 0
     for (const p of pts) {
-      arr[i++] = p[0]
-      arr[i++] = p[1]
-      arr[i++] = p[2]
+      fp[i++] = p[0]
+      fp[i++] = p[1]
+      fp[i++] = p[2]
     }
-    posAttr.needsUpdate = true
-    geom.setDrawRange(0, pts.length)
+    lineGeom.setPositions(fp.subarray(0, pts.length * 3))
+    linePickup.computeLineDistances()
 
     if (job.phase === 'pickup') {
       linePickup.visible = true
