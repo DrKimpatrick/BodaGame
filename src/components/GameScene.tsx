@@ -10,6 +10,8 @@ import { Pedestrians } from './Pedestrians'
 import { RoadTraffic } from './RoadTraffic'
 import { getSunDirection, HorizonSky } from './HorizonSky'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
+import { JobRouteGuide } from './JobRouteGuide'
+import { JobWaitingPassenger } from './JobWaitingPassenger'
 
 export function GameScene() {
   const bodaRef = useRef<RapierRigidBody>(null)
@@ -50,10 +52,12 @@ export function GameScene() {
           onSpeedKmhChange={setSpeedKmh}
           onOffroadChange={setOffroad}
         />
+        <JobRouteGuide rigidBodyRef={bodaRef} />
         <RoadTraffic />
         <Pedestrians />
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
+      <JobWaitingPassenger />
     </>
   )
 }

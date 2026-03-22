@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
+import { CITY_XZ_BOUNDS } from '../game/passengerJobs'
 import {
   approxMetersForFuelPoints,
   CONDITION_BROKEN_AT,
@@ -43,6 +44,174 @@ function fuelLowLevel(fuel: number): 'ok' | 'low' | 'critical' {
   if (f <= FUEL_LOW_RED_AT) return 'critical'
   if (f <= FUEL_LOW_ORANGE_AT) return 'low'
   return 'ok'
+}
+
+function worldToMinimapUv(x: number, z: number): { u: number; v: number } {
+  const { min, span } = CITY_XZ_BOUNDS
+  const u = ((x - min) / span) * 100
+  const v = ((z - min) / span) * 100
+  return { u, v: 100 - v }
+}
+
+/** Full-screen friendly banner when pickup completes (nonce from store). */
+function RidePickupToast() {
+  const nonce = useGameStore((s) => s.ridePickupToastNonce)
+  const dropName = useGameStore((s) => s.ridePickupToastDestination)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (nonce < 1) return
+    setVisible(true)
+    const t = window.setTimeout(() => setVisible(false), 6500)
+    return () => window.clearTimeout(t)
+  }, [nonce])
+
+  if (!visible || nonce < 1) return null
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="max-w-[min(100%,420px)] rounded-2xl border-2 border-emerald-400/80 border-b-[5px] border-b-emerald-950 bg-linear-to-b from-emerald-500/95 via-emerald-800/95 to-zinc-950 px-4 py-4 text-center shadow-[0_10px_40px_rgba(0,0,0,0.45)] ring-2 ring-emerald-200/50 backdrop-blur-md">
+        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border-2 border-emerald-200/90 bg-emerald-950/40 text-2xl font-black text-emerald-100 shadow-inner">
+          ✓
+        </div>
+        <p className="text-base font-black uppercase leading-tight tracking-wide text-white drop-shadow-md">
+          You’ve reached your passenger
+        </p>
+        <p className="mt-2 text-sm font-semibold leading-snug text-emerald-50/95">
+          They’re on the bike behind you — same{' '}
+          <span className="font-black text-red-200">red</span> &{' '}
+          <span className="font-black text-sky-200">blue</span> coat. Ride to{' '}
+          <span className="font-black text-amber-200">{dropName}</span>.
+        </p>
+        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-emerald-200/90">
+          Follow the solid yellow line on the road
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Passenger job: minimap + compass + distance (pairs with 3D route + rider billboard). */
+function RideJobHud() {
+  const job = useGameStore((s) => s.rideJob)
+  const bx = useGameStore((s) => s.bikeMapX)
+  const bz = useGameStore((s) => s.bikeMapZ)
+  if (!job) return null
+
+  const target = job.phase === 'pickup' ? job.pickup : job.dropoff
+  const dist = Math.hypot(bx - target.x, bz - target.z)
+  const buv = worldToMinimapUv(bx, bz)
+  const tuv = worldToMinimapUv(target.x, target.z)
+  const elbow = worldToMinimapUv(target.x, bz)
+  const pathD = `M ${buv.u},${buv.v} L ${elbow.u},${elbow.v} L ${tuv.u},${tuv.v}`
+  const bearingDeg = (Math.atan2(target.x - bx, target.z - bz) * 180) / Math.PI
+
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 z-10 w-[min(92vw,340px)] -translate-x-1/2"
+      style={{
+        bottom: 'max(1rem, env(safe-area-inset-bottom))',
+      }}
+    >
+      <div className="rounded-2xl border-2 border-amber-500/50 border-b-4 border-b-amber-950 bg-linear-to-b from-zinc-900/95 via-zinc-950/96 to-black/92 px-3 py-2.5 shadow-[0_6px_0_rgba(69,26,3,0.78)] ring-1 ring-amber-400/25 backdrop-blur-md">
+        <div className="flex items-start gap-3">
+          <div className="relative h-[76px] w-[76px] shrink-0 overflow-hidden rounded-xl border border-amber-600/40 bg-zinc-950/90 shadow-inner ring-1 ring-black/50">
+            <svg
+              viewBox="0 0 100 100"
+              className="h-full w-full"
+              aria-hidden
+            >
+              <defs>
+                <pattern
+                  id="rj-grid"
+                  width="9.09"
+                  height="9.09"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d="M 9.09 0 L 0 0 0 9.09"
+                    fill="none"
+                    className="stroke-zinc-700/55"
+                    strokeWidth="0.35"
+                  />
+                </pattern>
+              </defs>
+              <rect width="100" height="100" fill="url(#rj-grid)" />
+              <path
+                d={pathD}
+                fill="none"
+                className="stroke-yellow-300/90"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={job.phase === 'pickup' ? '5.5 4' : undefined}
+              />
+              <circle
+                cx={tuv.u}
+                cy={tuv.v}
+                r="3.2"
+                className="fill-emerald-400/95 stroke-emerald-950"
+                strokeWidth="0.8"
+              />
+              <circle
+                cx={buv.u}
+                cy={buv.v}
+                r="2.8"
+                className="fill-sky-400 stroke-sky-950"
+                strokeWidth="0.7"
+              />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-300/90">
+              Boda job
+            </p>
+            <p className="mt-0.5 text-[11px] font-black leading-snug text-white">
+              {job.phase === 'pickup' ? (
+                <>
+                  Pick up at <span className="text-amber-200">{job.pickup.name}</span>
+                </>
+              ) : (
+                <>
+                  Drop at <span className="text-emerald-200">{job.dropoff.name}</span>
+                </>
+              )}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-zinc-400">
+              <span className="font-mono text-amber-100/95">
+                {formatDistanceShort(dist)} away
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="font-mono text-emerald-300/95">
+                +{job.payoutUgx.toLocaleString()} UGX
+              </span>
+            </div>
+          </div>
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-amber-500/45 bg-zinc-950/90 shadow-inner"
+            aria-hidden
+          >
+            <div
+              className="text-lg leading-none"
+              style={{
+                transform: `rotate(${bearingDeg}deg)`,
+              }}
+            >
+              ↑
+            </div>
+          </div>
+        </div>
+        <p className="mt-1.5 text-center text-[8px] font-bold uppercase tracking-wide text-zinc-500">
+          Look for the red & blue coat + gold ring · Slow to pick up / drop off · Dashed line = to
+          passenger, solid = to drop-off
+        </p>
+      </div>
+    </div>
+  )
 }
 
 /** Tenor post: torque / Audi RS6 RPM-style gauge (GIF — not synced to in-game speed). */
@@ -822,6 +991,8 @@ export function Hud() {
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
       <ConditionRideOverlays level={conditionAlert} />
       <BloodImpactOverlay />
+      <RidePickupToast />
+      <RideJobHud />
       <div
         className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"
         style={{

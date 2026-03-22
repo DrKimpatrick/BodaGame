@@ -1,4 +1,4 @@
-import { useGLTF } from '@react-three/drei'
+import { Html, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import {
   CuboidCollider,
@@ -32,6 +32,12 @@ import {
 } from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
+import {
+  jobPassengerCoatBlueMat,
+  jobPassengerCoatRedMat,
+  jobPassengerPantsMat,
+  jobPassengerSkinMat,
+} from '@game/jobPassengerMaterials'
 import {
   getPotholeStrikeEnvelope,
   sampleRoadSurfaceBikeEffect,
@@ -75,6 +81,9 @@ const POTHOLE_STRIKE_COOLDOWN_MS = 480
 const CONDITION_LOSS_RESTRICTED_TICK = 1.1
 const RESTRICTED_ZONE_DAMAGE_INTERVAL_MS = 1020
 const RESTRICTED_ZONE_MIN_SPEED = 0.24
+
+const JOB_ARRIVE_DIST = 3.55
+const JOB_ARRIVE_SPEED = 1.45
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
@@ -142,6 +151,96 @@ const matVest = {
   metalness: 0.04,
   roughness: 0.55,
 } as const
+
+function RiderJobDestBillboard() {
+  const job = useGameStore((s) => s.rideJob)
+  if (!job) return null
+  const target = job.phase === 'pickup' ? job.pickup : job.dropoff
+  const phaseLabel = job.phase === 'pickup' ? 'Pick up' : 'Drop off'
+  return (
+    <Html
+      position={[0, 1.42, 0]}
+      center
+      distanceFactor={11}
+      zIndexRange={[200, 0]}
+      style={{
+        pointerEvents: 'none',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div className="max-w-[min(200px,45vw)] rounded-xl border-2 border-amber-400/90 border-b-4 border-b-amber-950 bg-zinc-950/94 px-2.5 py-1.5 text-center shadow-[0_4px_0_rgba(69,26,3,0.75)] ring-1 ring-amber-300/40 backdrop-blur-sm">
+        <p className="text-[8px] font-black uppercase tracking-[0.2em] text-amber-300/95">
+          {phaseLabel}
+        </p>
+        <p className="mt-0.5 text-[12px] font-black leading-tight text-white drop-shadow-sm">
+          {target.name}
+        </p>
+        <p className="mt-1 font-mono text-[10px] font-black text-emerald-400">
+          {job.payoutUgx.toLocaleString()} UGX
+        </p>
+      </div>
+    </Html>
+  )
+}
+
+/** Pillion passenger (red / blue coat) — visible while job phase is `carrying`. */
+function PassengerOnBike() {
+  const phase = useGameStore((s) => s.rideJob?.phase)
+  const legL = useRef<THREE.Group>(null)
+  const legR = useRef<THREE.Group>(null)
+
+  useFrame(({ clock }) => {
+    if (phase !== 'carrying') return
+    const w = Math.sin(clock.elapsedTime * 5.8 + 1.1) * 0.055
+    if (legL.current) legL.current.rotation.x = w
+    if (legR.current) legR.current.rotation.x = -w
+  })
+
+  if (phase !== 'carrying') return null
+
+  return (
+    <group position={[0, 0.74, 0.56]} rotation={[0.16, Math.PI, 0]}>
+      <group scale={0.9} position={[0, -0.3, 0]}>
+        <mesh position={[0, 1.32, -0.05]} castShadow material={jobPassengerSkinMat}>
+          <sphereGeometry args={[0.11, 10, 10]} />
+        </mesh>
+        <mesh position={[-0.07, 0.95, -0.03]} castShadow material={jobPassengerCoatRedMat}>
+          <boxGeometry args={[0.14, 0.48, 0.18]} />
+        </mesh>
+        <mesh position={[0.07, 0.95, -0.03]} castShadow material={jobPassengerCoatBlueMat}>
+          <boxGeometry args={[0.14, 0.48, 0.18]} />
+        </mesh>
+        <mesh
+          position={[-0.15, 1.02, -0.14]}
+          rotation={[0.35, 0, 0.55]}
+          castShadow
+          material={jobPassengerCoatRedMat}
+        >
+          <boxGeometry args={[0.07, 0.07, 0.22]} />
+        </mesh>
+        <mesh
+          position={[0.15, 1.02, -0.14]}
+          rotation={[0.35, 0, -0.55]}
+          castShadow
+          material={jobPassengerCoatBlueMat}
+        >
+          <boxGeometry args={[0.07, 0.07, 0.22]} />
+        </mesh>
+        <group ref={legL} position={[-0.12, 0.66, 0.08]} rotation={[0.08, 0, 0.12]}>
+          <mesh position={[0, -0.15, 0]} castShadow material={jobPassengerPantsMat}>
+            <boxGeometry args={[0.1, 0.34, 0.1]} />
+          </mesh>
+        </group>
+        <group ref={legR} position={[0.12, 0.66, 0.08]} rotation={[0.08, 0, -0.12]}>
+          <mesh position={[0, -0.15, 0]} castShadow material={jobPassengerPantsMat}>
+            <boxGeometry args={[0.1, 0.34, 0.1]} />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  )
+}
 
 function RiderHumanoid() {
   const { scene } = useGLTF(RIDER_PLACEHOLDER_GLTF)
@@ -447,6 +546,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   /** Decays after hitting static geometry — rebound pitch / roll. */
   const buildingHitJolt = useRef(0)
   const restrictedZoneDamageNextMs = useRef(0)
+  const lastBikeMapEmitMs = useRef(0)
+  const rideJobGateUntilMs = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -517,6 +618,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const dt = Math.min(delta, 0.05)
 
     const t = body.translation()
+    const nowEmit = performance.now()
+    if (nowEmit - lastBikeMapEmitMs.current >= 100) {
+      lastBikeMapEmitMs.current = nowEmit
+      useGameStore.getState().setBikeMapCoords(t.x, t.z)
+    }
     if (!useGameStore.getState().bikeAwayFromSpawn) {
       const d = Math.hypot(t.x - BIKE_SPAWN_XZ.x, t.z - BIKE_SPAWN_XZ.z)
       if (d > BIKE_SPAWN_PED_CLEAR_M) {
@@ -645,6 +751,29 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     const speedAbs = Math.abs(speed.current)
 
+    const rideJob = useGameStore.getState().rideJob
+    const nowJob = performance.now()
+    if (
+      rideJob &&
+      !brokenDown &&
+      nowJob >= rideJobGateUntilMs.current &&
+      nowJob >= useGameStore.getState().collisionPenaltiesAfterMs
+    ) {
+      if (rideJob.phase === 'pickup') {
+        const d = Math.hypot(t.x - rideJob.pickup.x, t.z - rideJob.pickup.z)
+        if (d < JOB_ARRIVE_DIST && speedAbs < JOB_ARRIVE_SPEED) {
+          rideJobGateUntilMs.current = nowJob + 900
+          useGameStore.getState().completeRidePickup()
+        }
+      } else {
+        const d = Math.hypot(t.x - rideJob.dropoff.x, t.z - rideJob.dropoff.z)
+        if (d < JOB_ARRIVE_DIST && speedAbs < JOB_ARRIVE_SPEED) {
+          rideJobGateUntilMs.current = nowJob + 900
+          useGameStore.getState().completeRideDropoff()
+        }
+      }
+    }
+
     if (!drivable && !brokenDown && speedAbs > RESTRICTED_ZONE_MIN_SPEED) {
       const nowZ = performance.now()
       const stZ = useGameStore.getState()
@@ -740,6 +869,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       <group ref={visualRef}>
         <BodaBikeModel />
         <RiderHumanoid />
+        <PassengerOnBike />
+        <RiderJobDestBillboard />
         <spotLight
           position={[0, 0.62, -0.35]}
           angle={0.5}

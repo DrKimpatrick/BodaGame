@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { playBloodImpactFeedback } from '../audio/bloodImpactFeedback'
+import { generateRideJob, type RideJob } from '../game/passengerJobs'
 
 /** Ignore bike↔ped / bike↔car collision penalties until this `performance.now()` (spawn overlap). */
 export const COLLISION_GRACE_MS = 2200
@@ -223,6 +224,19 @@ export type GameState = {
   bloodImpactNonce: number
   bloodImpactKind: BloodImpactKind | null
   triggerBloodImpactFlash: (kind: BloodImpactKind) => void
+  /** Passenger job (pick up → drop off → pay). */
+  rideJob: RideJob | null
+  rideJobSerial: number
+  /** Throttled bike XZ for HUD minimap / navigation. */
+  bikeMapX: number
+  bikeMapZ: number
+  setBikeMapCoords: (x: number, z: number) => void
+  assignRideJob: () => void
+  completeRidePickup: () => void
+  completeRideDropoff: () => void
+  /** Bumped when pickup completes — HUD shows “you reached your passenger”. */
+  ridePickupToastNonce: number
+  ridePickupToastDestination: string
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -270,6 +284,12 @@ const initialSession = (): Pick<
   | 'bikeAwayFromSpawn'
   | 'bloodImpactNonce'
   | 'bloodImpactKind'
+  | 'rideJob'
+  | 'rideJobSerial'
+  | 'bikeMapX'
+  | 'bikeMapZ'
+  | 'ridePickupToastNonce'
+  | 'ridePickupToastDestination'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -281,6 +301,12 @@ const initialSession = (): Pick<
   bikeAwayFromSpawn: false,
   bloodImpactNonce: 0,
   bloodImpactKind: null,
+  rideJob: null,
+  rideJobSerial: 0,
+  bikeMapX: 0,
+  bikeMapZ: 0,
+  ridePickupToastNonce: 0,
+  ridePickupToastDestination: '',
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -295,6 +321,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       ...initialSession(),
       collisionPenaltiesAfterMs: nextCollisionPenaltyDeadline(),
     })
+    get().assignRideJob()
   },
   setMoney: (money) => set({ money: moneyInt(money) }),
   setFuel: (fuel) => set({ fuel: normalizeTankFuel(fuel) }),
@@ -364,6 +391,34 @@ export const useGameStore = create<GameState>((set, get) => ({
       bloodImpactNonce: s.bloodImpactNonce + 1,
       bloodImpactKind: kind,
     }))
+  },
+  setBikeMapCoords: (x, z) =>
+    set({
+      bikeMapX: x,
+      bikeMapZ: z,
+    }),
+  assignRideJob: () => {
+    const serial = get().rideJobSerial + 1
+    set({
+      rideJob: generateRideJob(serial),
+      rideJobSerial: serial,
+    })
+  },
+  completeRidePickup: () => {
+    const j = get().rideJob
+    if (!j || j.phase !== 'pickup') return
+    set((s) => ({
+      rideJob: { ...j, phase: 'carrying' },
+      ridePickupToastNonce: s.ridePickupToastNonce + 1,
+      ridePickupToastDestination: j.dropoff.name,
+    }))
+  },
+  completeRideDropoff: () => {
+    const j = get().rideJob
+    if (!j || j.phase !== 'carrying') return
+    const label = `Fare — ${j.dropoff.name}`
+    get().earnUgx(j.payoutUgx, label)
+    get().assignRideJob()
   },
 }))
 
