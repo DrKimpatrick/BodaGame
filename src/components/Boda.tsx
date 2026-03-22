@@ -32,6 +32,10 @@ import {
 } from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
+import {
+  getPotholeStrikeEnvelope,
+  sampleRoadSurfaceBikeEffect,
+} from '@game/roadSurfaceFeatures'
 import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
 
 const MAX_FORWARD = 14
@@ -55,6 +59,13 @@ const VEHICLE_STUN_MS = 720
 const CONDITION_LOSS_PEDESTRIAN = 6
 /** Vehicle strike — much harsher than a pedestrian knock. */
 const CONDITION_LOSS_VEHICLE = 32
+/** Each distinct pothole strike — small wear (stacks over a bad road). */
+const CONDITION_LOSS_POTHOLE = 2.2
+
+const POTHOLE_STRIKE_IN = 0.2
+const POTHOLE_STRIKE_OUT = 0.052
+const POTHOLE_STRIKE_MIN_SPEED = 0.72
+const POTHOLE_STRIKE_COOLDOWN_MS = 480
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
@@ -409,6 +420,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const visualRef = useRef<THREE.Group>(null)
   const bankSmoothed = useRef(0)
   const pitchSmoothed = useRef(0)
+  const yOffSmoothed = useRef(0)
   const enginePhase = useRef(0)
   const lastFuelPos = useRef<{ x: number; z: number } | null>(null)
   /** Car hits can spam `onCollisionEnter` while overlapping. */
@@ -417,6 +429,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const noPedestrianStunUntil = useRef(0)
   /** Throttle ignored until this time (walker / vehicle bump). */
   const stunnedUntil = useRef(0)
+  const potholeEnvelopePrev = useRef(0)
+  const potholeHitCooldownUntil = useRef(0)
+  /** Decays 0→1 after a pothole strike — extra mesh dip / wobble. */
+  const potholeJolt = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -547,12 +563,42 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     speed.current = THREE.MathUtils.clamp(speed.current, -capRev, capFwd)
 
     quat.setFromAxisAngle(Y_AXIS, yaw.current)
+    forward.set(0, 0, -1).applyQuaternion(quat)
+    const speedAbsPreSurf = Math.abs(speed.current)
+    const surf = sampleRoadSurfaceBikeEffect(
+      t.x,
+      t.z,
+      forward.x,
+      forward.z,
+      speedAbsPreSurf,
+    )
+    if (drivable && !brokenDown) {
+      speed.current *= surf.speedMul
+    }
+
+    const phEnv =
+      drivable && !brokenDown ? getPotholeStrikeEnvelope(t.x, t.z) : 0
+    const strikeNow = performance.now()
+    if (
+      drivable &&
+      !brokenDown &&
+      speedAbsPreSurf > POTHOLE_STRIKE_MIN_SPEED &&
+      phEnv > POTHOLE_STRIKE_IN &&
+      potholeEnvelopePrev.current < POTHOLE_STRIKE_OUT &&
+      strikeNow >= potholeHitCooldownUntil.current
+    ) {
+      potholeHitCooldownUntil.current = strikeNow + POTHOLE_STRIKE_COOLDOWN_MS
+      potholeJolt.current = 1
+      const st = useGameStore.getState()
+      st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_POTHOLE))
+    }
+    potholeEnvelopePrev.current = phEnv
+
     body.setRotation(
       { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
       true,
     )
 
-    forward.set(0, 0, -1).applyQuaternion(quat)
     body.setLinvel(
       {
         x: forward.x * speed.current,
@@ -573,23 +619,32 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const speed01 = THREE.MathUtils.clamp(speedAbs / MAX_FORWARD, 0, 1)
     const targetBank =
       -steer * speed01 * 0.42 +
-      (speedAbs < 0.06 ? Math.sin(enginePhase.current) * 0.012 : 0)
+      (speedAbs < 0.06 ? Math.sin(enginePhase.current) * 0.012 : 0) +
+      surf.roll
     enginePhase.current += dt * 88
+
+    const j = potholeJolt.current
+    potholeJolt.current *= Math.exp(-17 * dt)
 
     const braking = throttle <= 0 && speed.current > 0.35
     const accelerating = throttle > 0 && speed.current >= 0
     const targetPitch =
       (braking ? -0.11 : 0) * speed01 +
-      (accelerating ? 0.06 * throttle * speed01 : 0)
+      (accelerating ? 0.06 * throttle * speed01 : 0) +
+      surf.pitch
 
     const smooth = 1 - Math.exp(-12 * dt)
     bankSmoothed.current += (targetBank - bankSmoothed.current) * smooth
     pitchSmoothed.current += (targetPitch - pitchSmoothed.current) * smooth
+    yOffSmoothed.current += (surf.yOff - yOffSmoothed.current) * smooth
 
     const g = visualRef.current
     if (g) {
-      g.rotation.z = bankSmoothed.current
-      g.rotation.x = pitchSmoothed.current
+      const potholeWobble = Math.sin(enginePhase.current * 0.52) * 0.15 * j
+      g.rotation.z = bankSmoothed.current + potholeWobble
+      g.rotation.x =
+        pitchSmoothed.current + j * (-0.38 - speed01 * 0.16)
+      g.position.y = yOffSmoothed.current - j * 0.062
     }
 
     const kmh = Math.round(speedAbs * 3.6)

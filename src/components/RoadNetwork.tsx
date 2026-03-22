@@ -15,6 +15,13 @@ import {
   ZEBRA_HORIZONTAL_SITES,
   ZEBRA_VERTICAL_SITES,
 } from '@game/roadDecorPlacements'
+import {
+  HUMP_ALONG,
+  HUMP_HALF_H,
+  listPotholeSites,
+  listSpeedHumpSites,
+  ROAD_TOP_Y,
+} from '@game/roadSurfaceFeatures'
 import { SIDEWALK_WIDTH } from '@game/roadSpatial'
 
 const Z0 = CITY_START
@@ -39,18 +46,42 @@ const CORNER_FILLET_R = 0.92
 const STRIP_CENTERS_X = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterX(k))
 const STRIP_CENTERS_Z = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterZ(k))
 
-const shoulderLineMat = new THREE.MeshBasicMaterial({
-  color: '#ffffff',
-  toneMapped: false,
-})
-
-const cornerFilletMat = new THREE.MeshBasicMaterial({
-  color: '#ffffff',
+const lineMatFresh = new THREE.MeshBasicMaterial({
+  color: '#f0f0ea',
   toneMapped: false,
   polygonOffset: true,
   polygonOffsetFactor: -1,
   polygonOffsetUnits: -1,
 })
+
+const lineMatFaded = new THREE.MeshBasicMaterial({
+  color: '#9c9a92',
+  toneMapped: false,
+  opacity: 0.52,
+  transparent: true,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
+})
+
+const lineMatWorn = new THREE.MeshBasicMaterial({
+  color: '#6a6860',
+  toneMapped: false,
+  opacity: 0.26,
+  transparent: true,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1.2,
+  polygonOffsetUnits: -1,
+})
+
+function pickRoadLineMat(ia: number, ib: number, salt: number): THREE.MeshBasicMaterial {
+  const r = segmentRandom(ia, ib, salt)
+  if (r < 0.27) return lineMatWorn
+  if (r < 0.54) return lineMatFaded
+  return lineMatFresh
+}
 
 function dashOverlapsIntersectionAlongZ(z: number): boolean {
   const ext = INTERSECTION_HALF + DASH_LEN / 2 + MARK_PAD
@@ -120,7 +151,7 @@ function IntersectionCornerFillets() {
             key={`fillet-${key++}`}
             position={[ox, LINE_Y, oz]}
             rotation={[-Math.PI / 2, 0, 0]}
-            material={cornerFilletMat}
+            material={pickRoadLineMat(vi, hj * 11 + c, 823)}
           >
             <ringGeometry args={[filletInner, CORNER_FILLET_R, segs, 1, thetaStart, Math.PI / 2]} />
           </mesh>,
@@ -209,11 +240,6 @@ const zebraStripeMat = new THREE.MeshBasicMaterial({
   polygonOffsetFactor: -1.5,
   polygonOffsetUnits: -1,
 })
-
-/** Top of road deck (matches vertical/horizontal segment mesh). */
-const ROAD_TOP_Y = 0.06
-const HUMP_HALF_H = 0.1
-const HUMP_ALONG = 1.28 /** span along traffic direction */
 
 /** Rounded transverse hump on an N–S carriageway (ellipsoid, traffic ±Z). */
 function SpeedHumpVerticalRoad({
@@ -334,7 +360,7 @@ function VerticalRoadStrip({
             key={`d-${i}`}
             position={[cx, LINE_Y, z]}
             rotation={[-Math.PI / 2, 0, 0]}
-            material={shoulderLineMat}
+            material={pickRoadLineMat(stripIndex, i, 707)}
           >
             <planeGeometry args={[0.16, DASH_LEN]} />
           </mesh>,
@@ -344,7 +370,7 @@ function VerticalRoadStrip({
       i++
     }
     return items
-  }, [cx])
+  }, [cx, stripIndex])
 
   const midZ = (Z0 + Z1) / 2
   const roadSegments = useMemo(
@@ -373,10 +399,18 @@ function VerticalRoadStrip({
         const zm = (za + zb) / 2
         return (
           <group key={`vs-${stripIndex}-${si}`}>
-            <mesh position={[xLeft, LINE_Y, zm]} rotation={[-Math.PI / 2, 0, 0]} material={shoulderLineMat}>
+            <mesh
+              position={[xLeft, LINE_Y, zm]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              material={pickRoadLineMat(stripIndex, si, 717)}
+            >
               <planeGeometry args={[SHOULDER_W, len]} />
             </mesh>
-            <mesh position={[xRight, LINE_Y, zm]} rotation={[-Math.PI / 2, 0, 0]} material={shoulderLineMat}>
+            <mesh
+              position={[xRight, LINE_Y, zm]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              material={pickRoadLineMat(stripIndex, si + 64, 718)}
+            >
               <planeGeometry args={[SHOULDER_W, len]} />
             </mesh>
           </group>
@@ -418,7 +452,7 @@ function HorizontalRoadStrip({
             key={`hd-${i}`}
             position={[x, LINE_Y, cz]}
             rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-            material={shoulderLineMat}
+            material={pickRoadLineMat(stripIndex, i, 807)}
           >
             <planeGeometry args={[0.16, DASH_LEN]} />
           </mesh>,
@@ -428,7 +462,7 @@ function HorizontalRoadStrip({
       i++
     }
     return items
-  }, [cz])
+  }, [cz, stripIndex])
 
   const midX = (X0 + X1) / 2
   const roadSegments = useMemo(
@@ -457,10 +491,18 @@ function HorizontalRoadStrip({
         const xm = (xa + xb) / 2
         return (
           <group key={`hs-${stripIndex}-${si}`}>
-            <mesh position={[xm, LINE_Y, zSouth]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={shoulderLineMat}>
+            <mesh
+              position={[xm, LINE_Y, zSouth]}
+              rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+              material={pickRoadLineMat(stripIndex, si, 727)}
+            >
               <planeGeometry args={[SHOULDER_W, len]} />
             </mesh>
-            <mesh position={[xm, LINE_Y, zNorth]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} material={shoulderLineMat}>
+            <mesh
+              position={[xm, LINE_Y, zNorth]}
+              rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+              material={pickRoadLineMat(stripIndex, si + 64, 728)}
+            >
               <planeGeometry args={[SHOULDER_W, len]} />
             </mesh>
           </group>
@@ -543,34 +585,96 @@ export function RoadNetwork() {
     return out
   }, [])
 
-  /** Mid-block humps, offset along the road so they don’t always sit on zebras. */
   const speedHumps = useMemo(() => {
+    const { vertical, horizontal } = listSpeedHumpSites()
     const out: ReactElement[] = []
-    const maxOff = 11
-    for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
-      const cx = roadStripCenterX(vi)
-      for (let j = 0; j < NUM_BLOCKS; j++) {
-        if (segmentRandom(vi, j, 919) > 0.2) continue
-        const mid = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
-        const z = mid + (segmentRandom(vi, j, 920) - 0.5) * 2 * maxOff
-        out.push(
-          <SpeedHumpVerticalRoad key={`hv-${vi}-${j}`} cx={cx} z={z} material={tarmacMat} />,
-        )
-      }
+    for (const h of vertical) {
+      out.push(
+        <SpeedHumpVerticalRoad key={h.key} cx={h.cx} z={h.z} material={tarmacMat} />,
+      )
     }
-    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
-      const cz = roadStripCenterZ(hj)
-      for (let i = 0; i < NUM_BLOCKS; i++) {
-        if (segmentRandom(i, hj, 921) > 0.2) continue
-        const mid = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
-        const x = mid + (segmentRandom(i, hj, 922) - 0.5) * 2 * maxOff
-        out.push(
-          <SpeedHumpHorizontalRoad key={`hh-${i}-${hj}`} x={x} cz={cz} material={tarmacMat} />,
-        )
-      }
+    for (const h of horizontal) {
+      out.push(
+        <SpeedHumpHorizontalRoad key={h.key} x={h.x} cz={h.cz} material={tarmacMat} />,
+      )
     }
     return out
   }, [tarmacMat])
+
+  const potholeDeepMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#060504',
+        roughness: 1,
+        metalness: 0,
+        emissive: '#1a0f08',
+        emissiveIntensity: 0.12,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
+    [],
+  )
+  const potholeAsphaltMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#2a2520',
+        roughness: 0.96,
+        metalness: 0.03,
+        polygonOffset: true,
+        polygonOffsetFactor: -0.8,
+        polygonOffsetUnits: -1,
+      }),
+    [],
+  )
+  const potholeCrackMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#8a7a68',
+        roughness: 0.88,
+        metalness: 0.06,
+        emissive: '#3d3228',
+        emissiveIntensity: 0.08,
+        polygonOffset: true,
+        polygonOffsetFactor: -0.6,
+        polygonOffsetUnits: -1,
+      }),
+    [],
+  )
+
+  const potholeMeshes = useMemo(() => {
+    return listPotholeSites().map((p) => {
+      const rot = (p.x * 0.17 + p.z * 0.13) % (Math.PI * 2)
+      return (
+        <group key={p.key}>
+          <mesh
+            position={[p.x, ROAD_TOP_Y - 0.024, p.z]}
+            rotation={[-Math.PI / 2, 0, rot]}
+            material={potholeDeepMat}
+            renderOrder={1}
+          >
+            <circleGeometry args={[p.r * 0.92, 28]} />
+          </mesh>
+          <mesh
+            position={[p.x, ROAD_TOP_Y + 0.002, p.z]}
+            rotation={[-Math.PI / 2, 0, rot]}
+            material={potholeAsphaltMat}
+            renderOrder={2}
+          >
+            <ringGeometry args={[p.r * 0.18, p.r * 1.04, 24]} />
+          </mesh>
+          <mesh
+            position={[p.x, ROAD_TOP_Y + 0.005, p.z]}
+            rotation={[-Math.PI / 2, 0, rot * 1.7]}
+            material={potholeCrackMat}
+            renderOrder={3}
+          >
+            <ringGeometry args={[p.r * 0.28, p.r * 0.88, 22]} />
+          </mesh>
+        </group>
+      )
+    })
+  }, [potholeDeepMat, potholeAsphaltMat, potholeCrackMat])
 
   return (
     <group>
@@ -578,6 +682,7 @@ export function RoadNetwork() {
       {horizontal}
       <IntersectionCornerFillets />
       {speedHumps}
+      {potholeMeshes}
       {zebraCrossings}
     </group>
   )
