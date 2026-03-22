@@ -284,6 +284,183 @@ function LandingRightMotion() {
   )
 }
 
+const SAFEBODA_LOGO_SRC = '/textures/safeboda.png'
+/** Decorative “live” stat for atmosphere (not real multiplayer). */
+const ONLINE_RIDERS_DISPLAY = 178_000
+
+const LANDING_LEADERBOARD: {
+  rank: number
+  name: string
+  ugx: number
+  tier: 'gold' | 'silver' | 'bronze' | 'default'
+}[] = [
+  { rank: 1, name: 'Kizza D.', ugx: 2_840_000, tier: 'gold' },
+  { rank: 2, name: 'Nakato J.', ugx: 2_102_500, tier: 'silver' },
+  { rank: 3, name: 'Odoi “Flash”', ugx: 1_956_200, tier: 'bronze' },
+  { rank: 4, name: 'Amina K.', ugx: 1_721_000, tier: 'default' },
+  { rank: 5, name: 'Brian M.', ugx: 1_608_400, tier: 'default' },
+]
+
+function LocationPinIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 7a2.5 2.5 0 0 1 0 4.5z"
+      />
+    </svg>
+  )
+}
+
+function SplashLiveRegionBar() {
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-sky-500/30 bg-linear-to-r from-sky-950/50 via-zinc-950/80 to-black/90 p-2 shadow-[0_0_24px_rgba(56,189,248,0.08)] ring-1 ring-white/5">
+      <div
+        className="pointer-events-none absolute -right-4 -top-8 h-24 w-24 rounded-full bg-sky-400/10 blur-2xl"
+        aria-hidden
+      />
+      <div className="relative flex items-center gap-2">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-500/35 bg-sky-950/60 shadow-inner ring-1 ring-sky-400/20">
+          <LocationPinIcon className="h-5 w-5 text-sky-400 drop-shadow-[0_0_10px_rgba(56,189,248,0.45)]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[7px] font-black uppercase tracking-[0.28em] text-sky-400/85">
+            Live region
+          </p>
+          <p className="truncate text-[11px] font-black leading-tight tracking-wide text-zinc-50">
+            Kampala · Central
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <span className="landing-online-dot h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="font-mono text-[8px] font-black uppercase tracking-wider text-emerald-400/95">
+              Live
+            </span>
+          </div>
+          <p className="font-mono text-[12px] font-black leading-tight tabular-nums tracking-tight text-amber-200 drop-shadow-[0_0_12px_rgba(251,191,36,0.25)]">
+            {ONLINE_RIDERS_DISPLAY.toLocaleString()}
+          </p>
+          <p className="font-mono text-[7px] font-bold uppercase tracking-widest text-zinc-500">
+            riders online
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SplashSafeBodaBanner() {
+  return (
+    <div className="group relative overflow-hidden rounded-lg border border-emerald-500/40 bg-linear-to-br from-emerald-950/70 via-zinc-950/95 to-black p-2 shadow-[0_6px_0_rgba(6,78,59,0.35),0_0_28px_rgba(16,185,129,0.12)] ring-1 ring-emerald-400/15">
+      <div
+        className="pointer-events-none absolute inset-0 bg-linear-to-r from-transparent via-emerald-400/8 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        aria-hidden
+      />
+      <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
+        <span className="font-mono text-[7px] font-black uppercase tracking-[0.35em] text-emerald-400/90">
+          Sponsor board
+        </span>
+        <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1 py-px font-mono text-[6px] font-bold uppercase text-emerald-300/90">
+          Ad
+        </span>
+      </div>
+      <div className="relative flex min-h-10 items-center justify-center rounded-md border border-zinc-800/80 bg-black/40 px-2 py-1.5">
+        <img
+          src={SAFEBODA_LOGO_SRC}
+          alt="SafeBoda"
+          className="relative z-10 max-h-11 w-full object-contain object-center brightness-110 contrast-105"
+          draggable={false}
+        />
+      </div>
+      <p className="mt-1 text-center font-mono text-[6px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+        Helmet on · ride smart
+      </p>
+    </div>
+  )
+}
+
+function SplashLeaderboard() {
+  const tierClass = (t: (typeof LANDING_LEADERBOARD)[number]['tier']) => {
+    switch (t) {
+      case 'gold':
+        return 'border-amber-400/45 bg-linear-to-r from-amber-500/15 via-amber-600/5 to-transparent shadow-[0_0_12px_rgba(251,191,36,0.12)]'
+      case 'silver':
+        return 'border-zinc-400/35 bg-zinc-400/5'
+      case 'bronze':
+        return 'border-orange-600/35 bg-orange-950/25'
+      default:
+        return 'border-zinc-700/50 bg-black/30'
+    }
+  }
+
+  const rankStyle = (t: (typeof LANDING_LEADERBOARD)[number]['tier']) => {
+    switch (t) {
+      case 'gold':
+        return 'text-amber-300'
+      case 'silver':
+        return 'text-zinc-300'
+      case 'bronze':
+        return 'text-orange-300'
+      default:
+        return 'text-zinc-500'
+    }
+  }
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-lg border border-amber-500/25 bg-linear-to-b from-zinc-900/98 via-zinc-950/98 to-black/95 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_4px_0_rgba(0,0,0,0.35)] ring-1 ring-amber-900/25"
+      role="region"
+      aria-label="Illustrative leaderboard preview"
+    >
+      <div
+        className="pointer-events-none absolute -left-6 top-0 h-32 w-32 rounded-full bg-amber-500/8 blur-3xl"
+        aria-hidden
+      />
+      <div className="relative mb-2 flex items-center justify-between gap-2 border-b border-amber-500/20 pb-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base leading-none drop-shadow-[0_0_8px_rgba(251,191,36,0.35)]" aria-hidden>
+            🏆
+          </span>
+          <div>
+            <p className="font-mono text-[10px] font-black uppercase tracking-[0.22em] text-amber-200/95">
+              Leaderboard
+            </p>
+            <p className="font-mono text-[6px] font-bold uppercase tracking-widest text-zinc-500">
+              Top fares · this week
+            </p>
+          </div>
+        </div>
+        <span className="shrink-0 rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[7px] font-black uppercase tracking-wider text-amber-300/95">
+          S4
+        </span>
+      </div>
+      <ul className="relative space-y-1">
+        {LANDING_LEADERBOARD.map((row) => (
+          <li
+            key={row.rank}
+            className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 ${tierClass(row.tier)}`}
+          >
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded font-mono text-[9px] font-black ${rankStyle(row.tier)}`}
+            >
+              {row.rank}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-zinc-100">{row.name}</span>
+            <span className="shrink-0 font-mono text-[9px] font-black tabular-nums text-emerald-300/95">
+              {row.ugx.toLocaleString()}
+            </span>
+            <span className="sr-only">UGX</span>
+          </li>
+        ))}
+      </ul>
+      <p className="relative mt-1.5 text-center font-mono text-[5px] font-medium uppercase tracking-[0.12em] text-zinc-700">
+        Preview · not live rankings
+      </p>
+    </div>
+  )
+}
+
 export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOverlayProps) {
   const money = useGameStore((s) => s.money)
   const [tab, setTab] = useState<TabId>('fuel')
@@ -304,7 +481,7 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       {/* Left: hero art — capped height on mobile so the right panel can fill remaining space */}
-      <div className="relative h-[min(42vh,320px)] min-h-[200px] shrink-0 lg:h-auto lg:min-h-0 lg:min-w-0 lg:flex-[1.25]">
+      <div className="relative h-[min(42vh,320px)] min-h-[200px] shrink-0 lg:h-auto lg:min-h-0 lg:min-w-0 lg:flex-[1.35]">
         <img
           src={artSrc}
           alt=""
@@ -350,8 +527,8 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
         </div>
       </div>
 
-      {/* Right: full-height column, motion bed fills area behind UI */}
-      <div className="relative flex min-h-0 w-full flex-1 flex-col border-t-[5px] border-amber-600/80 bg-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:min-h-0 lg:border-l-[5px] lg:border-t-0 lg:py-0">
+      {/* Right: narrow rail, motion + stacked HUD cards */}
+      <div className="relative flex min-h-0 w-full flex-1 flex-col border-t-[5px] border-amber-600/80 bg-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:min-h-0 lg:w-[min(100%,292px)] lg:max-w-[292px] lg:flex-none lg:shrink-0 lg:border-l-[5px] lg:border-t-0 lg:py-0 xl:max-w-[304px]">
         <LandingRightMotion />
         {/* bezel corners */}
         <div
@@ -371,10 +548,16 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
           aria-hidden
         />
 
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 lg:justify-center lg:py-4">
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-3 lg:gap-2 lg:py-3">
           {!splashImageReady ? (
             <p className="text-center text-sm font-semibold tracking-wide text-zinc-500">Loading…</p>
           ) : null}
+
+          <div className="flex shrink-0 flex-col gap-2">
+            <SplashLiveRegionBar />
+            <SplashSafeBodaBanner />
+            <SplashLeaderboard />
+          </div>
 
           <div className="shrink-0 text-center">
             <p className="font-mono text-[9px] font-bold uppercase tracking-[0.32em] text-amber-500/90">

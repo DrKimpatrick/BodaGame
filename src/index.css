@@ -261,6 +261,24 @@ body,
   animation: landing-panel-twinkle 2.8s ease-in-out infinite;
 }
 
+@keyframes landing-online-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.55);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.95);
+    transform: scale(1.15);
+  }
+}
+
+.landing-online-dot {
+  animation: landing-online-pulse 1.85s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .splash-road-layer,
   .splash-drift-dot,
@@ -272,7 +290,8 @@ body,
   .landing-panel-scan,
   .landing-panel-orb,
   .landing-panel-sheen,
-  .landing-panel-twinkle {
+  .landing-panel-twinkle,
+  .landing-online-dot {
     animation: none !important;
   }
 }
