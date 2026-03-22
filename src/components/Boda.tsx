@@ -27,6 +27,10 @@ import {
   CONDITION_BROKEN_AT,
   FUEL_PER_WORLD_METER,
   normalizeCondition,
+  RIDE_SCORE_LOSS_BUILDING,
+  RIDE_SCORE_LOSS_PEDESTRIAN,
+  RIDE_SCORE_LOSS_VEHICLE,
+  RIDE_SCORE_POINTS_PER_WORLD_M,
   shouldApplyBikePedestrianInteraction,
   useGameStore,
 } from '../store/useGameStore'
@@ -49,6 +53,13 @@ const MAX_REVERSE = 5
 const ACCEL = 28
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
+/** Idle roll on tarmac when not accelerating (m/s); below {@link JOB_ARRIVE_SPEED} so pickups can still complete. */
+const COAST_MIN_SPEED = 1.08
+const COAST_MIN_SPEED_OFFROAD = 1.22
+/** How quickly forward speed eases toward coast minimum (higher = snappier). */
+const COAST_SETTLE_RATE = 2.35
+const COAST_SETTLE_RATE_OFFROAD = 1.75
+const BRAKE_DECEL = 42
 /**
  * Off-limits / shoulder / deep grass: much higher top speed and thrust than
  * on tarmac (arcade “open field” feel — still never hard-zeroed).
@@ -84,8 +95,57 @@ const RESTRICTED_ZONE_MIN_SPEED = 0.24
 
 const JOB_ARRIVE_DIST = 3.55
 const JOB_ARRIVE_SPEED = 1.45
+/** Min speed (m/s) before distance counts toward safe-riding score. */
+const RIDE_SCORE_MIN_SPEED_MS = 0.38
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+function stepGasBrakeCoastSpeed(params: {
+  dt: number
+  speedRef: { current: number }
+  gas: boolean
+  brake: boolean
+  coastMin: number
+  coastSettleRate: number
+  accel: number
+  brakeDecel: number
+  reverseDragPerS: number
+}) {
+  const {
+    dt,
+    speedRef,
+    gas,
+    brake,
+    coastMin,
+    coastSettleRate,
+    accel,
+    brakeDecel,
+    reverseDragPerS,
+  } = params
+  let s = speedRef.current
+  const frictionLight = FRICTION * 0.15
+
+  if (brake && s > 0.04) {
+    s = Math.max(0, s - brakeDecel * dt)
+  } else if (brake && s < -0.04) {
+    s = Math.min(0, s + brakeDecel * dt)
+  } else if (gas) {
+    s += accel * dt
+    s *= Math.exp(-frictionLight * dt)
+  } else if (!brake && s > 0.04) {
+    const blend = 1 - Math.exp(-coastSettleRate * dt)
+    s += (coastMin - s) * blend
+  } else if (brake && Math.abs(s) <= 0.04 && !gas) {
+    s -= accel * 0.95 * dt
+  } else if (s < -0.04) {
+    s *= Math.exp(-reverseDragPerS * dt)
+    if (s > -0.06) s = 0
+  } else {
+    s = 0
+  }
+
+  speedRef.current = s
+}
 
 /** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
 const RIDER_PLACEHOLDER_GLTF =
@@ -519,6 +579,12 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   }, [world])
 
   const keys = useKeyboard()
+  const prevDriveHud = useRef({
+    gas: false,
+    brake: false,
+    steerLeft: false,
+    steerRight: false,
+  })
   const speed = useRef(0)
   useBikeEngineAudio(speed)
   const yaw = useRef(0)
@@ -548,6 +614,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const restrictedZoneDamageNextMs = useRef(0)
   const lastBikeMapEmitMs = useRef(0)
   const rideJobGateUntilMs = useRef(0)
+  /** Fractional score from distance; flushed via {@link useGameStore.applyRideScoreDelta}. */
+  const rideScoreAcc = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -570,6 +638,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           Math.max(0, st.condition - CONDITION_LOSS_VEHICLE),
         )
         st.triggerBloodImpactFlash('vehicle')
+        st.applyRideScoreDelta(-RIDE_SCORE_LOSS_VEHICLE)
         return
       }
       if (ud?.kind === 'building') {
@@ -584,6 +653,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         buildingHitJolt.current = 1
         const st = useGameStore.getState()
         st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_BUILDING))
+        st.applyRideScoreDelta(-RIDE_SCORE_LOSS_BUILDING)
         return
       }
       if (ud?.kind === 'pedestrian') {
@@ -595,6 +665,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         const st = useGameStore.getState()
         st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
         st.triggerBloodImpactFlash('pedestrian')
+        st.applyRideScoreDelta(-RIDE_SCORE_LOSS_PEDESTRIAN)
       }
     },
     [],
@@ -638,11 +709,26 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const steer = brokenDown
       ? 0
       : (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
-    const throttleRaw = brokenDown
-      ? 0
-      : (keys.current.forward ? 1 : 0) - (keys.current.back ? 1 : 0)
-    const throttle =
-      performance.now() < stunnedUntil.current ? 0 : throttleRaw
+    const isStunned = performance.now() < stunnedUntil.current
+    const gas = !brokenDown && !isStunned && keys.current.forward
+    const brake = !brokenDown && !isStunned && keys.current.back
+
+    const dh = {
+      gas: keys.current.forward,
+      brake: keys.current.back,
+      steerLeft: keys.current.left,
+      steerRight: keys.current.right,
+    }
+    const p = prevDriveHud.current
+    if (
+      p.gas !== dh.gas ||
+      p.brake !== dh.brake ||
+      p.steerLeft !== dh.steerLeft ||
+      p.steerRight !== dh.steerRight
+    ) {
+      prevDriveHud.current = dh
+      useGameStore.getState().setDriveHud(dh)
+    }
 
     const speedAbsEarly = Math.abs(speed.current)
     const moving = speedAbsEarly > 0.08
@@ -662,29 +748,42 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const fuelLeft = useGameStore.getState().fuel
 
     if (drivable) {
-      if (fuelLeft > 0) {
-        speed.current += throttle * ACCEL * dt
-
-        const drag = Math.exp(-FRICTION * dt)
-        if (throttle === 0) {
-          speed.current *= drag
-        } else {
-          speed.current *= Math.exp(-(FRICTION * 0.15) * dt)
-        }
+      if (fuelLeft > 0 && !brokenDown) {
+        stepGasBrakeCoastSpeed({
+          dt,
+          speedRef: speed,
+          gas,
+          brake,
+          coastMin: COAST_MIN_SPEED,
+          coastSettleRate: COAST_SETTLE_RATE,
+          accel: ACCEL,
+          brakeDecel: BRAKE_DECEL,
+          reverseDragPerS: FRICTION * 0.55,
+        })
+      } else if (fuelLeft > 0 && brokenDown) {
+        speed.current *= Math.exp(-FRICTION * 2.8 * dt)
+        if (Math.abs(speed.current) < 0.05) speed.current = 0
       } else {
         const drag = Math.exp(-FRICTION * 1.2 * dt)
         speed.current *= drag
         if (Math.abs(speed.current) < 0.06) speed.current = 0
       }
+    } else if (fuelLeft > 0 && !brokenDown) {
+      stepGasBrakeCoastSpeed({
+        dt,
+        speedRef: speed,
+        gas,
+        brake,
+        coastMin: COAST_MIN_SPEED_OFFROAD,
+        coastSettleRate: COAST_SETTLE_RATE_OFFROAD,
+        accel: ACCEL * OFFROAD_ACCEL_SCALE,
+        brakeDecel: BRAKE_DECEL * 0.92,
+        reverseDragPerS: FRICTION * 0.58,
+      })
+      speed.current *= Math.exp(-OFFROAD_DRAG_PER_S * 0.28 * dt)
     } else {
-      speed.current *= Math.exp(-OFFROAD_DRAG_PER_S * dt)
-      if (fuelLeft > 0 && throttle !== 0) {
-        speed.current += throttle * ACCEL * OFFROAD_ACCEL_SCALE * dt
-      }
-    }
-
-    if (Math.abs(speed.current) < 0.02 && throttle === 0) {
-      speed.current = 0
+      speed.current *= Math.exp(-OFFROAD_DRAG_PER_S * (fuelLeft > 0 ? 1 : 1.35) * dt)
+      if (Math.abs(speed.current) < 0.07) speed.current = 0
     }
 
     if (brokenDown) {
@@ -802,11 +901,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const jb = buildingHitJolt.current
     buildingHitJolt.current *= Math.exp(-20 * dt)
 
-    const braking = throttle <= 0 && speed.current > 0.35
-    const accelerating = throttle > 0 && speed.current >= 0
+    const braking = brake && speed.current > 0.12
+    const accelerating = gas && speed.current >= -0.2
     const targetPitch =
       (braking ? -0.11 : 0) * speed01 +
-      (accelerating ? 0.06 * throttle * speed01 : 0) +
+      (accelerating ? 0.06 * speed01 : 0) +
       surf.pitch
 
     const smooth = 1 - Math.exp(-12 * dt)
@@ -838,10 +937,27 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       if (prev) {
         const dist = Math.hypot(t.x - prev.x, t.z - prev.z)
         if (dist > 1e-6) {
+          const stRide = useGameStore.getState()
           const burn = dist * FUEL_PER_WORLD_METER
-          const f = useGameStore.getState().fuel
+          const f = stRide.fuel
           if (f > 0) {
-            useGameStore.getState().setFuel(Math.max(0, f - burn))
+            stRide.setFuel(Math.max(0, f - burn))
+          }
+          const canGainRideScore =
+            speedAbs >= RIDE_SCORE_MIN_SPEED_MS &&
+            !brokenDown &&
+            !isStunned &&
+            drivable &&
+            stRide.bikeAwayFromSpawn &&
+            nowEmit >= stRide.collisionPenaltiesAfterMs &&
+            f > 0
+          if (canGainRideScore) {
+            rideScoreAcc.current += dist * RIDE_SCORE_POINTS_PER_WORLD_M
+            if (rideScoreAcc.current >= 1) {
+              const add = Math.floor(rideScoreAcc.current)
+              rideScoreAcc.current -= add
+              stRide.applyRideScoreDelta(add)
+            }
           }
         }
       }

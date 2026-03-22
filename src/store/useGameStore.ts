@@ -20,6 +20,12 @@ export const FUEL_MAX = 100
 /** Starting wallet (Ugandan shillings). */
 export const STARTING_MONEY_UGX = 100_000
 
+/** Clean on-network riding: score gain per world unit (XZ) travelled while eligible. */
+export const RIDE_SCORE_POINTS_PER_WORLD_M = 0.48
+export const RIDE_SCORE_LOSS_PEDESTRIAN = 130
+export const RIDE_SCORE_LOSS_VEHICLE = 300
+export const RIDE_SCORE_LOSS_BUILDING = 50
+
 /**
  * Cost to add 1 tank point. Full refill from empty = FUEL_MAX * UGX_PER_FUEL_UNIT.
  */
@@ -247,12 +253,21 @@ export function previewRepairPurchase(
   }
 }
 
+/** Mirrors keyboard drive input for HUD pedals / steering (updated from Boda when values change). */
+export type DriveHudInput = {
+  gas: boolean
+  brake: boolean
+  steerLeft: boolean
+  steerRight: boolean
+}
+
 export type GameState = {
   money: number
   fuel: number
   condition: number
   /** Display speed (KM/H), updated from physics — keep updates throttled in Boda. */
   speedKmh: number
+  driveHud: DriveHudInput
   ledger: WalletTransaction[]
   /**
    * Collisions before this `performance.now()` do not apply stun / condition loss / pedestrian knock
@@ -272,6 +287,7 @@ export type GameState = {
   setFuel: (fuel: number) => void
   setCondition: (condition: number) => void
   setSpeedKmh: (speedKmh: number) => void
+  setDriveHud: (input: DriveHudInput) => void
   /** Add money and record a ledger credit (rides, jobs, etc.). */
   earnUgx: (amountUgx: number, label: string) => void
   /** Deduct money with a ledger spend (use for non-fuel purchases later). */
@@ -311,6 +327,13 @@ export type GameState = {
   riderLevelUpToastNonce: number
   /** Last milestone level for the toast (2, 3, or 4). */
   riderLevelUpToastLevel: number
+  /**
+   * Safe-riding score: rises while moving cleanly on the network; falls on knocks / scrapes.
+   * Whole points, floored at 0.
+   */
+  rideScore: number
+  /** Apply a signed delta to {@link rideScore} (positive gain, negative penalty). */
+  applyRideScoreDelta: (delta: number) => void
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -354,6 +377,7 @@ const initialSession = (): Pick<
   | 'fuel'
   | 'condition'
   | 'speedKmh'
+  | 'driveHud'
   | 'ledger'
   | 'collisionPenaltiesAfterMs'
   | 'bikeAwayFromSpawn'
@@ -372,11 +396,18 @@ const initialSession = (): Pick<
   | 'rideCompletedDeliveries'
   | 'riderLevelUpToastNonce'
   | 'riderLevelUpToastLevel'
+  | 'rideScore'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
   condition: 100,
   speedKmh: 0,
+  driveHud: {
+    gas: false,
+    brake: false,
+    steerLeft: false,
+    steerRight: false,
+  },
   ledger: [],
   /** Until `resetSession()` runs from `main`, ignore collisions (import order / first physics tick). */
   collisionPenaltiesAfterMs: Number.POSITIVE_INFINITY,
@@ -396,6 +427,7 @@ const initialSession = (): Pick<
   rideCompletedDeliveries: 0,
   riderLevelUpToastNonce: 0,
   riderLevelUpToastLevel: 0,
+  rideScore: 0,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -416,6 +448,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   setFuel: (fuel) => set({ fuel: normalizeTankFuel(fuel) }),
   setCondition: (condition) => set({ condition: normalizeCondition(condition) }),
   setSpeedKmh: (speedKmh) => set({ speedKmh }),
+  setDriveHud: (driveHud) => set({ driveHud }),
+  applyRideScoreDelta: (delta) => {
+    const n = Math.round(delta)
+    if (n === 0) return
+    set((s) => ({ rideScore: Math.max(0, s.rideScore + n) }))
+  },
   earnUgx: (amountUgx, label) => {
     const n = Math.max(0, Math.floor(amountUgx))
     if (n <= 0) return

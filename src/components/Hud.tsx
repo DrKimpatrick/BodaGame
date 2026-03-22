@@ -1,4 +1,11 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
 import { CITY_XZ_BOUNDS, manhattanElbow } from '../game/passengerJobs'
 import {
@@ -191,6 +198,127 @@ function RidePickupToast() {
         <p className="mt-2 text-xs font-bold uppercase tracking-wider text-emerald-200/90">
           Follow the solid blue line on the road
         </p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Safe-riding score readout: display eases toward store value (slow climb, faster drop on knocks).
+ */
+function RideScoreHud() {
+  const targetScore = useGameStore((s) => s.rideScore)
+  const [displayed, setDisplayed] = useState(0)
+  const dispRef = useRef(0)
+  const targetRef = useRef(targetScore)
+  targetRef.current = targetScore
+
+  useEffect(() => {
+    let id = 0
+    const tick = () => {
+      const tgt = targetRef.current
+      let d = dispRef.current
+      const diff = tgt - d
+      if (Math.abs(diff) < 0.35) {
+        d = tgt
+      } else {
+        d += diff * (diff > 0 ? 0.1 : 0.24)
+      }
+      dispRef.current = d
+      setDisplayed(Math.round(d))
+      id = requestAnimationFrame(tick)
+    }
+    id = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  return (
+    <div
+      className="pointer-events-none fixed left-1/2 z-32 -translate-x-1/2"
+      style={{
+        top: 'max(0.55rem, env(safe-area-inset-top))',
+      }}
+    >
+      <div className="rounded-xl border border-violet-500/35 border-b-[3px] border-b-violet-950 bg-linear-to-b from-violet-950/88 via-zinc-950/94 to-black/92 px-4 py-2 shadow-[0_4px_0_rgba(49,23,74,0.75),0_0_24px_rgba(139,92,246,0.12)] ring-1 ring-violet-400/20 backdrop-blur-md">
+        <p className="text-center text-[8px] font-black uppercase tracking-[0.32em] text-violet-300/90">
+          Safe ride score
+        </p>
+        <p className="mt-0.5 text-center font-mono text-2xl font-black tabular-nums leading-none tracking-tight text-violet-100 drop-shadow-[0_0_12px_rgba(196,181,253,0.35)]">
+          {displayed.toLocaleString()}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** On-screen gas / brake pedals + steering hints; highlights match keyboard (W S A D / arrows). */
+function DriveControlsHud() {
+  const driveHud = useGameStore((s) => s.driveHud)
+  const rideJob = useGameStore((s) => s.rideJob)
+
+  const bottomOffset =
+    rideJob != null
+      ? 'max(6.85rem, calc(4.25rem + env(safe-area-inset-bottom)))'
+      : 'max(0.85rem, env(safe-area-inset-bottom))'
+
+  return (
+    <div
+      className="pointer-events-none fixed left-1/2 z-38 flex -translate-x-1/2 flex-col items-center gap-2"
+      style={{ bottom: bottomOffset }}
+    >
+      <div
+        className="flex items-center gap-1.5 rounded-full border border-white/12 bg-black/50 px-2.5 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.45)] ring-1 ring-white/8 backdrop-blur-sm"
+        role="group"
+        aria-label="Steering"
+      >
+        <span
+          className={`min-w-[2.75rem] rounded-lg px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide transition-all duration-100 ${
+            driveHud.steerLeft
+              ? 'scale-105 bg-sky-500/95 text-white shadow-[0_0_14px_rgba(56,189,248,0.55)] ring-1 ring-sky-300/50 animate-pulse'
+              : 'text-zinc-500'
+          }`}
+        >
+          ◀ A
+        </span>
+        <span className="select-none px-0.5 text-[9px] font-black uppercase tracking-[0.28em] text-zinc-500">
+          Steer
+        </span>
+        <span
+          className={`min-w-[2.75rem] rounded-lg px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide transition-all duration-100 ${
+            driveHud.steerRight
+              ? 'scale-105 bg-sky-500/95 text-white shadow-[0_0_14px_rgba(56,189,248,0.55)] ring-1 ring-sky-300/50 animate-pulse'
+              : 'text-zinc-500'
+          }`}
+        >
+          D ▶
+        </span>
+      </div>
+
+      <div className="flex items-end gap-3" role="group" aria-label="Pedals">
+        <div
+          className={`relative flex h-[3.35rem] w-[3.1rem] flex-col items-center justify-end rounded-b-2xl rounded-t-lg border-2 border-b-[5px] px-1 pb-1 pt-2 transition-all duration-100 ${
+            driveHud.brake
+              ? 'scale-[1.05] border-rose-500/85 border-b-rose-950 bg-linear-to-b from-rose-600/75 to-rose-950/95 opacity-100 shadow-[0_0_18px_rgba(244,63,94,0.42)] ring-1 ring-rose-300/35 animate-pulse'
+              : 'border-zinc-600/70 border-b-zinc-950 bg-linear-to-b from-zinc-800/65 to-zinc-950/95 opacity-50'
+          }`}
+        >
+          <span className="mb-0.5 text-[8px] font-black uppercase tracking-[0.15em] text-white/90">
+            Brake
+          </span>
+          <span className="text-[9px] font-bold text-zinc-300/90">S ↓</span>
+        </div>
+        <div
+          className={`relative flex h-[3.85rem] w-[3.1rem] flex-col items-center justify-end rounded-b-2xl rounded-t-lg border-2 border-b-[5px] px-1 pb-1 pt-2 transition-all duration-100 ${
+            driveHud.gas
+              ? 'scale-[1.05] border-amber-500/90 border-b-amber-950 bg-linear-to-b from-amber-500/80 to-amber-950/95 opacity-100 shadow-[0_0_20px_rgba(251,191,36,0.48)] ring-1 ring-amber-300/40 animate-pulse'
+              : 'border-zinc-600/70 border-b-zinc-950 bg-linear-to-b from-zinc-800/65 to-zinc-950/95 opacity-50'
+          }`}
+        >
+          <span className="mb-0.5 text-[8px] font-black uppercase tracking-[0.15em] text-amber-50/95">
+            Gas
+          </span>
+          <span className="text-[9px] font-bold text-amber-100/85">W ↑</span>
+        </div>
       </div>
     </div>
   )
@@ -1192,6 +1320,8 @@ export function Hud() {
       <RiderLevelUpToast />
       <RideNextPassengerToast />
       <RideJobHud />
+      <RideScoreHud />
+      <DriveControlsHud />
       <div
         className="absolute left-4 top-4 flex max-w-[min(100vw-2rem,300px)] flex-col gap-2"
         style={{

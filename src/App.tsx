@@ -91,11 +91,71 @@ function GameCanvas({ onWebglReady }: { onWebglReady?: () => void }) {
 
 type GameOverPayload = Extract<FinancialGameOverResult, { over: true }>
 
+/** Printed-receipt style final score; counts up with a mechanical ease (static layout, live numbers). */
+function GameOverRunScoreReceipt({ finalScore }: { finalScore: number }) {
+  const [shown, setShown] = useState(0)
+
+  useEffect(() => {
+    setShown(0)
+    const start = performance.now()
+    const capped = Math.max(0, Math.floor(finalScore))
+    const duration = Math.min(2800, Math.max(1100, 520 + capped * 2.4))
+    const easeOut = (t: number) => 1 - (1 - t) ** 2.85
+    let raf = 0
+    const step = () => {
+      const u = Math.min(1, (performance.now() - start) / duration)
+      setShown(Math.round(capped * easeOut(u)))
+      if (u < 1) raf = requestAnimationFrame(step)
+      else setShown(capped)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [finalScore])
+
+  return (
+    <div
+      className="relative mx-auto w-full max-w-sm overflow-hidden rounded-lg border border-dashed border-zinc-500/55 bg-zinc-950/92 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-amber-900/25"
+      aria-live="polite"
+    >
+      <div
+        className="pointer-events-none absolute inset-x-3 top-0 h-px"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(113,113,122,0.38) 4px, rgba(113,113,122,0.38) 8px)',
+        }}
+        aria-hidden
+      />
+      <p className="text-center font-mono text-[9px] font-bold uppercase tracking-[0.42em] text-zinc-500">
+        Session receipt
+      </p>
+      <p className="mt-1 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+        Safe riding score
+      </p>
+      <p className="mt-3 text-center font-mono text-4xl font-black tabular-nums tracking-tight text-amber-200 drop-shadow-[0_0_28px_rgba(251,191,36,0.22)]">
+        {shown.toLocaleString()}
+        <span className="ml-1 align-top text-lg font-bold text-amber-500/80">pts</span>
+      </p>
+      <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">
+        Earned on clean distance on the network. Ped knocks, scrapes, and car hits reduce this tally.
+      </p>
+      <div
+        className="pointer-events-none absolute inset-x-3 bottom-0 h-px"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(113,113,122,0.38) 4px, rgba(113,113,122,0.38) 8px)',
+        }}
+        aria-hidden
+      />
+    </div>
+  )
+}
+
 function App() {
   useGameRootButtonClickSound()
   const resetSession = useGameStore((s) => s.resetSession)
   const [showPostWipeNotice, setShowPostWipeNotice] = useState(false)
   const [financialGameOver, setFinancialGameOver] = useState<GameOverPayload | null>(null)
+  const [gameOverRunScore, setGameOverRunScore] = useState<number | null>(null)
   const financialGameOverLatched = useRef(false)
   const [phase, setPhase] = useState<BootPhase>('splash')
   const [splashImageReady, setSplashImageReady] = useState(false)
@@ -153,6 +213,7 @@ function App() {
     if (phase !== 'playing') {
       financialGameOverLatched.current = false
       setFinancialGameOver(null)
+      setGameOverRunScore(null)
       return
     }
     const sync = () => {
@@ -161,6 +222,7 @@ function App() {
       if (r.over) {
         financialGameOverLatched.current = true
         setFinancialGameOver(r)
+        setGameOverRunScore(useGameStore.getState().rideScore)
         pauseAllMusic()
       }
     }
@@ -240,6 +302,7 @@ function App() {
     resetSession()
     financialGameOverLatched.current = false
     setFinancialGameOver(null)
+    setGameOverRunScore(null)
     startGameplayMusic()
   }
 
@@ -363,6 +426,9 @@ function App() {
               </>
             )}
           </p>
+          {gameOverRunScore != null ? (
+            <GameOverRunScoreReceipt finalScore={gameOverRunScore} />
+          ) : null}
           <button
             type="button"
             onClick={restartRunAfterGameOver}
