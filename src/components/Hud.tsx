@@ -321,9 +321,10 @@ function DriveControlsHud() {
   const driveHud = useGameStore((s) => s.driveHud)
   const rideJob = useGameStore((s) => s.rideJob)
 
+  /** Job card is ~12–15rem tall from bottom; keep steer + pedals fully above it (was ~6.85rem → overlap). */
   const bottomOffset =
     rideJob != null
-      ? 'max(6.85rem, calc(4.25rem + env(safe-area-inset-bottom)))'
+      ? 'calc(16.5rem + env(safe-area-inset-bottom))'
       : 'max(0.85rem, env(safe-area-inset-bottom))'
 
   return (
