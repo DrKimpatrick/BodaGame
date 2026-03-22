@@ -2,7 +2,7 @@ import type { RapierRigidBody } from '@react-three/rapier'
 import { Physics } from '@react-three/rapier'
 import { useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { useGameStore } from '../store/useGameStore'
+import { isBikeBrokenDown, useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
 import { CityMap } from './CityMap'
 import { CityMapErrorBoundary } from './CityMapErrorBoundary'
@@ -17,6 +17,10 @@ import { JobWaitingPassenger } from './JobWaitingPassenger'
 export function GameScene() {
   const bodaRef = useRef<RapierRigidBody>(null)
   const setSpeedKmh = useGameStore((s) => s.setSpeedKmh)
+  const condition = useGameStore((s) => s.condition)
+  const hudModalFreezesWorld = useGameStore((s) => s.hudModalFreezesWorld)
+  const physicsPaused =
+    isBikeBrokenDown(condition) || hudModalFreezesWorld
   const [offroad, setOffroad] = useState(false)
 
   const sunLightPosition = useMemo(() => {
@@ -44,7 +48,11 @@ export function GameScene() {
         shadow-camera-bottom={-110}
       />
 
-      <Physics gravity={[0, -16, 0]} interpolate={false}>
+      <Physics
+        gravity={[0, -16, 0]}
+        interpolate={false}
+        paused={physicsPaused}
+      >
         <CityMapErrorBoundary>
           <CityMap />
         </CityMapErrorBoundary>

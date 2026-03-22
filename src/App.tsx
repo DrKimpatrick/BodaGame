@@ -67,7 +67,9 @@ function ThawInvalidate({ frozen }: { frozen: boolean }) {
 
 function GameCanvas({ onWebglReady }: { onWebglReady?: () => void }) {
   const condition = useGameStore((s) => s.condition)
-  const freezeWorld = isBikeBrokenDown(condition)
+  const hudModalFreezesWorld = useGameStore((s) => s.hudModalFreezesWorld)
+  const freezeWorld =
+    isBikeBrokenDown(condition) || hudModalFreezesWorld
 
   return (
     <Canvas

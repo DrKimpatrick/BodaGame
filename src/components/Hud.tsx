@@ -1202,6 +1202,16 @@ export function Hud() {
   }, [repairMandatory])
 
   useEffect(() => {
+    useGameStore.getState().setHudModalFreezesWorld(refuelOpen || repairOpen)
+  }, [refuelOpen, repairOpen])
+
+  useEffect(() => {
+    return () => {
+      useGameStore.getState().setHudModalFreezesWorld(false)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!refuelOpen) return
     if (maxWholePoints < 1) {
       setPointsToAdd(0)

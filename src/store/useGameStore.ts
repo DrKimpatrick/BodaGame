@@ -346,6 +346,12 @@ export type GameState = {
   dismissRideScorePopup: (id: string) => void
   /** Apply a signed delta to {@link rideScore} (positive gain, negative penalty). */
   applyRideScoreDelta: (delta: number) => void
+  /**
+   * True while Refuel or Workshop modals are open — freezes the 3D loop and pauses Rapier so the run
+   * does not advance behind the UI.
+   */
+  hudModalFreezesWorld: boolean
+  setHudModalFreezesWorld: (freeze: boolean) => void
 }
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
@@ -426,6 +432,7 @@ const initialSession = (): Pick<
   | 'riderLevelUpToastLevel'
   | 'rideScore'
   | 'rideScorePopups'
+  | 'hudModalFreezesWorld'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -458,6 +465,7 @@ const initialSession = (): Pick<
   riderLevelUpToastLevel: 0,
   rideScore: 0,
   rideScorePopups: [],
+  hudModalFreezesWorld: false,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -479,6 +487,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   setCondition: (condition) => set({ condition: normalizeCondition(condition) }),
   setSpeedKmh: (speedKmh) => set({ speedKmh }),
   setDriveHud: (driveHud) => set({ driveHud }),
+  setHudModalFreezesWorld: (freeze) => set({ hudModalFreezesWorld: freeze }),
   dismissRideScorePopup: (id) =>
     set((s) => ({
       rideScorePopups: s.rideScorePopups.filter((p) => p.id !== id),
