@@ -21,7 +21,6 @@ import {
   SIDEWALK_WIDTH,
 } from '@game/roadSpatial'
 import { BuildingNameLabel } from './BuildingNameLabel'
-import { BuildingPerimeterFence } from './BuildingPerimeterFence'
 import {
   BoxBuildingWindowGrids,
   CylinderCurtainPanels,
@@ -37,20 +36,10 @@ import { IntersectionTrafficPair } from './TrafficLight'
 const TRAFFIC_LIGHT_CORNER =
   ROAD_W / 2 + SIDEWALK_WIDTH * 0.55
 
-/** Map coords from design brief → world XZ (±200 → inside playable city). */
-const MAP_COORD_SCALE = (CITY_TOTAL * 0.38) / 200
-const LANDMARK_MAPEERA: [number, number] = [
-  200 * MAP_COORD_SCALE,
-  200 * MAP_COORD_SCALE,
-]
-const LANDMARK_STANBIC: [number, number] = [
-  -200 * MAP_COORD_SCALE,
-  200 * MAP_COORD_SCALE,
-]
-const LANDMARK_NSSF: [number, number] = [
-  200 * MAP_COORD_SCALE,
-  -200 * MAP_COORD_SCALE,
-]
+/** Block centers so landmark footprints stay off tarmac (scaled ±200 sat too close to road strips). */
+const LANDMARK_MAPEERA: [number, number] = blockCenter(9, 9)
+const LANDMARK_STANBIC: [number, number] = blockCenter(0, 9)
+const LANDMARK_NSSF: [number, number] = blockCenter(9, 0)
 
 const LANDMARK_CLEARANCE = 20
 const LANDMARK_BLOCK_SKIP = 34
@@ -1051,38 +1040,6 @@ function CityMapContent() {
               }
             }
             const midFloors = 8 + Math.floor(rnd(i, j, 18) * 4)
-            const mallFence =
-              namedMid?.facade === 'acacia' || namedMid?.facade === 'garden' ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.15}
-                    height={2.15}
-                    variant="mesh"
-                  />
-                </group>
-              ) : namedMid && !namedMid.facade ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.1}
-                    height={2.05}
-                    variant="solid"
-                  />
-                </group>
-              ) : rnd(i, j, 888) < 0.11 ? (
-                <group position={[bcx, 0, bcz]}>
-                  <BuildingPerimeterFence
-                    halfWidth={fw / 2}
-                    halfDepth={fd / 2}
-                    margin={1.05}
-                    height={rnd(i, j, 889) < 0.5 ? 1.95 : 2.15}
-                    variant={rnd(i, j, 890) < 0.5 ? 'mesh' : 'solid'}
-                  />
-                </group>
-              ) : null
 
             midList.push(
               <group key={`mid-${i}-${j}`}>
@@ -1097,7 +1054,6 @@ function CityMapContent() {
                     namedMid?.facade ? mallFacadeMats[namedMid.facade] : undefined
                   }
                 />
-                {mallFence}
               </group>,
             )
             continue
@@ -1125,18 +1081,6 @@ function CityMapContent() {
             WALL_TONES[Math.floor(rnd(i, j, 60 + k) * WALL_TONES.length)]
 
           const rk = uuidv4()
-          const retailFence =
-            rnd(i, j, 700 + k) < 0.09 ? (
-              <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-                <BuildingPerimeterFence
-                  halfWidth={w / 2}
-                  halfDepth={d / 2}
-                  margin={0.88}
-                  height={1.88}
-                  variant={rnd(i, j, 701 + k) < 0.52 ? 'mesh' : 'solid'}
-                />
-              </group>
-            ) : null
           retailList.push(
             <group key={rk}>
               <GenericCommercialBlock
@@ -1149,7 +1093,6 @@ function CityMapContent() {
                 pitchedRoof={pitchedRoof}
                 rotationY={rot}
               />
-              {retailFence}
             </group>,
           )
           if (rnd(i, j, 715 + k) < 0.28) {
@@ -1402,34 +1345,6 @@ function CityMapContent() {
         subtitle="Workers House"
         width={8}
       />
-
-      <group position={[mx, 0, mz]}>
-        <BuildingPerimeterFence
-          halfWidth={2.75}
-          halfDepth={1.65}
-          margin={1.1}
-          height={2.1}
-          variant="mesh"
-        />
-      </group>
-      <group position={[sx, 0, sz]}>
-        <BuildingPerimeterFence
-          halfWidth={6.35}
-          halfDepth={6.35}
-          margin={1.45}
-          height={2.4}
-          variant="solid"
-        />
-      </group>
-      <group position={[nx, 0, nz]}>
-        <BuildingPerimeterFence
-          halfWidth={3.85}
-          halfDepth={2.95}
-          margin={1.02}
-          height={2.02}
-          variant="mesh"
-        />
-      </group>
 
       {midrise}
       {retail}
