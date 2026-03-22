@@ -20,11 +20,12 @@ export const FUEL_MAX = 100
 /** Starting wallet (Ugandan shillings). */
 export const STARTING_MONEY_UGX = 100_000
 
-/** Clean on-network riding: score gain per world unit (XZ) travelled while eligible. */
-export const RIDE_SCORE_POINTS_PER_WORLD_M = 0.48
-export const RIDE_SCORE_LOSS_PEDESTRIAN = 130
-export const RIDE_SCORE_LOSS_VEHICLE = 300
-export const RIDE_SCORE_LOSS_BUILDING = 50
+/** Clean on-network riding: score gain per world unit (XZ) travelled while eligible (large vs small knock penalties). */
+export const RIDE_SCORE_POINTS_PER_WORLD_M = 7.2
+/** Small score nicks on mistakes — much smaller than typical clean-riding gains. */
+export const RIDE_SCORE_LOSS_PEDESTRIAN = 3
+export const RIDE_SCORE_LOSS_VEHICLE = 8
+export const RIDE_SCORE_LOSS_BUILDING = 2
 
 /**
  * Cost to add 1 tank point. Full refill from empty = FUEL_MAX * UGX_PER_FUEL_UNIT.
@@ -253,6 +254,14 @@ export function previewRepairPurchase(
   }
 }
 
+/** Ephemeral +N / −N floaters above the score HUD. */
+export type RideScorePopup = {
+  id: string
+  /** Actual points applied (may be less than requested if score was already near 0). */
+  delta: number
+  at: number
+}
+
 /** Mirrors keyboard drive input for HUD pedals / steering (updated from Boda when values change). */
 export type DriveHudInput = {
   gas: boolean
@@ -332,6 +341,9 @@ export type GameState = {
    * Whole points, floored at 0.
    */
   rideScore: number
+  /** Short-lived HUD chips for each score change (actual applied delta). */
+  rideScorePopups: RideScorePopup[]
+  dismissRideScorePopup: (id: string) => void
   /** Apply a signed delta to {@link rideScore} (positive gain, negative penalty). */
   applyRideScoreDelta: (delta: number) => void
 }
@@ -371,6 +383,22 @@ function nextCollisionPenaltyDeadline(): number {
   return typeof performance !== 'undefined' ? performance.now() + COLLISION_GRACE_MS : 0
 }
 
+/** Split big clean-riding ticks into several +1…+4 style HUD floaters. */
+function rideScoreGainPopupChunks(total: number): number[] {
+  if (total <= 0) return []
+  if (total < 8) return [total]
+  const chunks: number[] = []
+  let left = total
+  const seq = [3, 2, 4, 1] as const
+  for (let i = 0; left > 0; i++) {
+    const cap = seq[i % seq.length]
+    const n = Math.min(left, cap)
+    chunks.push(n)
+    left -= n
+  }
+  return chunks
+}
+
 const initialSession = (): Pick<
   GameState,
   | 'money'
@@ -397,6 +425,7 @@ const initialSession = (): Pick<
   | 'riderLevelUpToastNonce'
   | 'riderLevelUpToastLevel'
   | 'rideScore'
+  | 'rideScorePopups'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -428,6 +457,7 @@ const initialSession = (): Pick<
   riderLevelUpToastNonce: 0,
   riderLevelUpToastLevel: 0,
   rideScore: 0,
+  rideScorePopups: [],
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -449,10 +479,31 @@ export const useGameStore = create<GameState>((set, get) => ({
   setCondition: (condition) => set({ condition: normalizeCondition(condition) }),
   setSpeedKmh: (speedKmh) => set({ speedKmh }),
   setDriveHud: (driveHud) => set({ driveHud }),
+  dismissRideScorePopup: (id) =>
+    set((s) => ({
+      rideScorePopups: s.rideScorePopups.filter((p) => p.id !== id),
+    })),
   applyRideScoreDelta: (delta) => {
     const n = Math.round(delta)
     if (n === 0) return
-    set((s) => ({ rideScore: Math.max(0, s.rideScore + n) }))
+    set((s) => {
+      const prev = s.rideScore
+      const next = Math.max(0, prev + n)
+      const applied = next - prev
+      if (applied === 0) return s
+      const t0 = Date.now()
+      const deltas =
+        applied > 0 ? rideScoreGainPopupChunks(applied) : [applied]
+      const newPopups: RideScorePopup[] = deltas.map((d, i) => ({
+        id: nextId(),
+        delta: d,
+        at: t0 + i * 52,
+      }))
+      return {
+        rideScore: next,
+        rideScorePopups: [...newPopups, ...s.rideScorePopups].slice(0, 14),
+      }
+    })
   },
   earnUgx: (amountUgx, label) => {
     const n = Math.max(0, Math.floor(amountUgx))

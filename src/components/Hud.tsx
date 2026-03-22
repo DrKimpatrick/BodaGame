@@ -203,11 +203,58 @@ function RidePickupToast() {
   )
 }
 
+function RideScoreDeltaFloater({
+  id,
+  delta,
+  staggerMs,
+  stackIndex,
+}: {
+  id: string
+  delta: number
+  staggerMs: number
+  stackIndex: number
+}) {
+  const dismissRideScorePopup = useGameStore((s) => s.dismissRideScorePopup)
+  const [floating, setFloating] = useState(false)
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setFloating(true), staggerMs)
+    return () => clearTimeout(t)
+  }, [staggerMs])
+
+  useEffect(() => {
+    if (!floating) return
+    const t = window.setTimeout(() => dismissRideScorePopup(id), 820)
+    return () => clearTimeout(t)
+  }, [floating, id, dismissRideScorePopup])
+
+  const label = delta > 0 ? `+${delta}` : `${delta}`
+  const positive = delta > 0
+
+  return (
+    <span
+      className={`pointer-events-none absolute left-1/2 z-10 font-mono text-base font-black tabular-nums drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] ${
+        positive ? 'text-emerald-300' : 'text-rose-400'
+      }`}
+      style={{
+        bottom: `${8 + stackIndex * 18}px`,
+        transform: `translate(-50%, ${floating ? -42 : 0}px) scale(${floating ? 1.05 : 1})`,
+        opacity: floating ? 0 : 1,
+        transition: 'transform 0.8s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.75s ease-out',
+      }}
+      aria-hidden
+    >
+      {label}
+    </span>
+  )
+}
+
 /**
- * Safe-riding score readout: display eases toward store value (slow climb, faster drop on knocks).
+ * Safe-riding score readout: display eases toward store value; +N / −N floaters on each change.
  */
 function RideScoreHud() {
   const targetScore = useGameStore((s) => s.rideScore)
+  const rideScorePopups = useGameStore((s) => s.rideScorePopups)
   const [displayed, setDisplayed] = useState(0)
   const dispRef = useRef(0)
   const targetRef = useRef(targetScore)
@@ -222,7 +269,7 @@ function RideScoreHud() {
       if (Math.abs(diff) < 0.35) {
         d = tgt
       } else {
-        d += diff * (diff > 0 ? 0.1 : 0.24)
+        d += diff * (diff > 0 ? 0.14 : 0.16)
       }
       dispRef.current = d
       setDisplayed(Math.round(d))
@@ -232,6 +279,8 @@ function RideScoreHud() {
     return () => cancelAnimationFrame(id)
   }, [])
 
+  const now = Date.now()
+
   return (
     <div
       className="pointer-events-none fixed left-1/2 z-32 -translate-x-1/2"
@@ -239,13 +288,29 @@ function RideScoreHud() {
         top: 'max(0.55rem, env(safe-area-inset-top))',
       }}
     >
-      <div className="rounded-xl border border-violet-500/35 border-b-[3px] border-b-violet-950 bg-linear-to-b from-violet-950/88 via-zinc-950/94 to-black/92 px-4 py-2 shadow-[0_4px_0_rgba(49,23,74,0.75),0_0_24px_rgba(139,92,246,0.12)] ring-1 ring-violet-400/20 backdrop-blur-md">
-        <p className="text-center text-[8px] font-black uppercase tracking-[0.32em] text-violet-300/90">
-          Safe ride score
-        </p>
-        <p className="mt-0.5 text-center font-mono text-2xl font-black tabular-nums leading-none tracking-tight text-violet-100 drop-shadow-[0_0_12px_rgba(196,181,253,0.35)]">
-          {displayed.toLocaleString()}
-        </p>
+      <div className="relative flex w-[min(92vw,280px)] flex-col items-center">
+        <div
+          className="relative mb-1 min-h-[2.25rem] w-full"
+          aria-hidden
+        >
+          {rideScorePopups.map((p, i) => (
+            <RideScoreDeltaFloater
+              key={p.id}
+              id={p.id}
+              delta={p.delta}
+              stackIndex={i}
+              staggerMs={Math.max(0, p.at - now)}
+            />
+          ))}
+        </div>
+        <div className="rounded-xl border border-violet-500/35 border-b-[3px] border-b-violet-950 bg-linear-to-b from-violet-950/88 via-zinc-950/94 to-black/92 px-4 py-2 shadow-[0_4px_0_rgba(49,23,74,0.75),0_0_24px_rgba(139,92,246,0.12)] ring-1 ring-violet-400/20 backdrop-blur-md">
+          <p className="text-center text-[8px] font-black uppercase tracking-[0.32em] text-violet-300/90">
+            Safe ride score
+          </p>
+          <p className="mt-0.5 text-center font-mono text-2xl font-black tabular-nums leading-none tracking-tight text-violet-100 drop-shadow-[0_0_12px_rgba(196,181,253,0.35)]">
+            {displayed.toLocaleString()}
+          </p>
+        </div>
       </div>
     </div>
   )

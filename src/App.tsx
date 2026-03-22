@@ -136,7 +136,7 @@ function GameOverRunScoreReceipt({ finalScore }: { finalScore: number }) {
         <span className="ml-1 align-top text-lg font-bold text-amber-500/80">pts</span>
       </p>
       <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-500">
-        Earned on clean distance on the network. Ped knocks, scrapes, and car hits reduce this tally.
+        Earned fast on clean distance. Knocks and scrapes only nick a few points off the top.
       </p>
       <div
         className="pointer-events-none absolute inset-x-3 bottom-0 h-px"
