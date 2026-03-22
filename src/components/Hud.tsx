@@ -7,7 +7,12 @@ import {
   useState,
 } from 'react'
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
-import { CITY_XZ_BOUNDS, manhattanElbow } from '../game/passengerJobs'
+import {
+  CITY_XZ_BOUNDS,
+  manhattanElbow,
+  manhattanTravelMeters,
+  RIDE_ETA_ASSUMED_MPS,
+} from '../game/passengerJobs'
 import {
   approxMetersForFuelPoints,
   CONDITION_BROKEN_AT,
@@ -390,16 +395,121 @@ function DriveControlsHud() {
   )
 }
 
+function formatEtaHuman(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—'
+  const sec = Math.max(1, Math.round(seconds))
+  if (sec < 60) return `~${sec}s`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `~${m}:${String(s).padStart(2, '0')}`
+}
+
+function formatClockFromMs(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+/** Gold coin burst when the player earns a record-time bonus. */
+function RideRecordCoinShower() {
+  const nonce = useGameStore((s) => s.rideRecordBonusNonce)
+  const ugx = useGameStore((s) => s.rideRecordBonusUgx)
+  const kind = useGameStore((s) => s.rideRecordBonusKind)
+  const [burst, setBurst] = useState<{
+    id: number
+    ugx: number
+    kind: 'pickup' | 'delivery'
+    seeds: number[]
+  } | null>(null)
+  const prevNonce = useRef(0)
+
+  useEffect(() => {
+    if (nonce <= prevNonce.current) return
+    prevNonce.current = nonce
+    if (!kind || ugx <= 0) return
+    const seeds = Array.from({ length: 22 }, () => Math.random())
+    setBurst({ id: nonce, ugx, kind, seeds })
+    const t = window.setTimeout(() => setBurst(null), 2700)
+    return () => window.clearTimeout(t)
+  }, [nonce, ugx, kind])
+
+  if (!burst) return null
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-[390] flex flex-col items-center justify-center overflow-hidden"
+      aria-live="polite"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-amber-500/10 backdrop-blur-[1px]" />
+      <div className="relative z-10 rounded-2xl border-2 border-amber-400/90 bg-zinc-950/95 px-6 py-4 text-center shadow-[0_0_60px_rgba(251,191,36,0.35)] ring-2 ring-amber-300/50">
+        <p className="font-mono text-[10px] font-black uppercase tracking-[0.35em] text-amber-300">
+          Record time
+        </p>
+        <p className="mt-2 text-xl font-black uppercase italic text-white drop-shadow-md">
+          {burst.kind === 'pickup' ? 'Lightning pickup' : 'Lightning drop-off'}
+        </p>
+        <p className="mt-2 font-mono text-2xl font-black tabular-nums text-amber-200">
+          +{burst.ugx.toLocaleString()}{' '}
+          <span className="text-sm font-bold text-amber-400/90">UGX</span>
+        </p>
+      </div>
+      <style>
+        {burst.seeds.map((r, i) => {
+          const tx = (r - 0.5) * 220
+          const ty = -130 - burst.seeds[(i + 7) % 22] * 170
+          const rot = 420 + r * 380
+          const dur = 0.75 + r * 0.55
+          const delay = r * 0.07
+          return `@keyframes rcoin_${burst.id}_${i} {
+            0% { transform: translate(0,0) rotate(0deg) scale(0.35); opacity: 0; }
+            12% { opacity: 1; }
+            100% { transform: translate(${tx}px, ${ty}px) rotate(${rot}deg) scale(1.1); opacity: 0; }
+          }
+          .rcoin_${burst.id}_${i} {
+            animation: rcoin_${burst.id}_${i} ${dur}s cubic-bezier(0.22, 1, 0.36, 1) ${delay}s forwards;
+          }`
+        })}
+      </style>
+      {burst.seeds.map((r, i) => (
+        <span
+          key={`${burst.id}-${i}`}
+          className={`pointer-events-none absolute text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] rcoin_${burst.id}_${i}`}
+          style={{
+            left: `${10 + r * 80}%`,
+            bottom: `${2 + (r * 19) % 12}%`,
+          }}
+          aria-hidden
+        >
+          🪙
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /** Passenger job: minimap + compass + distance (pairs with 3D route + rider billboard). */
 function RideJobHud() {
   const job = useGameStore((s) => s.rideJob)
   const bx = useGameStore((s) => s.bikeMapX)
   const bz = useGameStore((s) => s.bikeMapZ)
   const routeOrder = useGameStore((s) => s.rideJobRouteOrder)
+  const legStartMs = useGameStore((s) => s.rideLegStartedAtMs)
+  const legRecordMs = useGameStore((s) => s.rideLegRecordTimeMs)
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setTick(performance.now()), 300)
+    return () => window.clearInterval(id)
+  }, [])
   if (!job) return null
 
   const target = job.phase === 'pickup' ? job.pickup : job.dropoff
   const dist = Math.hypot(bx - target.x, bz - target.z)
+  const pathM = manhattanTravelMeters(bx, bz, target.x, target.z)
+  const etaSec = pathM / RIDE_ETA_ASSUMED_MPS
+  const elapsedMs =
+    legStartMs > 0 && tick > 0 ? Math.max(0, tick - legStartMs) : 0
+  const recordRemainMs = Math.max(0, legRecordMs - elapsedMs)
   const buv = worldToMinimapUv(bx, bz)
   const tuv = worldToMinimapUv(target.x, target.z)
   const elbowW = manhattanElbow(bx, bz, target.x, target.z, routeOrder)
@@ -505,10 +615,27 @@ function RideJobHud() {
                 {formatDistanceShort(dist)} away
               </span>
               <span className="text-zinc-600">|</span>
+              <span className="font-mono text-sky-300/95" title="Rough ETA at a typical pace">
+                Est. {formatEtaHuman(etaSec)}
+              </span>
+              <span className="text-zinc-600">|</span>
               <span className="font-mono text-emerald-300/95">
                 +{job.payoutUgx.toLocaleString()} UGX
               </span>
             </div>
+            {legRecordMs < 900_000_000 ? (
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+                <span className="text-violet-300/90">
+                  Record window{' '}
+                  <span className="font-mono text-violet-200">
+                    {formatClockFromMs(recordRemainMs)}
+                  </span>{' '}
+                  left
+                </span>
+                <span className="text-zinc-600">·</span>
+                <span>Under {formatClockFromMs(legRecordMs)} = bonus coins</span>
+              </div>
+            ) : null}
           </div>
           <div
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-amber-500/45 bg-zinc-950/90 shadow-inner"
@@ -1392,6 +1519,7 @@ export function Hud() {
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
       <ConditionRideOverlays level={conditionAlert} />
       <BloodImpactOverlay />
+      <RideRecordCoinShower />
       <RidePickupToast />
       <RiderLevelUpToast />
       <RideNextPassengerToast />

@@ -49,8 +49,10 @@ import {
 import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
 
 const MAX_FORWARD = 14
-const MAX_REVERSE = 5
+const MAX_REVERSE = 10
 const ACCEL = 28
+/** Extra oomph when building reverse from standstill (S while stopped). */
+const REVERSE_ACCEL_SCALE = 1.4
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
 /** Idle roll on tarmac when not accelerating (m/s); below {@link JOB_ARRIVE_SPEED} so pickups can still complete. */
@@ -136,7 +138,7 @@ function stepGasBrakeCoastSpeed(params: {
     const blend = 1 - Math.exp(-coastSettleRate * dt)
     s += (coastMin - s) * blend
   } else if (brake && Math.abs(s) <= 0.04 && !gas) {
-    s -= accel * 0.95 * dt
+    s -= accel * REVERSE_ACCEL_SCALE * dt
   } else if (s < -0.04) {
     s *= Math.exp(-reverseDragPerS * dt)
     if (s > -0.06) s = 0
@@ -219,7 +221,7 @@ function RiderJobDestBillboard() {
   const phaseLabel = job.phase === 'pickup' ? 'Pick up' : 'Drop off'
   return (
     <Html
-      position={[0, 1.42, 0]}
+      position={[0, 2.38, -0.06]}
       center
       distanceFactor={11}
       zIndexRange={[200, 0]}

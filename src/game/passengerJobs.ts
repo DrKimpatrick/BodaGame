@@ -189,6 +189,35 @@ function manhattanStripMeters(a: RideStop, b: RideStop): number {
   return Math.abs(a.x - b.x) + Math.abs(a.z - b.z)
 }
 
+/** Travel distance for on-grid L-routes: |Δx| + |Δz| (matches HUD / guide). */
+export function manhattanTravelMeters(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number {
+  return Math.abs(bx - ax) + Math.abs(bz - az)
+}
+
+/** Typical pace for “Est. arrival” readout (m/s). */
+export const RIDE_ETA_ASSUMED_MPS = 5.15
+
+/**
+ * Average speed you must beat over the leg (m/s) to earn a record bonus
+ * (time limit = path / this value).
+ */
+export const RIDE_RECORD_PACE_MPS = 6.85
+
+const RIDE_RECORD_MIN_MS = 8_200
+const RIDE_RECORD_MAX_MS = 220_000
+
+/** Max duration (ms) for the leg to still count as “record time”. */
+export function rideRecordTimeLimitMs(pathMeters: number): number {
+  if (pathMeters <= 0) return RIDE_RECORD_MIN_MS
+  const raw = (pathMeters / RIDE_RECORD_PACE_MPS) * 1000
+  return Math.min(RIDE_RECORD_MAX_MS, Math.max(RIDE_RECORD_MIN_MS, raw))
+}
+
 const MIN_LEG_M = 38
 /** Fares scaled so a typical job comfortably covers fuel burn + wear (repairs are cheaper per pt). */
 const PAYOUT_BASE = 28_000

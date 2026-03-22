@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { playBloodImpactFeedback } from '../audio/bloodImpactFeedback'
 import {
   generateRideJob,
+  manhattanTravelMeters,
+  rideRecordTimeLimitMs,
   type RideJob,
   type RideManhattanOrder,
 } from '../game/passengerJobs'
@@ -323,6 +325,16 @@ export type GameState = {
   assignRideJob: () => void
   completeRidePickup: () => void
   completeRideDropoff: () => void
+  /** `performance.now()` when current job leg (to pickup or to drop-off) started. */
+  rideLegStartedAtMs: number
+  /** Beat this elapsed time (ms) for a record bonus on the current leg. */
+  rideLegRecordTimeMs: number
+  /** Path length (m) at leg start — scales record bonus. */
+  rideLegPathMeters: number
+  /** Bumped when a record-time bonus is earned — HUD coin toss. */
+  rideRecordBonusNonce: number
+  rideRecordBonusUgx: number
+  rideRecordBonusKind: 'pickup' | 'delivery' | null
   /** Bumped when pickup completes — HUD shows “you reached your passenger”. */
   ridePickupToastNonce: number
   ridePickupToastDestination: string
@@ -427,6 +439,12 @@ const initialSession = (): Pick<
   | 'rideNextPassengerToastNonce'
   | 'rideNextPassengerPickupName'
   | 'rideNextPassengerPayoutUgx'
+  | 'rideLegStartedAtMs'
+  | 'rideLegRecordTimeMs'
+  | 'rideLegPathMeters'
+  | 'rideRecordBonusNonce'
+  | 'rideRecordBonusUgx'
+  | 'rideRecordBonusKind'
   | 'rideCompletedDeliveries'
   | 'riderLevelUpToastNonce'
   | 'riderLevelUpToastLevel'
@@ -460,6 +478,12 @@ const initialSession = (): Pick<
   rideNextPassengerToastNonce: 0,
   rideNextPassengerPickupName: '',
   rideNextPassengerPayoutUgx: 0,
+  rideLegStartedAtMs: 0,
+  rideLegRecordTimeMs: 999_999_999,
+  rideLegPathMeters: 0,
+  rideRecordBonusNonce: 0,
+  rideRecordBonusUgx: 0,
+  rideRecordBonusKind: null,
   rideCompletedDeliveries: 0,
   riderLevelUpToastNonce: 0,
   riderLevelUpToastLevel: 0,
@@ -585,26 +609,73 @@ export const useGameStore = create<GameState>((set, get) => ({
       bikeMapZ: z,
     }),
   assignRideJob: () => {
-    const serial = get().rideJobSerial + 1
+    const s = get()
+    const serial = s.rideJobSerial + 1
+    const job = generateRideJob(serial)
+    const path = manhattanTravelMeters(
+      s.bikeMapX,
+      s.bikeMapZ,
+      job.pickup.x,
+      job.pickup.z,
+    )
+    const now = performance.now()
     set({
-      rideJob: generateRideJob(serial),
+      rideJob: job,
       rideJobSerial: serial,
       rideJobRouteOrder: 'xFirst',
+      rideLegStartedAtMs: now,
+      rideLegRecordTimeMs: rideRecordTimeLimitMs(path),
+      rideLegPathMeters: path,
+      rideRecordBonusKind: null,
     })
   },
   completeRidePickup: () => {
-    const j = get().rideJob
+    const s = get()
+    const j = s.rideJob
     if (!j || j.phase !== 'pickup') return
-    set((s) => ({
+    const now = performance.now()
+    const beat = now - s.rideLegStartedAtMs <= s.rideLegRecordTimeMs
+    let bonusUgx = 0
+    if (beat) {
+      bonusUgx = Math.min(
+        10_000,
+        Math.round(850 + s.rideLegPathMeters * 14),
+      )
+      get().earnUgx(bonusUgx, 'Record time — quick pickup')
+    }
+    const pathDrop = manhattanTravelMeters(
+      j.pickup.x,
+      j.pickup.z,
+      j.dropoff.x,
+      j.dropoff.z,
+    )
+    set({
       rideJob: { ...j, phase: 'carrying' },
       ridePickupToastNonce: s.ridePickupToastNonce + 1,
       ridePickupToastDestination: j.dropoff.name,
       rideJobRouteOrder: 'xFirst',
-    }))
+      rideLegStartedAtMs: now,
+      rideLegRecordTimeMs: rideRecordTimeLimitMs(pathDrop),
+      rideLegPathMeters: pathDrop,
+      rideRecordBonusNonce: beat ? s.rideRecordBonusNonce + 1 : s.rideRecordBonusNonce,
+      rideRecordBonusUgx: beat ? bonusUgx : s.rideRecordBonusUgx,
+      rideRecordBonusKind: beat ? 'pickup' : null,
+    })
   },
   completeRideDropoff: () => {
-    const j = get().rideJob
+    const s = get()
+    const j = s.rideJob
     if (!j || j.phase !== 'carrying') return
+    const now = performance.now()
+    const beat = now - s.rideLegStartedAtMs <= s.rideLegRecordTimeMs
+    let bonusUgx = 0
+    if (beat) {
+      bonusUgx = Math.min(
+        12_000,
+        Math.round(1000 + s.rideLegPathMeters * 16),
+      )
+      get().earnUgx(bonusUgx, 'Record time — fast delivery')
+    }
     const label = `Fare — ${j.dropoff.name}`
     get().earnUgx(j.payoutUgx, label)
 
@@ -625,6 +696,13 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const serial = s0.rideJobSerial + 1
     const nextJob = generateRideJob(serial)
+    const pathToPickup = manhattanTravelMeters(
+      s0.bikeMapX,
+      s0.bikeMapZ,
+      nextJob.pickup.x,
+      nextJob.pickup.z,
+    )
+    const t1 = performance.now()
     set({
       rideJob: nextJob,
       rideJobSerial: serial,
@@ -635,6 +713,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       rideNextPassengerToastNonce: s0.rideNextPassengerToastNonce + 1,
       rideNextPassengerPickupName: nextJob.pickup.name,
       rideNextPassengerPayoutUgx: nextJob.payoutUgx,
+      rideLegStartedAtMs: t1,
+      rideLegRecordTimeMs: rideRecordTimeLimitMs(pathToPickup),
+      rideLegPathMeters: pathToPickup,
+      rideRecordBonusNonce: beat ? s0.rideRecordBonusNonce + 1 : s0.rideRecordBonusNonce,
+      rideRecordBonusUgx: beat ? bonusUgx : s0.rideRecordBonusUgx,
+      rideRecordBonusKind: beat ? 'delivery' : null,
     })
   },
 }))
