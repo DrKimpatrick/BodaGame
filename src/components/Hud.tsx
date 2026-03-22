@@ -470,60 +470,36 @@ const gameArcadeBtn =
 function HardcodedLevelsPanel() {
   return (
     <div
-      className="relative overflow-hidden rounded-xl border-2 border-violet-500/40 border-b-4 border-b-violet-950 bg-linear-to-b from-violet-950/55 via-zinc-950/95 to-black/92 px-3 py-2.5 shadow-[0_5px_0_rgba(49,46,129,0.72)] ring-1 ring-violet-400/20 backdrop-blur-md"
+      className="relative w-full max-w-[200px] overflow-hidden rounded-lg border border-violet-500/35 bg-zinc-950/92 px-1.5 py-1 shadow-md ring-1 ring-violet-500/15 backdrop-blur-sm"
       aria-label="Levels preview"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-violet-300/45 to-transparent" />
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-200/95">
-        Levels
-      </p>
-      <p className="mt-0.5 text-[8px] font-semibold uppercase tracking-wider text-zinc-500">
-        Preview · not saved yet
-      </p>
-      <ul className="mt-2 space-y-2">
-        <li className="rounded-lg border-2 border-amber-500/50 bg-linear-to-r from-amber-950/50 to-black/50 px-2 py-1.5 ring-1 ring-amber-400/15">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wide text-amber-200">
-              Level 1
-            </span>
-            <span className="shrink-0 rounded bg-emerald-500/20 px-1.5 py-px font-mono text-[8px] font-black uppercase text-emerald-300">
-              Active
-            </span>
-          </div>
-          <p className="mt-0.5 text-[9px] font-medium leading-snug text-zinc-300">
-            Starter city access — you’re riding here now.
-          </p>
+      <div className="flex items-center justify-between gap-1 border-b border-violet-500/20 pb-0.5">
+        <span className="text-[8px] font-black uppercase tracking-widest text-violet-300/90">
+          Levels
+        </span>
+        <span className="font-mono text-[6px] font-bold uppercase text-zinc-600">Demo</span>
+      </div>
+      <ul className="mt-1 space-y-0.5 text-[7px] leading-tight">
+        <li className="flex items-center gap-1 rounded bg-amber-500/10 px-1 py-px ring-1 ring-amber-500/20">
+          <span className="font-mono font-black text-amber-200/95">1</span>
+          <span className="text-emerald-400/90">✓</span>
+          <span className="min-w-0 truncate font-semibold text-zinc-300">Active</span>
         </li>
-        <li className="rounded-lg border border-zinc-600/70 bg-black/45 px-2 py-1.5 opacity-95">
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 text-sm opacity-80" aria-hidden>
-              🔒
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
-                Level 2 · Locked
-              </p>
-              <p className="mt-0.5 text-[9px] font-semibold leading-snug text-zinc-400">
-                Make <span className="font-mono font-black text-violet-300/95">two</span> successful
-                passenger deliveries (pickup → drop-off) to unlock Level 2.
-              </p>
-            </div>
-          </div>
+        <li className="flex items-start gap-1 rounded px-1 py-px text-zinc-500">
+          <span className="shrink-0 font-mono font-black">2</span>
+          <span className="shrink-0 text-[8px] opacity-75" aria-hidden>
+            🔒
+          </span>
+          <span className="min-w-0 text-zinc-400">
+            <span className="font-mono font-bold text-violet-400/90">2</span> deliveries → L2
+          </span>
         </li>
-        <li className="rounded-lg border border-zinc-700/60 bg-black/35 px-2 py-1.5">
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 text-sm opacity-70" aria-hidden>
-              🔒
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-wide text-zinc-600">
-                Level 3+ · Locked
-              </p>
-              <p className="mt-0.5 text-[9px] leading-snug text-zinc-600">
-                Higher tiers stay locked until you advance. (Coming later.)
-              </p>
-            </div>
-          </div>
+        <li className="flex items-center gap-1 rounded px-1 py-px text-zinc-600">
+          <span className="font-mono font-black">3+</span>
+          <span className="text-[8px] opacity-60" aria-hidden>
+            🔒
+          </span>
+          <span className="truncate">Locked</span>
         </li>
       </ul>
     </div>
@@ -1601,14 +1577,16 @@ export function Hud() {
             }}
           />
           <div
-            className="pointer-events-none fixed inset-0 z-[310] flex items-center justify-center p-3 sm:p-4"
+            className="pointer-events-none fixed inset-0 z-[310] flex items-center justify-end p-3 sm:p-4"
             style={{
               paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+              paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+              paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
             }}
           >
             <div
-              className="pointer-events-auto flex max-h-[min(94dvh,820px)] w-full max-w-[min(calc(100vw-1.25rem),544px)] flex-col overflow-hidden rounded-2xl border-2 border-teal-400/45 bg-linear-to-b from-teal-950/95 via-zinc-950 to-black shadow-[0_0_60px_rgba(45,212,191,0.15),0_22px_60px_rgba(0,0,0,0.75)] ring-2 ring-teal-400/22 sm:max-w-[min(calc(100vw-2rem),576px)]"
+              className="pointer-events-auto flex max-h-[min(94dvh,820px)] w-[min(576px,calc(100vw-1.5rem))] shrink-0 flex-col overflow-hidden rounded-2xl border-2 border-teal-400/45 bg-linear-to-b from-teal-950/95 via-zinc-950 to-black shadow-[0_0_60px_rgba(45,212,191,0.15),0_22px_60px_rgba(0,0,0,0.75)] ring-2 ring-teal-400/22"
               role="dialog"
               aria-modal="true"
               aria-labelledby="repair-modal-title"
