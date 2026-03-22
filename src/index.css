@@ -155,12 +155,124 @@ body,
   animation: splash-badge-nudge 3.2s ease-in-out infinite;
 }
 
+/* Landing right panel: fills column with ambient motion */
+@keyframes landing-panel-grid-shift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 28px 28px, 28px 28px;
+  }
+}
+
+@keyframes landing-panel-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 72px;
+  }
+}
+
+@keyframes landing-panel-scan {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(320%);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-panel-orb {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.22;
+  }
+  50% {
+    transform: translate(-18px, 22px) scale(1.12);
+    opacity: 0.5;
+  }
+}
+
+@keyframes landing-panel-sheen {
+  0%,
+  100% {
+    opacity: 0.06;
+    transform: translateX(-8%) skewX(-12deg);
+  }
+  50% {
+    opacity: 0.14;
+    transform: translateX(8%) skewX(-12deg);
+  }
+}
+
+@keyframes landing-panel-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.4);
+  }
+}
+
+.landing-panel-grid {
+  background-image:
+    linear-gradient(rgba(251, 191, 36, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(251, 191, 36, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px, 22px 22px;
+  animation: landing-panel-grid-shift 10s linear infinite;
+}
+
+.landing-panel-stripes {
+  background-image: repeating-linear-gradient(
+    -22deg,
+    transparent 0 34px,
+    rgba(180, 83, 9, 0.045) 34px 36px
+  );
+  background-size: 100% 72px;
+  animation: landing-panel-stripes 14s linear infinite;
+}
+
+.landing-panel-scan {
+  animation: landing-panel-scan 5.5s ease-in-out infinite;
+}
+
+.landing-panel-orb {
+  animation: landing-panel-orb 5.5s ease-in-out infinite;
+}
+
+.landing-panel-sheen {
+  animation: landing-panel-sheen 7s ease-in-out infinite;
+}
+
+.landing-panel-twinkle {
+  animation: landing-panel-twinkle 2.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .splash-road-layer,
   .splash-drift-dot,
   .splash-speed-needle,
   .splash-fuel-fill,
-  .splash-mini-bike {
+  .splash-mini-bike,
+  .landing-panel-grid,
+  .landing-panel-stripes,
+  .landing-panel-scan,
+  .landing-panel-orb,
+  .landing-panel-sheen,
+  .landing-panel-twinkle {
     animation: none !important;
   }
 }

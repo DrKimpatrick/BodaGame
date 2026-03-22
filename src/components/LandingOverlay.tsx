@@ -204,6 +204,86 @@ function DecorativeFuelIcon() {
   )
 }
 
+const RIGHT_PANEL_ORBS: { l: string; t: string; d: string; s: number; cls: string }[] = [
+  { l: '3%', t: '5%', d: '0s', s: 0.5, cls: 'bg-amber-400/20' },
+  { l: '88%', t: '8%', d: '0.4s', s: 0.35, cls: 'bg-amber-300/18' },
+  { l: '12%', t: '22%', d: '1.1s', s: 0.42, cls: 'bg-emerald-400/15' },
+  { l: '72%', t: '18%', d: '0.8s', s: 0.38, cls: 'bg-sky-400/14' },
+  { l: '48%', t: '4%', d: '1.6s', s: 0.28, cls: 'bg-amber-500/22' },
+  { l: '6%', t: '42%', d: '2s', s: 0.4, cls: 'bg-violet-400/12' },
+  { l: '92%', t: '38%', d: '0.2s', s: 0.33, cls: 'bg-amber-400/16' },
+  { l: '22%', t: '58%', d: '1.4s', s: 0.48, cls: 'bg-emerald-300/14' },
+  { l: '78%', t: '52%', d: '2.3s', s: 0.36, cls: 'bg-amber-300/20' },
+  { l: '52%', t: '48%', d: '0.9s', s: 0.3, cls: 'bg-sky-300/12' },
+  { l: '8%', t: '78%', d: '1.8s', s: 0.44, cls: 'bg-amber-500/18' },
+  { l: '65%', t: '72%', d: '0.6s', s: 0.4, cls: 'bg-orange-400/14' },
+  { l: '38%', t: '88%', d: '2.1s', s: 0.34, cls: 'bg-amber-400/15' },
+  { l: '94%', t: '82%', d: '1.2s', s: 0.32, cls: 'bg-zinc-400/12' },
+]
+
+const RIGHT_PANEL_SPARKS: { l: string; t: string; d: string }[] = [
+  { l: '18%', t: '14%', d: '0s' },
+  { l: '55%', t: '28%', d: '0.4s' },
+  { l: '32%', t: '66%', d: '0.9s' },
+  { l: '84%', t: '58%', d: '0.2s' },
+  { l: '44%', t: '92%', d: '1.1s' },
+  { l: '70%', t: '12%', d: '0.7s' },
+]
+
+/** Full-bleed ambient motion behind landing copy (pointer-events none). */
+function LandingRightMotion() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      <div className="landing-panel-grid absolute inset-0 opacity-100" />
+      <div className="landing-panel-stripes absolute inset-0 opacity-[0.95]" />
+      <div
+        className="absolute inset-0 opacity-70"
+        style={{
+          background:
+            'radial-gradient(ellipse 100% 55% at 50% -10%, rgba(251,191,36,0.14), transparent 52%), radial-gradient(ellipse 70% 45% at 100% 100%, rgba(52,211,153,0.06), transparent 50%)',
+        }}
+      />
+      <div className="landing-panel-sheen absolute -left-[20%] top-0 h-full w-[55%] bg-linear-to-r from-transparent via-amber-400/14 to-transparent" />
+      <div
+        className="landing-panel-scan absolute left-0 right-0 top-0 h-[min(38vh,200px)] bg-linear-to-b from-transparent via-amber-300/10 to-transparent"
+        style={{ animationDelay: '0s' }}
+      />
+      <div
+        className="landing-panel-scan absolute left-0 right-0 top-0 h-[min(38vh,200px)] bg-linear-to-b from-transparent via-amber-200/8 to-transparent"
+        style={{ animationDelay: '2.75s' }}
+      />
+      {RIGHT_PANEL_ORBS.map((o, i) => (
+        <div
+          key={`o-${i}`}
+          className={`landing-panel-orb absolute rounded-full blur-[1.5px] ${o.cls}`}
+          style={{
+            left: o.l,
+            top: o.t,
+            width: `${o.s * 52}px`,
+            height: `${o.s * 52}px`,
+            animationDelay: o.d,
+          }}
+        />
+      ))}
+      {RIGHT_PANEL_SPARKS.map((s, i) => (
+        <div
+          key={`s-${i}`}
+          className="landing-panel-twinkle absolute h-1 w-1 rotate-45 bg-amber-200/50 shadow-[0_0_6px_rgba(251,191,36,0.45)]"
+          style={{ left: s.l, top: s.t, animationDelay: s.d }}
+        />
+      ))}
+      <div
+        className="splash-road-layer absolute bottom-0 left-0 right-0 h-16 opacity-[0.18]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(90deg, transparent 0 14px, rgba(251,191,36,0.28) 14px 17px)',
+          backgroundSize: '42px 100%',
+        }}
+      />
+    </div>
+  )
+}
+
 export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOverlayProps) {
   const money = useGameStore((s) => s.money)
   const [tab, setTab] = useState<TabId>('fuel')
@@ -223,8 +303,8 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      {/* Left: hero art — full column height, cover within this side only */}
-      <div className="relative min-h-[220px] flex-1 lg:min-h-0 lg:flex-[1.25] lg:min-w-0">
+      {/* Left: hero art — capped height on mobile so the right panel can fill remaining space */}
+      <div className="relative h-[min(42vh,320px)] min-h-[200px] shrink-0 lg:h-auto lg:min-h-0 lg:min-w-0 lg:flex-[1.25]">
         <img
           src={artSrc}
           alt=""
@@ -270,8 +350,9 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
         </div>
       </div>
 
-      {/* Right: gamified briefing + start — height follows copy, not stretched to viewport */}
-      <div className="relative flex w-full shrink-0 flex-col border-t-[5px] border-amber-600/80 bg-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:w-[min(100%,400px)] lg:self-center lg:border-l-[5px] lg:border-t-0 lg:py-3 xl:w-[min(100%,430px)]">
+      {/* Right: full-height column, motion bed fills area behind UI */}
+      <div className="relative flex min-h-0 w-full flex-1 flex-col border-t-[5px] border-amber-600/80 bg-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:min-h-0 lg:border-l-[5px] lg:border-t-0 lg:py-0">
+        <LandingRightMotion />
         {/* bezel corners */}
         <div
           className="pointer-events-none absolute left-2 top-2 h-6 w-6 border-l-2 border-t-2 border-amber-500/50"
@@ -290,7 +371,7 @@ export function LandingOverlay({ artSrc, splashImageReady, onStart }: LandingOve
           aria-hidden
         />
 
-        <div className="flex flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4">
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 lg:justify-center lg:py-4">
           {!splashImageReady ? (
             <p className="text-center text-sm font-semibold tracking-wide text-zinc-500">Loading…</p>
           ) : null}
