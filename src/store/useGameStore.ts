@@ -22,6 +22,18 @@ export const UGX_PER_FUEL_UNIT = 500
 /** Bike condition ceiling (same scale as UI %). */
 export const CONDITION_MAX = 100
 
+/** Soft HUD warning + light vignette. */
+export const CONDITION_WARN_AT = 30
+/** “Go to garage” messaging + edge warning cues. */
+export const CONDITION_GARAGE_WARNING_AT = 20
+/** Severe visuals; bike can still roll until {@link CONDITION_BROKEN_AT}. */
+export const CONDITION_TERRIBLE_AT = 10
+/**
+ * Breakdown: no drive input, 3D world pauses (`Canvas` demand loop), repair modal required.
+ * (If a brief says “pause at 50%”, that maps here as the single hard lock — we use 5%.)
+ */
+export const CONDITION_BROKEN_AT = 5
+
 /**
  * Cost to restore 1 condition point. Full repair from 0 = CONDITION_MAX * UGX_PER_CONDITION_UNIT.
  * Mirrors fuel pricing.
@@ -74,6 +86,10 @@ export function normalizeTankFuel(fuel: number): number {
 export function normalizeCondition(c: number): number {
   const v = Math.max(0, Math.min(CONDITION_MAX, c))
   return Math.round(v * 10_000) / 10_000
+}
+
+export function isBikeBrokenDown(condition: number): boolean {
+  return normalizeCondition(condition) <= CONDITION_BROKEN_AT
 }
 
 function moneyInt(m: number): number {

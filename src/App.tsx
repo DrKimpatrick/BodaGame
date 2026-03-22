@@ -1,10 +1,48 @@
 import { Environment } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GameScene } from './components/GameScene'
 import { Hud } from './components/Hud'
-import { isProgressPristine, useGameStore } from './store/useGameStore'
+import {
+  isBikeBrokenDown,
+  isProgressPristine,
+  useGameStore,
+} from './store/useGameStore'
+
+/** After `frameloop="demand"`, nudge one frame when unfreezing so the loop reliably restarts. */
+function ThawInvalidate({ frozen }: { frozen: boolean }) {
+  const invalidate = useThree((s) => s.invalidate)
+  const prevFrozen = useRef(frozen)
+  useLayoutEffect(() => {
+    if (prevFrozen.current && !frozen) invalidate()
+    prevFrozen.current = frozen
+  }, [frozen, invalidate])
+  return null
+}
+
+function GameCanvas() {
+  const condition = useGameStore((s) => s.condition)
+  const freezeWorld = isBikeBrokenDown(condition)
+
+  return (
+    <Canvas
+      shadows
+      className="h-full w-full"
+      camera={{ fov: 52, near: 0.1, far: 420 }}
+      dpr={[1, 1.75]}
+      frameloop={freezeWorld ? 'demand' : 'always'}
+      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => {
+        gl.shadowMap.type = THREE.PCFShadowMap
+      }}
+    >
+      <ThawInvalidate frozen={freezeWorld} />
+      <Environment preset="city" environmentIntensity={0.55} />
+      <GameScene />
+    </Canvas>
+  )
+}
 
 function App() {
   const resetSession = useGameStore((s) => s.resetSession)
@@ -54,19 +92,7 @@ function App() {
           </div>
         </div>
       ) : null}
-      <Canvas
-        shadows
-        className="h-full w-full"
-        camera={{ fov: 52, near: 0.1, far: 420 }}
-        dpr={[1, 1.75]}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
-        onCreated={({ gl }) => {
-          gl.shadowMap.type = THREE.PCFShadowMap
-        }}
-      >
-        <Environment preset="city" environmentIntensity={0.55} />
-        <GameScene />
-      </Canvas>
+      <GameCanvas />
       <Hud />
     </div>
   )

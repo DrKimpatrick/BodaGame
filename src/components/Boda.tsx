@@ -24,7 +24,9 @@ import { useKeyboard } from '../hooks/useKeyboard'
 import {
   BIKE_SPAWN_PED_CLEAR_M,
   BIKE_SPAWN_XZ,
+  CONDITION_BROKEN_AT,
   FUEL_PER_WORLD_METER,
+  normalizeCondition,
   shouldApplyBikePedestrianInteraction,
   useGameStore,
 } from '../store/useGameStore'
@@ -375,6 +377,28 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     [],
   )
 
+  useEffect(() => {
+    return useGameStore.subscribe((_state, prev) => {
+      const s = useGameStore.getState()
+      const nowBroken =
+        normalizeCondition(s.condition) <= CONDITION_BROKEN_AT
+      const wasBroken =
+        normalizeCondition(prev.condition) <= CONDITION_BROKEN_AT
+      if (nowBroken && !wasBroken) {
+        speed.current = 0
+        const body = rb.current
+        if (!body) return
+        try {
+          if (world.getRigidBody(body.handle) != null) {
+            body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+          }
+        } catch {
+          /* rigid body torn down */
+        }
+      }
+    })
+  }, [world])
+
   const keys = useKeyboard()
   const speed = useRef(0)
   useBikeEngineAudio(speed)
@@ -455,10 +479,16 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     }
     const drivable = isDrivableSurface(t.x, t.z)
 
-    const steer =
-      (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
-    const throttleRaw =
-      (keys.current.forward ? 1 : 0) - (keys.current.back ? 1 : 0)
+    const brokenDown =
+      normalizeCondition(useGameStore.getState().condition) <=
+      CONDITION_BROKEN_AT
+
+    const steer = brokenDown
+      ? 0
+      : (keys.current.left ? 1 : 0) - (keys.current.right ? 1 : 0)
+    const throttleRaw = brokenDown
+      ? 0
+      : (keys.current.forward ? 1 : 0) - (keys.current.back ? 1 : 0)
     const throttle =
       performance.now() < stunnedUntil.current ? 0 : throttleRaw
 
@@ -503,6 +533,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     if (Math.abs(speed.current) < 0.02 && throttle === 0) {
       speed.current = 0
+    }
+
+    if (brokenDown) {
+      speed.current *= Math.exp(-FRICTION * 6 * dt)
+      if (Math.abs(speed.current) < 0.04) speed.current = 0
     }
 
     const capFwd = drivable ? MAX_FORWARD : OFFROAD_SPEED_CAP

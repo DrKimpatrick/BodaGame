@@ -2,9 +2,14 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
 import {
   approxMetersForFuelPoints,
+  CONDITION_BROKEN_AT,
+  CONDITION_GARAGE_WARNING_AT,
   CONDITION_MAX,
+  CONDITION_TERRIBLE_AT,
+  CONDITION_WARN_AT,
   formatDistanceShort,
   FUEL_MAX,
+  isBikeBrokenDown,
   maxUgxToFillRemaining,
   maxUgxToRepairRemaining,
   normalizeCondition,
@@ -317,7 +322,117 @@ function ConditionGaugeIcon({ className }: { className?: string }) {
   )
 }
 
-function ConditionArcadeTile({ value }: { value: number }) {
+type ConditionStress = 'none' | 'caution' | 'garage' | 'severe'
+
+type ConditionAlertLevel =
+  | 'ok'
+  | 'warn30'
+  | 'garage20'
+  | 'terrible10'
+  | 'broken5'
+
+function conditionAlertLevel(c: number): ConditionAlertLevel {
+  const n = normalizeCondition(c)
+  if (n <= CONDITION_BROKEN_AT) return 'broken5'
+  if (n <= CONDITION_TERRIBLE_AT) return 'terrible10'
+  if (n <= CONDITION_GARAGE_WARNING_AT) return 'garage20'
+  if (n <= CONDITION_WARN_AT) return 'warn30'
+  return 'ok'
+}
+
+function stressFromAlert(level: ConditionAlertLevel): ConditionStress {
+  if (level === 'warn30') return 'caution'
+  if (level === 'garage20') return 'garage'
+  if (level === 'terrible10' || level === 'broken5') return 'severe'
+  return 'none'
+}
+
+/** Non-blocking HUD cues (3D world keeps running until breakdown). */
+function ConditionRideOverlays({ level }: { level: ConditionAlertLevel }) {
+  if (level === 'ok') return null
+
+  const vignetteClass =
+    level === 'warn30'
+      ? 'bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_55%,rgba(180,83,9,0.22)_100%)]'
+      : level === 'garage20'
+        ? 'bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_48%,rgba(234,88,12,0.32)_100%)]'
+        : level === 'terrible10'
+          ? 'bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_42%,rgba(220,38,38,0.42)_100%)]'
+          : 'bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_38%,rgba(127,29,29,0.55)_100%)]'
+
+  const showEdge =
+    level === 'garage20' ||
+    level === 'terrible10' ||
+    level === 'broken5'
+  const edgeFast = level === 'terrible10' || level === 'broken5'
+  const edgeFrom =
+    level === 'garage20'
+      ? 'from-orange-600/55'
+      : 'from-red-600/70'
+
+  return (
+    <>
+      <div
+        className={`pointer-events-none fixed inset-0 z-12 ${vignetteClass}`}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 z-20 flex justify-center px-3 pt-[max(0.5rem,env(safe-area-inset-top))]"
+        role="status"
+      >
+        <div
+          className={
+            level === 'warn30'
+              ? 'max-w-lg rounded-b-xl border border-t-0 border-amber-600/50 bg-amber-950/88 px-3 py-2 text-center shadow-lg ring-1 ring-amber-500/25 backdrop-blur-sm'
+              : level === 'garage20'
+                ? 'max-w-lg rounded-b-xl border border-t-0 border-orange-500/55 bg-orange-950/90 px-3 py-2 text-center shadow-lg ring-1 ring-orange-400/30 backdrop-blur-sm'
+                : level === 'terrible10'
+                  ? 'max-w-lg animate-pulse rounded-b-xl border border-t-0 border-red-600/60 bg-red-950/92 px-3 py-2 text-center shadow-lg ring-1 ring-red-500/35 backdrop-blur-sm'
+                  : 'max-w-lg rounded-b-xl border border-t-0 border-red-700/65 bg-red-950/95 px-3 py-2.5 text-center shadow-[0_0_24px_rgba(220,38,38,0.35)] ring-2 ring-red-500/40 backdrop-blur-sm'
+          }
+        >
+          <p
+            className={
+              level === 'warn30'
+                ? 'text-[11px] font-black uppercase leading-snug tracking-wide text-amber-100'
+                : level === 'garage20'
+                  ? 'text-[11px] font-black uppercase leading-snug tracking-wide text-orange-100'
+                  : 'text-[11px] font-black uppercase leading-snug tracking-wide text-red-100'
+            }
+          >
+            {level === 'warn30'
+              ? 'Condition warning — service the bike before long rides.'
+              : level === 'garage20'
+                ? 'Low condition — open Repair bike (garage) before you get stranded.'
+                : level === 'terrible10'
+                  ? 'Terrible state — repair now! The bike may break down.'
+                  : 'Breakdown — bike will not move. Repair to resume.'}
+          </p>
+        </div>
+      </div>
+      {showEdge ? (
+        <>
+          <div
+            className={`pointer-events-none fixed bottom-0 left-0 top-0 z-12 w-6 bg-linear-to-r ${edgeFrom} to-transparent sm:w-8 ${edgeFast ? 'animate-pulse' : ''}`}
+            aria-hidden
+          />
+          <div
+            className={`pointer-events-none fixed bottom-0 right-0 top-0 z-12 w-6 bg-linear-to-l ${edgeFrom} to-transparent sm:w-8 ${edgeFast ? 'animate-pulse' : ''}`}
+            aria-hidden
+          />
+        </>
+      ) : null}
+    </>
+  )
+}
+
+function ConditionArcadeTile({
+  value,
+  stress,
+}: {
+  value: number
+  stress: ConditionStress
+}) {
   const pct = Math.max(0, Math.min(100, value))
   const barTone =
     pct <= 25
@@ -338,17 +453,42 @@ function ConditionArcadeTile({ value }: { value: number }) {
             ring: 'ring-emerald-400/45',
           }
 
+  const hubShell =
+    stress === 'severe'
+      ? 'border-red-500/70 border-b-red-950 bg-linear-to-b from-red-600/75 to-red-950 shadow-[0_4px_0_rgba(127,29,29,0.9)] ring-2 ring-red-400/70 animate-pulse'
+      : stress === 'garage'
+        ? 'border-orange-500/60 border-b-orange-950 bg-linear-to-b from-orange-600/65 to-orange-950 shadow-[0_4px_0_rgba(154,52,18,0.88)] ring-2 ring-orange-400/55'
+        : stress === 'caution'
+          ? 'border-amber-500/55 border-b-amber-950 bg-linear-to-b from-amber-600/60 to-amber-950 shadow-[0_4px_0_rgba(120,53,15,0.85)] ring-2 ring-amber-300/50'
+          : 'border-emerald-400/50 border-b-emerald-950 bg-linear-to-b from-emerald-500/65 to-emerald-950 shadow-[0_4px_0_rgba(6,78,59,0.88)] ring-1 ring-emerald-200/35'
+
+  const iconClass =
+    stress === 'severe'
+      ? 'text-red-50'
+      : stress === 'garage'
+        ? 'text-orange-50'
+        : stress === 'caution'
+          ? 'text-amber-50'
+          : 'text-emerald-50'
+
   return (
     <div className="relative flex gap-3">
       <div
-        className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-emerald-400/50 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-500/65 to-emerald-950 shadow-[0_4px_0_rgba(6,78,59,0.88)] ring-1 ring-emerald-200/35"
+        className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl border-2 border-b-4 ${hubShell}`}
         aria-hidden
       >
-        <ConditionGaugeIcon className="h-7 w-7 text-emerald-50 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)]" />
+        <ConditionGaugeIcon
+          className={`h-7 w-7 drop-shadow-[0_1px_0_rgba(0,0,0,0.65)] ${iconClass}`}
+        />
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 pt-0.5">
         <p className="text-[10px] font-black uppercase italic tracking-[0.2em] text-emerald-100/95 drop-shadow-[0_1px_0_rgba(0,0,0,0.85)]">
           Condition
+          {stress === 'garage' || stress === 'severe' ? (
+            <span className="ml-1.5 inline-block text-[8px] font-black tracking-widest text-orange-300">
+              ▲ garage
+            </span>
+          ) : null}
         </p>
         <div
           className={`h-2.5 w-full overflow-hidden rounded-full bg-black/60 ring-1 ring-inset ring-black/80 ${barTone.ring}`}
@@ -404,6 +544,9 @@ export function Hud() {
   const condNorm = normalizeCondition(condition)
   const maxUgxRepair = maxUgxToRepairRemaining(condition)
   const canRepair = maxUgxRepair > 0 && money > 0
+  const conditionAlert = conditionAlertLevel(condition)
+  const conditionStress = stressFromAlert(conditionAlert)
+  const repairMandatory = isBikeBrokenDown(condition)
 
   const maxWholePoints = useMemo(
     () => Math.floor(maxUgxTank / UGX_PER_FUEL_UNIT + Number.EPSILON),
@@ -419,9 +562,14 @@ export function Hud() {
       setPointsToAdd(0)
       setPointsStr('')
     }
-    setRepairOpen(false)
+    if (!repairMandatory) setRepairOpen(false)
     setRefuelOpen(true)
-  }, [maxUgxTank])
+  }, [maxUgxTank, repairMandatory])
+
+  const closeRefuel = useCallback(() => {
+    setRefuelOpen(false)
+    if (isBikeBrokenDown(useGameStore.getState().condition)) setRepairOpen(true)
+  }, [])
 
   const maxWholeRepairPoints = useMemo(
     () => Math.floor(maxUgxRepair / UGX_PER_CONDITION_UNIT + Number.EPSILON),
@@ -440,6 +588,10 @@ export function Hud() {
     setRefuelOpen(false)
     setRepairOpen(true)
   }, [maxUgxRepair])
+
+  useEffect(() => {
+    if (repairMandatory) setRepairOpen(true)
+  }, [repairMandatory])
 
   useEffect(() => {
     if (!refuelOpen) return
@@ -605,17 +757,22 @@ export function Hud() {
     if (!refuelOpen && !repairOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      if (refuelOpen) {
+        closeRefuel()
+        return
+      }
+      if (repairOpen && repairMandatory) return
       if (repairOpen) setRepairOpen(false)
-      else setRefuelOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [refuelOpen, repairOpen])
+  }, [refuelOpen, repairOpen, repairMandatory, closeRefuel])
 
   const fuelWarn = fuelLowLevel(fuel)
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 font-sans">
+      <ConditionRideOverlays level={conditionAlert} />
       <div
         className="absolute left-4 top-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-amber-500/45 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-600/30 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(92,45,10,0.82)] ring-1 ring-amber-400/25 backdrop-blur-md"
         style={{
@@ -699,7 +856,10 @@ export function Hud() {
         }}
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-emerald-300/55 to-transparent" />
-        <ConditionArcadeTile value={normalizeCondition(condition)} />
+        <ConditionArcadeTile
+          value={condNorm}
+          stress={conditionStress}
+        />
         <button
           type="button"
           onClick={openRepair}
@@ -775,11 +935,11 @@ export function Hud() {
           <button
             type="button"
             aria-label="Close refuel"
-            className="pointer-events-auto fixed inset-0 z-20 bg-black/60 backdrop-blur-[2px]"
-            onClick={() => setRefuelOpen(false)}
+            className="pointer-events-auto fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+            onClick={closeRefuel}
           />
           <div
-            className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-4"
+            className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
             style={{
               paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
@@ -813,7 +973,7 @@ export function Hud() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setRefuelOpen(false)}
+                  onClick={closeRefuel}
                   className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
                   aria-label="Close"
                 >
@@ -1065,11 +1225,13 @@ export function Hud() {
           <button
             type="button"
             aria-label="Close repair"
-            className="pointer-events-auto fixed inset-0 z-20 bg-black/60 backdrop-blur-[2px]"
-            onClick={() => setRepairOpen(false)}
+            className="pointer-events-auto fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px]"
+            onClick={() => {
+              if (!repairMandatory) setRepairOpen(false)
+            }}
           />
           <div
-            className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-4"
+            className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4"
             style={{
               paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
@@ -1100,16 +1262,31 @@ export function Hud() {
                       </h2>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setRepairOpen(false)}
-                    className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
-                    aria-label="Close"
-                  >
-                    ×
-                  </button>
+                  {repairMandatory ? (
+                    <span className="shrink-0 rounded-md border border-red-500/50 bg-red-950/90 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-red-200">
+                      Required
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setRepairOpen(false)}
+                      className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {repairMandatory ? (
+                <div className="shrink-0 border-b border-red-600/45 bg-red-950/85 px-3 py-2">
+                  <p className="text-center text-[10px] font-black uppercase leading-snug tracking-wide text-red-100">
+                    Breakdown — ride is stopped and the city is frozen. Repair above{' '}
+                    {CONDITION_BROKEN_AT}% to continue.
+                  </p>
+                </div>
+              ) : null}
 
               <div className="flex flex-col gap-1.5 overflow-hidden px-3 pb-3 pt-1.5 text-left">
                 <div className="grid shrink-0 grid-cols-2 gap-1.5">
