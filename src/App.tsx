@@ -4,6 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GameScene } from './components/GameScene'
 import { Hud } from './components/Hud'
+import { LandingOverlay } from './components/LandingOverlay'
+import { useGameRootButtonClickSound } from './hooks/useGameRootButtonClickSound'
 import {
   onGameStartButtonClicked,
   pauseAllMusic,
@@ -59,6 +61,7 @@ function GameCanvas({ onWebglReady }: { onWebglReady?: () => void }) {
 }
 
 function App() {
+  useGameRootButtonClickSound()
   const resetSession = useGameStore((s) => s.resetSession)
   const [showPostWipeNotice, setShowPostWipeNotice] = useState(false)
   const [phase, setPhase] = useState<BootPhase>('splash')
@@ -211,35 +214,11 @@ function App() {
             playIntroFromUserGesture(introStartedRef)
           }}
         >
-          <div className="relative min-h-0 flex-1">
-            <img
-              src={SPLASH_ART}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-center"
-              draggable={false}
-            />
-            <div
-              className="absolute inset-0 bg-linear-to-t from-black/88 via-black/25 to-black/55"
-              aria-hidden
-            />
-          </div>
-          <div className="relative z-10 flex flex-col items-center gap-4 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6">
-            {!splashImageReady ? (
-              <p className="text-sm font-semibold tracking-wide text-zinc-400">Loading…</p>
-            ) : null}
-            <button
-              type="button"
-              disabled={!splashImageReady}
-              onClick={beginLoading}
-              className="w-full max-w-sm rounded-xl border-2 border-amber-400/70 bg-amber-500/95 py-3.5 text-center text-base font-black uppercase tracking-[0.2em] text-amber-950 shadow-[0_6px_0_rgba(120,53,15,0.85)] transition enabled:hover:bg-amber-400 enabled:active:translate-y-0.5 enabled:active:shadow-none disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Start
-            </button>
-            <p className="max-w-sm text-center text-[11px] font-semibold leading-snug text-zinc-400">
-              If the menu track is silent, tap anywhere, press a key, or use Start—Chrome and Safari
-              require one interaction before they allow sound.
-            </p>
-          </div>
+          <LandingOverlay
+            artSrc={SPLASH_ART}
+            splashImageReady={splashImageReady}
+            onStart={beginLoading}
+          />
         </div>
       ) : null}
 

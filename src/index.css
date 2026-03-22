@@ -81,3 +81,86 @@ body,
   animation: impact-shake-strong 0.46s cubic-bezier(0.22, 0.82, 0.28, 1);
   will-change: transform;
 }
+
+/* Landing splash: motion accents (respect reduced motion below) */
+@keyframes splash-road-scroll {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 56px 0;
+  }
+}
+
+@keyframes splash-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(12px, -14px) scale(1.08);
+    opacity: 0.65;
+  }
+}
+
+@keyframes splash-needle-swing {
+  0%,
+  100% {
+    transform: rotate(-42deg);
+  }
+  50% {
+    transform: rotate(28deg);
+  }
+}
+
+@keyframes splash-fuel-wave {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes splash-badge-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(6px);
+  }
+}
+
+.splash-road-layer {
+  animation: splash-road-scroll 2.2s linear infinite;
+}
+
+.splash-drift-dot {
+  animation: splash-drift 4.5s ease-in-out infinite;
+}
+
+.splash-speed-needle {
+  transform-origin: 50px 78px;
+  animation: splash-needle-swing 2.8s ease-in-out infinite;
+}
+
+.splash-fuel-fill {
+  animation: splash-fuel-wave 2.4s ease-in-out infinite;
+}
+
+.splash-mini-bike {
+  animation: splash-badge-nudge 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-road-layer,
+  .splash-drift-dot,
+  .splash-speed-needle,
+  .splash-fuel-fill,
+  .splash-mini-bike {
+    animation: none !important;
+  }
+}
