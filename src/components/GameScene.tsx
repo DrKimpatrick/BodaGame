@@ -1,6 +1,6 @@
 import type { RapierRigidBody } from '@react-three/rapier'
 import { Physics } from '@react-three/rapier'
-import { useMemo, useRef, useState } from 'react'
+import { Suspense, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useGameStore } from '../store/useGameStore'
 import { Boda } from './Boda'
@@ -10,6 +10,7 @@ import { Pedestrians } from './Pedestrians'
 import { RoadTraffic } from './RoadTraffic'
 import { getSunDirection, HorizonSky } from './HorizonSky'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
+import { UrbanAdBanners } from './UrbanAdBanners'
 import { JobRouteGuide } from './JobRouteGuide'
 import { JobTargetPin } from './JobTargetPin'
 import { JobWaitingPassenger } from './JobWaitingPassenger'
@@ -58,6 +59,9 @@ export function GameScene() {
         <Pedestrians />
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
+      <Suspense fallback={null}>
+        <UrbanAdBanners />
+      </Suspense>
       <JobTargetPin />
       <JobWaitingPassenger />
     </>

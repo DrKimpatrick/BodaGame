@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import './audio/gameMusic'
 import { runInitialClientCleanup } from './clearClientOnRestart'
 import './index.css'
 import { useGameStore } from './store/useGameStore'

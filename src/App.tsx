@@ -5,9 +5,13 @@ import * as THREE from 'three'
 import { GameScene } from './components/GameScene'
 import { Hud } from './components/Hud'
 import {
-  pauseGameMusic,
-  resumeGameMusicIfNeeded,
-  startGameMusicFromUserGesture,
+  onGameStartButtonClicked,
+  pauseAllMusic,
+  playIntroFromUserGesture,
+  resumeGameplayMusicIfNeeded,
+  resumeIntroMusicIfNeeded,
+  startGameplayMusic,
+  trySplashIntroAutoplay,
 } from './audio/gameMusic'
 import {
   isBikeBrokenDown,
@@ -15,7 +19,7 @@ import {
   useGameStore,
 } from './store/useGameStore'
 
-const SPLASH_ART = encodeURI('/textures/Border To Boda3.jpg')
+const SPLASH_ART = encodeURI('/textures/BorderTo-Boda23.jpg')
 
 type BootPhase = 'splash' | 'loading' | 'playing'
 
@@ -65,6 +69,7 @@ function App() {
   const hadThreeLoading = useRef(false)
   const loadingStartedAt = useRef(0)
   const finishStableTicks = useRef(0)
+  const introStartedRef = useRef(false)
 
   useLayoutEffect(() => {
     resetSession()
@@ -83,22 +88,29 @@ function App() {
   }, [active])
 
   useEffect(() => {
-    if (phase !== 'playing' && phase !== 'loading') return
+    if (phase !== 'splash' && phase !== 'playing' && phase !== 'loading') return
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
-        pauseGameMusic()
+        pauseAllMusic()
+      } else if (phase === 'playing') {
+        resumeGameplayMusicIfNeeded()
       } else {
-        resumeGameMusicIfNeeded()
+        resumeIntroMusicIfNeeded()
       }
     }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [phase])
 
+  /** Intro MP3: before paint + when splash image reports ready (retry if first autoplay was too early). */
+  useLayoutEffect(() => {
+    if (phase !== 'splash') return
+    trySplashIntroAutoplay(introStartedRef)
+  }, [phase, splashImageReady])
+
   useEffect(() => {
-    if (phase === 'playing') {
-      resumeGameMusicIfNeeded()
-    }
+    if (phase !== 'playing') return
+    startGameplayMusic()
   }, [phase])
 
   useEffect(() => {
@@ -158,12 +170,12 @@ function App() {
   }, [phase, active, progress, webglReady])
 
   const beginLoading = () => {
+    onGameStartButtonClicked()
     hadThreeLoading.current = false
     finishStableTicks.current = 0
     loadingStartedAt.current = Date.now()
     setWebglReady(false)
     setPhase('loading')
-    startGameMusicFromUserGesture()
   }
 
   const barPercent =
@@ -193,7 +205,12 @@ function App() {
       ) : null}
 
       {phase === 'splash' ? (
-        <div className="fixed inset-0 z-60 flex flex-col bg-black">
+        <div
+          className="fixed inset-0 z-60 flex flex-col bg-black"
+          onPointerDownCapture={() => {
+            playIntroFromUserGesture(introStartedRef)
+          }}
+        >
           <div className="relative min-h-0 flex-1">
             <img
               src={SPLASH_ART}
