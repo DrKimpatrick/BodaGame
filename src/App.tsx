@@ -235,6 +235,10 @@ function App() {
             >
               Start
             </button>
+            <p className="max-w-sm text-center text-[11px] font-semibold leading-snug text-zinc-400">
+              If the menu track is silent, tap anywhere, press a key, or use Start—Chrome and Safari
+              require one interaction before they allow sound.
+            </p>
           </div>
         </div>
       ) : null}

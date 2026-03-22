@@ -8,6 +8,45 @@
     <title>Boda Boda — Kampala</title>
   </head>
   <body>
+    <!-- Intro MP3: created before React so autoplay (muted fallback) can start on first paint. -->
+    <audio
+      id="boda-intro"
+      preload="auto"
+      playsinline
+      src="/textures/Maurice-kirya-Boda-boda.mp3"
+    ></audio>
+    <script>
+      (function () {
+        var a = document.getElementById('boda-intro')
+        if (!a) return
+        a.loop = false
+        a.volume = 0.44
+
+        function peelAudible() {
+          a.muted = false
+          a.volume = 0.44
+          document.removeEventListener('pointerdown', peelAudible, true)
+          document.removeEventListener('keydown', peelAudible, true)
+          document.removeEventListener('touchstart', peelAudible, true)
+          var p = a.play()
+          if (p && p.catch) p.catch(function () {})
+        }
+
+        document.addEventListener('pointerdown', peelAudible, { capture: true, passive: true })
+        document.addEventListener('keydown', peelAudible, { capture: true })
+        document.addEventListener('touchstart', peelAudible, { capture: true, passive: true })
+
+        a.muted = false
+        var p0 = a.play()
+        if (p0 && p0.catch) {
+          p0.catch(function () {
+            a.muted = true
+            var p1 = a.play()
+            if (p1 && p1.catch) p1.catch(function () {})
+          })
+        }
+      })()
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script async src="https://tenor.com/embed.js"></script>

@@ -1,6 +1,9 @@
 /**
- * Intro: Maurice Kirya — splash (tap outside Start).
- * Gameplay: Aylex — loops in-world; starts muted on Start click, un-mutes when `playing`.
+ * Intro: Maurice Kirya — splash / loader.
+ * Gameplay: Aylex — loops in-world.
+ *
+ * Browsers often block *audible* autoplay. We try unmuted first; if that fails, we start *muted*
+ * (allowed) so playback begins immediately, then unmute on first pointer/key.
  */
 
 import { unlockWebAudioFromUserGesture } from './webAudioContext'
@@ -14,14 +17,53 @@ const GAMEPLAY_VOLUME = 0.38
 let introAudio: HTMLAudioElement | null = null
 let gameplayAudio: HTMLAudioElement | null = null
 let gameplayUnlockAttached = false
+let introUnmuteListenersAttached = false
+
+function attachIntroUnmuteOnFirstGesture(): void {
+  if (introUnmuteListenersAttached || typeof window === 'undefined') return
+  introUnmuteListenersAttached = true
+
+  const unmuteIfNeeded = () => {
+    const el =
+      introAudio ??
+      (typeof document !== 'undefined'
+        ? (document.getElementById('boda-intro') as HTMLAudioElement | null)
+        : null)
+    if (!el) return
+    if (!introAudio && el.id === 'boda-intro') introAudio = el
+    if (!el.muted) return
+    el.muted = false
+    el.volume = INTRO_VOLUME
+    void el.play().catch(() => {})
+  }
+
+  window.addEventListener('pointerdown', unmuteIfNeeded, { capture: true, passive: true })
+  window.addEventListener('keydown', unmuteIfNeeded, { capture: true })
+  window.addEventListener('touchstart', unmuteIfNeeded, { capture: true, passive: true })
+}
 
 function getIntro(): HTMLAudioElement {
   if (!introAudio) {
+    if (typeof document !== 'undefined') {
+      const fromDom = document.getElementById('boda-intro')
+      if (fromDom instanceof HTMLAudioElement) {
+        introAudio = fromDom
+        introAudio.loop = false
+        introAudio.preload = 'auto'
+        introAudio.volume = INTRO_VOLUME
+        try {
+          ;(introAudio as HTMLAudioElement & { fetchPriority?: string }).fetchPriority = 'high'
+        } catch {
+          /* ignore */
+        }
+        return introAudio
+      }
+    }
     introAudio = new Audio(INTRO_SRC)
     introAudio.loop = false
     introAudio.preload = 'auto'
     introAudio.volume = INTRO_VOLUME
-    // Hint faster fetch when supported (Chromium).
+    introAudio.muted = false
     try {
       ;(introAudio as HTMLAudioElement & { fetchPriority?: string }).fetchPriority = 'high'
     } catch {
@@ -43,50 +85,82 @@ function getGameplay(): HTMLAudioElement {
 
 /**
  * First pointerdown anywhere on the splash (including Start) — play intro once.
- * Intro keeps running through loading until {@link startGameplayMusic} stops it.
+ * Intro keeps running through loading until {@link startGameplayMusic}.
  */
 export function playIntroFromUserGesture(introStartedRef: { current: boolean }): void {
   unlockWebAudioFromUserGesture()
+  const el = getIntro()
+  el.muted = false
+  el.volume = INTRO_VOLUME
+
+  if (!el.paused && !el.ended) {
+    introStartedRef.current = true
+    return
+  }
+
   if (introStartedRef.current) return
   introStartedRef.current = true
-  const el = getIntro()
   el.currentTime = 0
   void el.play().catch(() => {
     introStartedRef.current = false
   })
 }
 
-/** Ensure the intro element exists so the browser can buffer (never call `load()` here — it resets the element and delays first playback). */
+/** Ensure the intro element exists so the browser can buffer (never call `load()` here). */
 export function warmIntroAudio(): void {
   void getIntro()
 }
 
 /**
- * Try to start intro as soon as the app opens (and again after splash assets settle).
- * Keeps playing through the loading screen until {@link startGameplayMusic}.
- * On failure, {@link playIntroFromUserGesture} still runs on first pointerdown.
+ * Start intro as soon as possible: unmuted autoplay if allowed, else muted autoplay + unmute on
+ * first gesture (playback timeline starts on load in both cases).
  */
 export function trySplashIntroAutoplay(introStartedRef: { current: boolean }): void {
   const el = getIntro()
+
   if (!el.paused && !el.ended) {
     introStartedRef.current = true
+    attachIntroUnmuteOnFirstGesture()
     return
   }
+
   if (el.ended) el.currentTime = 0
-  void el
-    .play()
-    .then(() => {
-      introStartedRef.current = true
-    })
-    .catch(() => {
-      /* policy blocked — wait for gesture */
-    })
+
+  const markStarted = () => {
+    introStartedRef.current = true
+    attachIntroUnmuteOnFirstGesture()
+  }
+
+  el.volume = INTRO_VOLUME
+  el.muted = false
+
+  const tryUnmuted = el.play()
+  if (tryUnmuted === undefined) {
+    markStarted()
+    return
+  }
+
+  void tryUnmuted.then(markStarted).catch(() => {
+    el.muted = true
+    el.volume = INTRO_VOLUME
+    const tryMuted = el.play()
+    if (tryMuted === undefined) {
+      markStarted()
+      return
+    }
+    void tryMuted
+      .then(markStarted)
+      .catch(() => {
+        attachIntroUnmuteOnFirstGesture()
+      })
+  })
 }
 
 export function stopIntroMusic(): void {
   if (!introAudio) return
   introAudio.pause()
   introAudio.currentTime = 0
+  introAudio.muted = false
 }
 
 export function pauseIntroMusic(): void {
@@ -174,8 +248,10 @@ export function setIntroMusicVolume(linear01: number): void {
 export function disposeGameMusic(): void {
   if (introAudio) {
     introAudio.pause()
-    introAudio.src = ''
-    introAudio.load()
+    if (introAudio.id !== 'boda-intro') {
+      introAudio.src = ''
+      introAudio.load()
+    }
     introAudio = null
   }
   if (gameplayAudio) {
@@ -185,6 +261,7 @@ export function disposeGameMusic(): void {
     gameplayAudio = null
   }
   gameplayUnlockAttached = false
+  introUnmuteListenersAttached = false
 }
 
 /** Start buffering intro MP3 as soon as this module loads (before React paint). */
