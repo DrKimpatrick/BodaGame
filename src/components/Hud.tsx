@@ -2,17 +2,25 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { fullNuclearResetAndReload } from '../clearClientOnRestart'
 import {
   approxMetersForFuelPoints,
+  CONDITION_MAX,
   formatDistanceShort,
   FUEL_MAX,
   maxUgxToFillRemaining,
+  maxUgxToRepairRemaining,
+  normalizeCondition,
   normalizeTankFuel,
   previewFuelPurchase,
+  previewRepairPurchase,
+  UGX_PER_CONDITION_UNIT,
   UGX_PER_FUEL_UNIT,
   useGameStore,
 } from '../store/useGameStore'
 
 /** Quick-buy: whole tank points (capped by room + wallet). */
 const FUEL_POINT_PRESETS = [5, 10, 25, 50] as const
+
+/** Quick-buy: whole condition points (capped by room + wallet). */
+const REPAIR_POINT_PRESETS = [5, 10, 25, 50] as const
 
 /** Tank points (same scale as FUEL_MAX): warn orange at/below this. */
 const FUEL_LOW_ORANGE_AT = 20
@@ -88,6 +96,27 @@ function FuelPumpIcon({ className }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+/** Wrench + spoke — workshop / repair. */
+function WrenchIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.36 6.36a2.83 2.83 0 1 1-4-4l6.36-6.36a6 6 0 0 1 7.94-7.94l-3.77 3.77Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   )
@@ -358,14 +387,23 @@ export function Hud() {
   const speedKmh = useGameStore((s) => s.speedKmh)
   const ledger = useGameStore((s) => s.ledger)
   const buyFuel = useGameStore((s) => s.buyFuel)
+  const buyRepair = useGameStore((s) => s.buyRepair)
 
   const [refuelOpen, setRefuelOpen] = useState(false)
   /** Whole tank points to buy (slider + Pay). Starts at max when you open Refuel. */
   const [pointsToAdd, setPointsToAdd] = useState(1)
   const [pointsStr, setPointsStr] = useState('1')
 
+  const [repairOpen, setRepairOpen] = useState(false)
+  const [repairPointsToAdd, setRepairPointsToAdd] = useState(1)
+  const [repairPointsStr, setRepairPointsStr] = useState('1')
+
   const maxUgxTank = maxUgxToFillRemaining(fuel)
   const canRefuel = maxUgxTank > 0 && money > 0
+
+  const condNorm = normalizeCondition(condition)
+  const maxUgxRepair = maxUgxToRepairRemaining(condition)
+  const canRepair = maxUgxRepair > 0 && money > 0
 
   const maxWholePoints = useMemo(
     () => Math.floor(maxUgxTank / UGX_PER_FUEL_UNIT + Number.EPSILON),
@@ -381,8 +419,27 @@ export function Hud() {
       setPointsToAdd(0)
       setPointsStr('')
     }
+    setRepairOpen(false)
     setRefuelOpen(true)
   }, [maxUgxTank])
+
+  const maxWholeRepairPoints = useMemo(
+    () => Math.floor(maxUgxRepair / UGX_PER_CONDITION_UNIT + Number.EPSILON),
+    [maxUgxRepair],
+  )
+
+  const openRepair = useCallback(() => {
+    const m = Math.floor(maxUgxRepair / UGX_PER_CONDITION_UNIT + Number.EPSILON)
+    if (m >= 1) {
+      setRepairPointsToAdd(m)
+      setRepairPointsStr(String(m))
+    } else {
+      setRepairPointsToAdd(0)
+      setRepairPointsStr('')
+    }
+    setRefuelOpen(false)
+    setRepairOpen(true)
+  }, [maxUgxRepair])
 
   useEffect(() => {
     if (!refuelOpen) return
@@ -392,6 +449,15 @@ export function Hud() {
     }
     setPointsToAdd((p) => clampPoints(p, maxWholePoints))
   }, [refuelOpen, maxWholePoints])
+
+  useEffect(() => {
+    if (!repairOpen) return
+    if (maxWholeRepairPoints < 1) {
+      setRepairPointsToAdd(0)
+      return
+    }
+    setRepairPointsToAdd((p) => clampPoints(p, maxWholeRepairPoints))
+  }, [repairOpen, maxWholeRepairPoints])
 
   const pointsDraft = useMemo(() => parseWholePoints(pointsStr), [pointsStr])
 
@@ -417,10 +483,44 @@ export function Hud() {
     )
   }, [previewPoints, money, fuel])
 
+  const repairPointsDraft = useMemo(
+    () => parseWholePoints(repairPointsStr),
+    [repairPointsStr],
+  )
+
+  const committedRepairPoints = useMemo(
+    () =>
+      maxWholeRepairPoints < 1
+        ? 0
+        : clampPoints(repairPointsToAdd, maxWholeRepairPoints),
+    [maxWholeRepairPoints, repairPointsToAdd],
+  )
+
+  const previewRepairPts = useMemo(() => {
+    if (maxWholeRepairPoints < 1) return 0
+    const d = parseWholePoints(repairPointsStr)
+    if (d.valid) return clampPoints(d.pts, maxWholeRepairPoints)
+    return committedRepairPoints
+  }, [maxWholeRepairPoints, repairPointsStr, committedRepairPoints])
+
+  const repairPurchasePreview = useMemo(() => {
+    if (previewRepairPts < 1) return null
+    return previewRepairPurchase(
+      previewRepairPts * UGX_PER_CONDITION_UNIT,
+      money,
+      condition,
+    )
+  }, [previewRepairPts, money, condition])
+
   const canPayPoints =
     previewPoints >= 1 &&
     purchasePreview != null &&
     purchasePreview.spendUgx > 0
+
+  const canPayRepairPoints =
+    previewRepairPts >= 1 &&
+    repairPurchasePreview != null &&
+    repairPurchasePreview.spendUgx > 0
 
   const rangeLeftM = formatDistanceShort(approxMetersForFuelPoints(fuel))
 
@@ -431,6 +531,14 @@ export function Hud() {
 
   const partialOnly =
     canRefuel && maxWholePoints < 1 && maxUgxTank > 0
+
+  const repairPartialOnly =
+    canRepair && maxWholeRepairPoints < 1 && maxUgxRepair > 0
+
+  const fillRepairPreview = useMemo(
+    () => previewRepairPurchase(Number.MAX_SAFE_INTEGER, money, condition),
+    [money, condition],
+  )
 
   const onPaySubmit = useCallback(() => {
     if (maxWholePoints < 1) return
@@ -457,6 +565,31 @@ export function Hud() {
     [buyFuel, maxWholePoints],
   )
 
+  const onRepairPaySubmit = useCallback(() => {
+    if (maxWholeRepairPoints < 1) return
+    let pts = clampPoints(repairPointsToAdd, maxWholeRepairPoints)
+    const d = parseWholePoints(repairPointsStr)
+    if (d.valid) {
+      pts = clampPoints(d.pts, maxWholeRepairPoints)
+      setRepairPointsToAdd(pts)
+      setRepairPointsStr(String(pts))
+    }
+    if (pts < 1) return
+    buyRepair(pts * UGX_PER_CONDITION_UNIT)
+  }, [buyRepair, maxWholeRepairPoints, repairPointsStr, repairPointsToAdd])
+
+  const buyWholeRepairPoints = useCallback(
+    (pts: number) => {
+      const p = Math.min(
+        Math.max(1, Math.floor(pts)),
+        maxWholeRepairPoints,
+      )
+      if (p < 1) return
+      buyRepair(p * UGX_PER_CONDITION_UNIT)
+    },
+    [buyRepair, maxWholeRepairPoints],
+  )
+
   const onClearAllAndReload = useCallback(() => {
     if (
       !window.confirm(
@@ -469,13 +602,15 @@ export function Hud() {
   }, [])
 
   useEffect(() => {
-    if (!refuelOpen) return
+    if (!refuelOpen && !repairOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setRefuelOpen(false)
+      if (e.key !== 'Escape') return
+      if (repairOpen) setRepairOpen(false)
+      else setRefuelOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [refuelOpen])
+  }, [refuelOpen, repairOpen])
 
   const fuelWarn = fuelLowLevel(fuel)
 
@@ -557,14 +692,22 @@ export function Hud() {
       </div>
 
       <div
-        className="absolute bottom-4 left-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-emerald-500/45 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-700/28 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(6,78,59,0.78)] ring-1 ring-emerald-400/22 backdrop-blur-md"
+        className="pointer-events-auto absolute bottom-4 left-4 max-w-[min(100vw-2rem,300px)] overflow-hidden rounded-xl border-2 border-emerald-500/45 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-700/28 via-zinc-950/92 to-black/90 px-3 py-3 shadow-[0_6px_0_rgba(6,78,59,0.78)] ring-1 ring-emerald-400/22 backdrop-blur-md"
         style={{
           marginBottom: 'max(0px, env(safe-area-inset-bottom))',
           marginLeft: 'max(0px, env(safe-area-inset-left))',
         }}
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-emerald-300/55 to-transparent" />
-        <ConditionArcadeTile value={condition} />
+        <ConditionArcadeTile value={normalizeCondition(condition)} />
+        <button
+          type="button"
+          onClick={openRepair}
+          className={`${gameArcadeBtn} mt-2.5 flex w-full items-center justify-center gap-2 border-teal-500/50 border-b-[6px] border-b-teal-950 bg-linear-to-b from-teal-600 via-teal-700 to-teal-950 py-2.5 text-[11px] text-teal-50 shadow-[0_6px_0_rgba(15,118,110,0.9)] active:border-b-[3px] active:shadow-[0_3px_0_rgba(15,118,110,0.9)] ring-1 ring-teal-300/30`}
+        >
+          <WrenchIcon className="h-4 w-4 shrink-0" />
+          Repair bike
+        </button>
       </div>
 
       <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex w-[min(100vw-2rem,288px)] flex-col gap-2">
@@ -912,6 +1055,302 @@ export function Hud() {
                 </div>
               )}
             </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {repairOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close repair"
+            className="pointer-events-auto fixed inset-0 z-20 bg-black/60 backdrop-blur-[2px]"
+            onClick={() => setRepairOpen(false)}
+          />
+          <div
+            className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-4"
+            style={{
+              paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+            }}
+          >
+            <div
+              className="pointer-events-auto flex max-h-[min(90dvh,680px)] w-full max-w-[380px] flex-col overflow-hidden rounded-2xl border-2 border-teal-500/35 bg-linear-to-b from-teal-950/95 via-zinc-950 to-black shadow-[0_0_48px_rgba(45,212,191,0.12),0_16px_48px_rgba(0,0,0,0.65)] ring-2 ring-teal-400/15"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="repair-modal-title"
+            >
+              <div className="relative shrink-0 bg-linear-to-r from-teal-600/25 via-teal-500/10 to-transparent px-3 py-2">
+                <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-teal-300/50 to-transparent" />
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-teal-400/40 bg-teal-950/80">
+                      <WrenchIcon className="h-5 w-5 text-teal-200" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[8px] font-black uppercase tracking-[0.3em] text-teal-200/70">
+                        Workshop
+                      </p>
+                      <h2
+                        id="repair-modal-title"
+                        className="text-base font-black uppercase italic tracking-wide text-teal-100 drop-shadow-[0_2px_0_rgba(0,0,0,0.85)]"
+                      >
+                        Repair bike
+                      </h2>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRepairOpen(false)}
+                    className={`${gameArcadeBtn} border-rose-700/80 border-b-4 border-b-rose-950 bg-linear-to-b from-rose-600 to-rose-900 px-2.5 py-1 text-base leading-none text-rose-100 shadow-[0_4px_0_rgba(69,10,10,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(69,10,10,0.9)]`}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5 overflow-hidden px-3 pb-3 pt-1.5 text-left">
+                <div className="grid shrink-0 grid-cols-2 gap-1.5">
+                  <div className="rounded-lg border-2 border-teal-600/35 border-b-4 border-b-teal-950 bg-linear-to-b from-teal-900/50 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(15,118,110,0.75)] ring-1 ring-teal-400/15">
+                    <p className="text-[7px] font-black uppercase tracking-widest text-teal-300/80">
+                      Condition max
+                    </p>
+                    <p className="font-mono text-base font-black tabular-nums leading-tight text-teal-100">
+                      {CONDITION_MAX}%
+                    </p>
+                    <p className="mt-0.5 text-[7px] font-bold uppercase leading-tight text-teal-400/70">
+                      {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX = +1 pt
+                    </p>
+                  </div>
+                  <div className="rounded-lg border-2 border-amber-600/40 border-b-4 border-b-amber-950 bg-linear-to-b from-amber-900/40 to-black/80 px-2 py-1.5 shadow-[0_3px_0_rgba(120,53,15,0.8)] ring-1 ring-amber-400/20">
+                    <p className="text-[7px] font-black uppercase tracking-widest text-amber-300/80">
+                      Wallet
+                    </p>
+                    <p className="font-mono text-xs font-black leading-tight tabular-nums text-amber-100">
+                      {money.toLocaleString()}
+                    </p>
+                    <p className="mt-0.5 text-[7px] font-bold uppercase text-amber-500/75">
+                      UGX
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0 rounded-lg border-2 border-emerald-600/35 border-b-4 border-b-emerald-950 bg-linear-to-b from-emerald-950/60 to-black/85 px-2 py-1.5 shadow-[0_3px_0_rgba(6,78,59,0.75)] ring-1 ring-emerald-400/15">
+                  <p className="text-[7px] font-black uppercase tracking-[0.15em] text-emerald-400/85">
+                    Can still restore
+                  </p>
+                  <p className="font-mono text-sm font-black leading-tight text-emerald-100">
+                    {(Math.round((CONDITION_MAX - condNorm) * 10) / 10).toFixed(1)}{' '}
+                    <span className="text-xs font-bold text-emerald-400/90">pts</span>
+                  </p>
+                  {maxUgxRepair > 0 ? (
+                    <p className="mt-0.5 text-[8px] font-bold uppercase leading-tight text-emerald-300/75">
+                      Full fix cap{' '}
+                      <span className="font-mono text-emerald-100">
+                        UGX {maxUgxRepair.toLocaleString()}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[9px] font-black uppercase text-zinc-500">
+                      Bike mint
+                    </p>
+                  )}
+                </div>
+
+                {!canRepair ? (
+                  <div className="shrink-0 rounded-lg border-2 border-zinc-600 bg-zinc-950/90 px-2 py-3 text-center">
+                    <p className="text-xs font-black uppercase italic tracking-wide text-zinc-400">
+                      {maxUgxRepair <= 0 ? 'Condition full' : 'No cash'}
+                    </p>
+                    <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-600">
+                      {maxUgxRepair <= 0
+                        ? 'Ride on!'
+                        : 'Earn UGX to repair'}
+                    </p>
+                  </div>
+                ) : repairPartialOnly ? (
+                  <div className="flex shrink-0 flex-col gap-1">
+                    <p className="text-center text-[9px] font-bold uppercase tracking-wide text-teal-200/80">
+                      Partial repair only
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => buyRepair(maxUgxRepair)}
+                      className={`${gameArcadeBtn} w-full border-cyan-500/50 border-b-[5px] border-b-cyan-950 bg-linear-to-b from-cyan-500 to-cyan-800 py-2 text-xs text-cyan-950 shadow-[0_5px_0_rgba(8,51,68,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,51,68,0.9)]`}
+                    >
+                      Pay {maxUgxRepair.toLocaleString()} UGX
+                      <span className="mt-0.5 block text-[9px] font-mono font-black normal-case tracking-normal">
+                        +{(maxUgxRepair / UGX_PER_CONDITION_UNIT).toFixed(2)} pts
+                      </span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1 overflow-hidden">
+                    <RefuelSectionTitle>Repair load</RefuelSectionTitle>
+                    <p className="shrink-0 text-center text-[8px] font-bold uppercase leading-tight tracking-wide text-zinc-500">
+                      Slide left · less repair · lower cost
+                    </p>
+                    {maxWholeRepairPoints >= 1 ? (
+                      <div className="shrink-0 rounded-lg border-2 border-violet-600/30 border-b-4 border-b-violet-950 bg-linear-to-b from-violet-950/50 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(49,46,129,0.75)] ring-1 ring-violet-400/15">
+                        <div className="flex items-center justify-between font-mono text-xs font-black text-violet-200">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-violet-400/90">
+                            Points
+                          </span>
+                          <span className="tabular-nums">
+                            {previewRepairPts}{' '}
+                            <span className="text-violet-500/80">/</span>{' '}
+                            {maxWholeRepairPoints}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={maxWholeRepairPoints}
+                          step={1}
+                          value={committedRepairPoints}
+                          onChange={(e) => {
+                            const v = Number(e.target.value)
+                            setRepairPointsToAdd(v)
+                            setRepairPointsStr(String(v))
+                          }}
+                          className="mt-1 h-2 w-full cursor-pointer appearance-none rounded-full bg-black/60 accent-violet-400 ring-1 ring-inset ring-violet-500/25 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-teal-300 [&::-webkit-slider-thumb]:bg-teal-400"
+                        />
+                      </div>
+                    ) : null}
+
+                    <RefuelSectionTitle>Manual entry</RefuelSectionTitle>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder={`1 – ${maxWholeRepairPoints}`}
+                      value={repairPointsStr}
+                      onChange={(e) =>
+                        setRepairPointsStr(e.target.value.replace(/[^\d,]/g, ''))
+                      }
+                      onBlur={() => {
+                        const d = parseWholePoints(repairPointsStr)
+                        if (maxWholeRepairPoints < 1) {
+                          setRepairPointsStr('')
+                          return
+                        }
+                        if (!d.valid || repairPointsStr.trim() === '') {
+                          setRepairPointsStr(
+                            String(
+                              clampPoints(
+                                repairPointsToAdd,
+                                maxWholeRepairPoints,
+                              ),
+                            ),
+                          )
+                          return
+                        }
+                        const v = clampPoints(d.pts, maxWholeRepairPoints)
+                        setRepairPointsToAdd(v)
+                        setRepairPointsStr(String(v))
+                      }}
+                      className="shrink-0 w-full rounded-lg border-2 border-b-4 border-zinc-600 border-b-zinc-900 bg-zinc-900/90 px-2 py-1.5 text-center font-mono text-base font-black tabular-nums text-teal-100 shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)] outline-none ring-1 ring-zinc-500/30 placeholder:text-zinc-600 focus:border-teal-500/50 focus:ring-teal-400/30"
+                    />
+                    {!repairPointsDraft.valid && repairPointsStr.trim() !== '' ? (
+                      <p className="shrink-0 text-center text-[9px] font-black uppercase text-rose-400">
+                        Whole numbers only
+                      </p>
+                    ) : null}
+
+                    {repairPurchasePreview && previewRepairPts >= 1 ? (
+                      <div className="shrink-0 rounded-lg border-2 border-teal-500/40 border-b-4 border-b-teal-950 bg-linear-to-b from-teal-950/40 to-black/90 px-2 py-1.5 shadow-[0_3px_0_rgba(15,118,110,0.65)] ring-1 ring-teal-400/25">
+                        <p className="text-center font-mono text-xs font-black text-teal-100">
+                          +{repairPurchasePreview.conditionAdd.toFixed(2)}{' '}
+                          <span className="text-[10px] uppercase text-teal-400/80">
+                            % condition
+                          </span>
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+                          <span>
+                            Cost{' '}
+                            <span className="font-mono text-teal-200">
+                              {repairPurchasePreview.spendUgx.toLocaleString()}
+                            </span>
+                          </span>
+                          <span className="text-zinc-700">|</span>
+                          <span>
+                            After{' '}
+                            <span className="font-mono text-emerald-400">
+                              {repairPurchasePreview.balanceAfter.toLocaleString()}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      disabled={!canPayRepairPoints}
+                      onClick={onRepairPaySubmit}
+                      className={`${gameArcadeBtn} shrink-0 border-lime-500/60 border-b-[5px] border-b-lime-950 bg-linear-to-b from-lime-400 via-lime-500 to-lime-700 py-2 text-xs text-lime-950 shadow-[0_5px_0_rgba(54,83,20,0.95)] active:border-b-2 active:shadow-[0_2px_0_rgba(54,83,20,0.95)] disabled:translate-y-0 disabled:border-b-[5px] disabled:opacity-40 disabled:shadow-[0_5px_0_rgba(54,83,20,0.95)]`}
+                    >
+                      {repairPurchasePreview && repairPurchasePreview.spendUgx > 0
+                        ? `Pay ${repairPurchasePreview.spendUgx.toLocaleString()} UGX`
+                        : 'Pay'}
+                    </button>
+
+                    <RefuelSectionTitle>Quick buy</RefuelSectionTitle>
+                    <div className="grid shrink-0 grid-cols-4 gap-1">
+                      {REPAIR_POINT_PRESETS.map((pts) => {
+                        const capped = Math.min(pts, maxWholeRepairPoints)
+                        const p = previewRepairPurchase(
+                          capped * UGX_PER_CONDITION_UNIT,
+                          money,
+                          condition,
+                        )
+                        const title = `${capped} pts · UGX ${p.spendUgx.toLocaleString()}`
+                        return (
+                          <button
+                            key={pts}
+                            type="button"
+                            title={title}
+                            onClick={() => buyWholeRepairPoints(pts)}
+                            disabled={
+                              !canRepair || capped < 1 || p.spendUgx <= 0
+                            }
+                            className={`${gameArcadeBtn} border-fuchsia-600/45 border-b-4 border-b-fuchsia-950 bg-linear-to-b from-fuchsia-800/80 to-fuchsia-950 px-1 py-1.5 text-[10px] text-fuchsia-100 shadow-[0_4px_0_rgba(74,4,78,0.85)] active:border-b-2 active:shadow-[0_2px_0_rgba(74,4,78,0.85)] disabled:opacity-35`}
+                          >
+                            +{pts}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!canRepair || fillRepairPreview.spendUgx <= 0}
+                      onClick={() => {
+                        buyRepair(Number.MAX_SAFE_INTEGER)
+                        if (maxWholeRepairPoints >= 1) {
+                          setRepairPointsToAdd(maxWholeRepairPoints)
+                          setRepairPointsStr(String(maxWholeRepairPoints))
+                        }
+                      }}
+                      title={
+                        fillRepairPreview.spendUgx > 0
+                          ? `Pay UGX ${fillRepairPreview.spendUgx.toLocaleString()} to max condition`
+                          : undefined
+                      }
+                      className={`${gameArcadeBtn} shrink-0 border-sky-500/50 border-b-4 border-b-sky-950 bg-linear-to-b from-sky-500 to-sky-800 py-1.5 text-[10px] text-sky-50 shadow-[0_4px_0_rgba(8,47,73,0.9)] active:border-b-2 active:shadow-[0_2px_0_rgba(8,47,73,0.9)] disabled:opacity-35`}
+                    >
+                      Full fix —{' '}
+                      {fillRepairPreview.spendUgx > 0
+                        ? `${fillRepairPreview.spendUgx.toLocaleString()} UGX`
+                        : '—'}
+                    </button>
+                    <p className="shrink-0 text-center text-[7px] font-bold uppercase leading-tight tracking-wider text-zinc-600">
+                      × {UGX_PER_CONDITION_UNIT.toLocaleString()} UGX/pt · capped by
+                      100% condition and wallet
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>

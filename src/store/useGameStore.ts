@@ -19,6 +19,15 @@ export const STARTING_MONEY_UGX = 50_000
  */
 export const UGX_PER_FUEL_UNIT = 500
 
+/** Bike condition ceiling (same scale as UI %). */
+export const CONDITION_MAX = 100
+
+/**
+ * Cost to restore 1 condition point. Full repair from 0 = CONDITION_MAX * UGX_PER_CONDITION_UNIT.
+ * Mirrors fuel pricing.
+ */
+export const UGX_PER_CONDITION_UNIT = 500
+
 /**
  * Tank fuel points consumed per world unit (XZ) travelled while moving.
  * Must match consumption in Boda physics.
@@ -59,6 +68,11 @@ export function formatDistanceShort(meters: number): string {
 /** Clamp tank reading and limit float noise (world units, purchases). */
 export function normalizeTankFuel(fuel: number): number {
   const v = Math.max(0, Math.min(FUEL_MAX, fuel))
+  return Math.round(v * 10_000) / 10_000
+}
+
+export function normalizeCondition(c: number): number {
+  const v = Math.max(0, Math.min(CONDITION_MAX, c))
   return Math.round(v * 10_000) / 10_000
 }
 
@@ -110,6 +124,45 @@ export function previewFuelPurchase(
   }
 }
 
+/**
+ * Max whole UGX you can spend on repairs without exceeding CONDITION_MAX.
+ */
+export function maxUgxToRepairRemaining(condition: number): number {
+  const c = normalizeCondition(condition)
+  const remaining = Math.max(0, CONDITION_MAX - c)
+  return Math.floor(remaining * UGX_PER_CONDITION_UNIT + Number.EPSILON)
+}
+
+export type RepairPurchasePreview = {
+  spendUgx: number
+  conditionAdd: number
+  balanceAfter: number
+}
+
+export function previewRepairPurchase(
+  requestedUgx: number,
+  money: number,
+  currentCondition: number,
+): RepairPurchasePreview {
+  const req = Math.max(0, Math.floor(requestedUgx))
+  const wallet = moneyInt(money)
+  const maxSpend = maxUgxToRepairRemaining(currentCondition)
+  if (maxSpend <= 0 || req <= 0) {
+    return {
+      spendUgx: 0,
+      conditionAdd: 0,
+      balanceAfter: wallet,
+    }
+  }
+  const spend = Math.min(req, wallet, maxSpend)
+  const conditionAdd = spend / UGX_PER_CONDITION_UNIT
+  return {
+    spendUgx: spend,
+    conditionAdd,
+    balanceAfter: wallet - spend,
+  }
+}
+
 export type GameState = {
   money: number
   fuel: number
@@ -119,7 +172,7 @@ export type GameState = {
   ledger: WalletTransaction[]
   /**
    * Collisions before this `performance.now()` do not apply stun / condition loss / pedestrian knock
-   * (avoids penalties from initial overlap before React effects run).
+   * (avoids penalties from initial overlap before React effects run). Vehicle strikes use the same grace.
    */
   collisionPenaltiesAfterMs: number
   /**
@@ -141,9 +194,11 @@ export type GameState = {
   spendUgx: (amountUgx: number, label: string) => boolean
   /** Spend up to `ugx` to add fuel; only charges for fuel that fits in the tank. */
   buyFuel: (ugx: number) => void
+  /** Spend up to `ugx` to restore condition; only charges for points that fit below CONDITION_MAX. */
+  buyRepair: (ugx: number) => void
 }
 
-/** Bike–ped knockdown + condition loss (not vehicle bumps). */
+/** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
 export function shouldApplyBikePedestrianInteraction(): boolean {
   const s = useGameStore.getState()
   const now = typeof performance !== 'undefined' ? performance.now() : 0
@@ -156,7 +211,7 @@ export function isProgressPristine(s: GameState): boolean {
   return (
     moneyInt(s.money) === STARTING_MONEY_UGX &&
     normalizeTankFuel(s.fuel) >= FUEL_MAX - 0.02 &&
-    s.condition >= 99.9 &&
+    normalizeCondition(s.condition) >= CONDITION_MAX - 0.02 &&
     s.ledger.length === 0
   )
 }
@@ -212,7 +267,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   setMoney: (money) => set({ money: moneyInt(money) }),
   setFuel: (fuel) => set({ fuel: normalizeTankFuel(fuel) }),
-  setCondition: (condition) => set({ condition }),
+  setCondition: (condition) => set({ condition: normalizeCondition(condition) }),
   setSpeedKmh: (speedKmh) => set({ speedKmh }),
   earnUgx: (amountUgx, label) => {
     const n = Math.max(0, Math.floor(amountUgx))
@@ -254,6 +309,21 @@ export const useGameStore = create<GameState>((set, get) => ({
         kind: 'spend',
         amountUgx: p.spendUgx,
         label: `Fuel (+${p.fuelAdd.toFixed(1)}% tank, ~${formatDistanceShort(p.approxMeters)})`,
+      }),
+    })
+  },
+  buyRepair: (requestedUgx) => {
+    const state = get()
+    const p = previewRepairPurchase(requestedUgx, state.money, state.condition)
+    if (p.spendUgx <= 0) return
+    const nextCondition = normalizeCondition(state.condition + p.conditionAdd)
+    set({
+      money: p.balanceAfter,
+      condition: nextCondition,
+      ledger: appendLedger(state.ledger, {
+        kind: 'spend',
+        amountUgx: p.spendUgx,
+        label: `Bike repair (+${p.conditionAdd.toFixed(1)}% condition)`,
       }),
     })
   },

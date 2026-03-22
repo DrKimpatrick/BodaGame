@@ -51,6 +51,8 @@ const PEDESTRIAN_STUN_MS = 520
 /** Car hit: strong slow + stun only (no ragdoll / wreck — avoids physics + graphics issues). */
 const VEHICLE_STUN_MS = 720
 const CONDITION_LOSS_PEDESTRIAN = 6
+/** Vehicle strike — much harsher than a pedestrian knock. */
+const CONDITION_LOSS_VEHICLE = 32
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
@@ -407,6 +409,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         stunnedUntil.current = Math.max(
           stunnedUntil.current,
           now + VEHICLE_STUN_MS,
+        )
+        const st = useGameStore.getState()
+        st.setCondition(
+          Math.max(0, st.condition - CONDITION_LOSS_VEHICLE),
         )
         return
       }
