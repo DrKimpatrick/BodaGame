@@ -426,18 +426,21 @@ function ConditionRideOverlays({ level }: { level: ConditionAlertLevel }) {
   )
 }
 
-/** Brief red splatter / vignette when the bike hits a pedestrian or is struck by a car. */
+/** Brief red splatter / vignette on impacts (ped, car, illegal riding). */
 function BloodImpactOverlay() {
   const nonce = useGameStore((s) => s.bloodImpactNonce)
   const kind = useGameStore((s) => s.bloodImpactKind)
   const [alpha, setAlpha] = useState(0)
 
-  const fadeMs = kind === 'vehicle' ? 560 : 380
+  const fadeMs =
+    kind === 'vehicle' ? 560 : kind === 'restricted' ? 280 : 380
 
   useEffect(() => {
     if (nonce === 0 || kind === null) return
-    const peak = kind === 'vehicle' ? 0.54 : 0.36
-    const holdMs = kind === 'vehicle' ? 90 : 70
+    const peak =
+      kind === 'vehicle' ? 0.54 : kind === 'restricted' ? 0.24 : 0.36
+    const holdMs =
+      kind === 'vehicle' ? 90 : kind === 'restricted' ? 45 : 70
     setAlpha(peak)
     const t = window.setTimeout(() => setAlpha(0), holdMs)
     return () => window.clearTimeout(t)

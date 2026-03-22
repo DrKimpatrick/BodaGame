@@ -3,7 +3,7 @@
  * Invoked from the game store (not React effects) so StrictMode does not double-play.
  */
 
-export type ImpactKind = 'pedestrian' | 'vehicle'
+export type ImpactKind = 'pedestrian' | 'vehicle' | 'restricted'
 
 const GAME_ROOT = '[data-game-root]'
 
@@ -22,6 +22,8 @@ function pulseHaptic(kind: ImpactKind) {
   try {
     if (kind === 'vehicle') {
       navigator.vibrate([90, 35, 110, 40, 95, 30, 70])
+    } else if (kind === 'restricted') {
+      navigator.vibrate([16, 12, 22])
     } else {
       navigator.vibrate([38, 22, 48])
     }
@@ -35,12 +37,13 @@ function shakeGameRoot(kind: ImpactKind) {
   const el = document.querySelector(GAME_ROOT)
   if (!el) return
   const strong = kind === 'vehicle'
+  const soft = kind === 'restricted'
   el.classList.remove('impact-shake', 'impact-shake-strong')
   void el.getBoundingClientRect()
   el.classList.add(strong ? 'impact-shake-strong' : 'impact-shake')
   window.setTimeout(() => {
     el.classList.remove('impact-shake', 'impact-shake-strong')
-  }, strong ? 480 : 320)
+  }, strong ? 480 : soft ? 240 : 320)
 }
 
 function playPedThud(ctx: AudioContext) {
@@ -132,6 +135,30 @@ function playVehicleKnock(ctx: AudioContext) {
   clang.stop(t + 0.2)
 }
 
+/** Rough illegal-zone riding — quiet scrape so ~1 Hz ticks are not harsh. */
+function playRestrictedTerrain(ctx: AudioContext) {
+  const t = ctx.currentTime
+  const dur = 0.09
+  const nSamples = Math.floor(ctx.sampleRate * dur)
+  const buffer = ctx.createBuffer(1, nSamples, ctx.sampleRate)
+  const ch = buffer.getChannelData(0)
+  for (let i = 0; i < nSamples; i++) ch[i] = Math.random() * 2 - 1
+  const src = ctx.createBufferSource()
+  src.buffer = buffer
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 520
+  bp.Q.value = 0.55
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.065, t)
+  g.gain.exponentialRampToValueAtTime(0.006, t + 0.08)
+  src.connect(bp)
+  bp.connect(g)
+  g.connect(ctx.destination)
+  src.start(t)
+  src.stop(t + dur + 0.02)
+}
+
 export function playBloodImpactFeedback(kind: ImpactKind) {
   pulseHaptic(kind)
   shakeGameRoot(kind)
@@ -140,6 +167,7 @@ export function playBloodImpactFeedback(kind: ImpactKind) {
   if (!ctx) return
   void ctx.resume().then(() => {
     if (kind === 'vehicle') playVehicleKnock(ctx)
+    else if (kind === 'restricted') playRestrictedTerrain(ctx)
     else playPedThud(ctx)
   })
 }

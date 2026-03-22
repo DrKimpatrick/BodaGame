@@ -60,8 +60,11 @@ export type WalletTransaction = {
   label: string
 }
 
-/** Bike hit a walker vs got struck by traffic — drives HUD blood splatter intensity. */
-export type BloodImpactKind = 'pedestrian' | 'vehicle'
+/**
+ * Bike hit a walker vs got struck by traffic vs illegal / rough off-network riding —
+ * drives HUD blood splatter intensity.
+ */
+export type BloodImpactKind = 'pedestrian' | 'vehicle' | 'restricted'
 
 function nextId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID

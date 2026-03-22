@@ -71,6 +71,11 @@ const POTHOLE_STRIKE_OUT = 0.052
 const POTHOLE_STRIKE_MIN_SPEED = 0.72
 const POTHOLE_STRIKE_COOLDOWN_MS = 480
 
+/** Off-network / not allowed surface — periodic condition + blood HUD while moving. */
+const CONDITION_LOSS_RESTRICTED_TICK = 1.1
+const RESTRICTED_ZONE_DAMAGE_INTERVAL_MS = 1020
+const RESTRICTED_ZONE_MIN_SPEED = 0.24
+
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
 /** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
@@ -441,6 +446,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const potholeJolt = useRef(0)
   /** Decays after hitting static geometry — rebound pitch / roll. */
   const buildingHitJolt = useRef(0)
+  const restrictedZoneDamageNextMs = useRef(0)
 
   const forward = useMemo(() => new THREE.Vector3(), [])
   const quat = useMemo(() => new THREE.Quaternion(), [])
@@ -638,6 +644,23 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     }
 
     const speedAbs = Math.abs(speed.current)
+
+    if (!drivable && !brokenDown && speedAbs > RESTRICTED_ZONE_MIN_SPEED) {
+      const nowZ = performance.now()
+      const stZ = useGameStore.getState()
+      if (
+        nowZ >= stZ.collisionPenaltiesAfterMs &&
+        nowZ >= restrictedZoneDamageNextMs.current
+      ) {
+        restrictedZoneDamageNextMs.current =
+          nowZ + RESTRICTED_ZONE_DAMAGE_INTERVAL_MS
+        stZ.setCondition(
+          Math.max(0, stZ.condition - CONDITION_LOSS_RESTRICTED_TICK),
+        )
+        stZ.triggerBloodImpactFlash('restricted')
+      }
+    }
+
     const speed01 = THREE.MathUtils.clamp(speedAbs / MAX_FORWARD, 0, 1)
     const targetBank =
       -steer * speed01 * 0.42 +
