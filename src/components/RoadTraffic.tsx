@@ -37,6 +37,21 @@ const LANE_OFF_OUTER = Math.min(0.95, ROAD_HALF - 0.92)
 function lateralOffsetFromSlot(slot: number): number {
   return slot === 0 ? LANE_OFF_INNER : LANE_OFF_OUTER
 }
+/**
+ * Uganda keep-left routing: for each heading, place vehicles on the left carriageway.
+ * Vertical roads offset on X, horizontal roads offset on Z.
+ */
+function laneOffsetForHeading(
+  mode: 'v' | 'h',
+  heading: Heading,
+  laneSlot: number,
+): number {
+  const mag = lateralOffsetFromSlot(laneSlot)
+  if (mode === 'v') {
+    return heading === 'N' ? -mag : mag
+  }
+  return heading === 'E' ? mag : -mag
+}
 /** Two logical slots per strip (inner vs outer track on same carriageway). */
 const LANES_PER_STRIP = 2
 
@@ -184,7 +199,7 @@ function pickNextAtIntersection(
     if (a.slot.t === 'v') occV[a.slot.idx] = false
     else occH[a.slot.idx] = false
   }
-  const claimV = (viStrip: number, laneSlot: number) => {
+  const claimV = (viStrip: number, laneSlot: number, heading: Heading) => {
     releaseOld()
     const idx = flatOccV(viStrip, laneSlot)
     occV[idx] = true
@@ -192,9 +207,9 @@ function pickNextAtIntersection(
     a.mode = 'v'
     a.vi = viStrip
     a.laneSlot = laneSlot
-    a.laneV = lateralOffsetFromSlot(laneSlot)
+    a.laneV = laneOffsetForHeading('v', heading, laneSlot)
   }
-  const claimH = (hjStrip: number, laneSlot: number) => {
+  const claimH = (hjStrip: number, laneSlot: number, heading: Heading) => {
     releaseOld()
     const idx = flatOccH(hjStrip, laneSlot)
     occH[idx] = true
@@ -202,7 +217,7 @@ function pickNextAtIntersection(
     a.mode = 'h'
     a.hj = hjStrip
     a.laneSlot = laneSlot
-    a.laneH = lateralOffsetFromSlot(laneSlot)
+    a.laneH = laneOffsetForHeading('h', heading, laneSlot)
   }
 
   if (a.mode === 'v') {
@@ -214,9 +229,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'N'
-            a.laneV =
-              a.laneV * 0.8 +
-              lateralOffsetFromSlot(a.laneSlot) * 0.2
+            a.laneV = laneOffsetForHeading('v', 'N', a.laneSlot)
             a.x = cx + a.laneV
             a.z = cz
           },
@@ -227,8 +240,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimH(j, lH)
               a.heading = 'W'
+              claimH(j, lH, a.heading)
               a.x = cx
               a.z = cz + a.laneH
             },
@@ -240,8 +253,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimH(j, lH)
               a.heading = 'E'
+              claimH(j, lH, a.heading)
               a.x = cx
               a.z = cz + a.laneH
             },
@@ -253,9 +266,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'S'
-            a.laneV =
-              a.laneV * 0.8 +
-              lateralOffsetFromSlot(a.laneSlot) * 0.2
+            a.laneV = laneOffsetForHeading('v', 'S', a.laneSlot)
             a.x = cx + a.laneV
             a.z = cz
           },
@@ -266,8 +277,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimH(j, lH)
               a.heading = 'E'
+              claimH(j, lH, a.heading)
               a.x = cx
               a.z = cz + a.laneH
             },
@@ -279,8 +290,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimH(j, lH)
               a.heading = 'W'
+              claimH(j, lH, a.heading)
               a.x = cx
               a.z = cz + a.laneH
             },
@@ -297,9 +308,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'E'
-            a.laneH =
-              a.laneH * 0.8 +
-              lateralOffsetFromSlot(a.laneSlot) * 0.2
+            a.laneH = laneOffsetForHeading('h', 'E', a.laneSlot)
             a.x = cx
             a.z = cz0 + a.laneH
           },
@@ -310,8 +319,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimV(vi, lV)
               a.heading = 'N'
+              claimV(vi, lV, a.heading)
               a.x = roadStripCenterX(vi) + a.laneV
               a.z = cz0
             },
@@ -323,8 +332,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimV(vi, lV)
               a.heading = 'S'
+              claimV(vi, lV, a.heading)
               a.x = roadStripCenterX(vi) + a.laneV
               a.z = cz0
             },
@@ -336,9 +345,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'W'
-            a.laneH =
-              a.laneH * 0.8 +
-              lateralOffsetFromSlot(a.laneSlot) * 0.2
+            a.laneH = laneOffsetForHeading('h', 'W', a.laneSlot)
             a.x = cx
             a.z = cz0 + a.laneH
           },
@@ -349,8 +356,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimV(vi, lV)
               a.heading = 'N'
+              claimV(vi, lV, a.heading)
               a.x = roadStripCenterX(vi) + a.laneV
               a.z = cz0
             },
@@ -362,8 +369,8 @@ function pickNextAtIntersection(
           opts.push({
             w: 0.32,
             go: () => {
-              claimV(vi, lV)
               a.heading = 'S'
+              claimV(vi, lV, a.heading)
               a.x = roadStripCenterX(vi) + a.laneV
               a.z = cz0
             },
@@ -379,13 +386,13 @@ function pickNextAtIntersection(
     a.laneSlot = ls
     if (a.mode === 'v') {
       a.heading = a.heading === 'N' ? 'S' : 'N'
-      a.laneV = lateralOffsetFromSlot(ls)
+      a.laneV = laneOffsetForHeading('v', a.heading, ls)
       a.x = cxu + a.laneV
       a.z = czu
     } else {
       const czh = roadStripCenterZ(jNode)
       a.heading = a.heading === 'E' ? 'W' : 'E'
-      a.laneH = lateralOffsetFromSlot(ls)
+      a.laneH = laneOffsetForHeading('h', a.heading, ls)
       a.x = cxu
       a.z = czh + a.laneH
     }
@@ -408,7 +415,8 @@ const LANE_SPAWN_STAGGER = 3.1
 
 function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
   const north = segmentRandom(vi, salt, 801) < 0.5
-  const loff = lateralOffsetFromSlot(laneSlot)
+  const heading: Heading = north ? 'N' : 'S'
+  const loff = laneOffsetForHeading('v', heading, laneSlot)
   const cx = roadStripCenterX(vi)
   const k = pickKind(vi * 97 + salt + laneSlot * 13)
   const zOff = laneSlot * LANE_SPAWN_STAGGER
@@ -421,7 +429,7 @@ function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
     laneSlot,
     laneV: loff,
     laneH: 0,
-    heading: north ? 'N' : 'S',
+    heading,
     x: cx + loff,
     z: north
       ? Z0 - SPAWN_BEYOND + EDGE + zOff
@@ -432,7 +440,8 @@ function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
 
 function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
   const east = segmentRandom(hj, salt, 811) < 0.5
-  const loff = lateralOffsetFromSlot(laneSlot)
+  const heading: Heading = east ? 'E' : 'W'
+  const loff = laneOffsetForHeading('h', heading, laneSlot)
   const cz = roadStripCenterZ(hj)
   const k = pickKind(hj * 89 + salt + laneSlot * 11)
   const xOff = laneSlot * LANE_SPAWN_STAGGER
@@ -445,7 +454,7 @@ function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
     laneSlot,
     laneV: 0,
     laneH: loff,
-    heading: east ? 'E' : 'W',
+    heading,
     x: east
       ? X0 - SPAWN_BEYOND + EDGE + xOff
       : X1 + SPAWN_BEYOND - EDGE - xOff,

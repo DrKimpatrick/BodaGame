@@ -55,12 +55,6 @@ const ACCEL = 28
 const REVERSE_ACCEL_SCALE = 1.4
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
-/** Idle roll on tarmac when not accelerating (m/s); below {@link JOB_ARRIVE_SPEED} so pickups can still complete. */
-const COAST_MIN_SPEED = 1.08
-const COAST_MIN_SPEED_OFFROAD = 1.22
-/** How quickly forward speed eases toward coast minimum (higher = snappier). */
-const COAST_SETTLE_RATE = 2.35
-const COAST_SETTLE_RATE_OFFROAD = 1.75
 const BRAKE_DECEL = 42
 /**
  * Off-limits / shoulder / deep grass: much higher top speed and thrust than
@@ -107,8 +101,6 @@ function stepGasBrakeCoastSpeed(params: {
   speedRef: { current: number }
   gas: boolean
   brake: boolean
-  coastMin: number
-  coastSettleRate: number
   accel: number
   brakeDecel: number
   reverseDragPerS: number
@@ -118,8 +110,6 @@ function stepGasBrakeCoastSpeed(params: {
     speedRef,
     gas,
     brake,
-    coastMin,
-    coastSettleRate,
     accel,
     brakeDecel,
     reverseDragPerS,
@@ -135,8 +125,8 @@ function stepGasBrakeCoastSpeed(params: {
     s += accel * dt
     s *= Math.exp(-frictionLight * dt)
   } else if (!brake && s > 0.04) {
-    const blend = 1 - Math.exp(-coastSettleRate * dt)
-    s += (coastMin - s) * blend
+    s *= Math.exp(-FRICTION * dt)
+    if (s < 0.06) s = 0
   } else if (brake && Math.abs(s) <= 0.04 && !gas) {
     s -= accel * REVERSE_ACCEL_SCALE * dt
   } else if (s < -0.04) {
@@ -756,8 +746,6 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           speedRef: speed,
           gas,
           brake,
-          coastMin: COAST_MIN_SPEED,
-          coastSettleRate: COAST_SETTLE_RATE,
           accel: ACCEL,
           brakeDecel: BRAKE_DECEL,
           reverseDragPerS: FRICTION * 0.55,
@@ -776,8 +764,6 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         speedRef: speed,
         gas,
         brake,
-        coastMin: COAST_MIN_SPEED_OFFROAD,
-        coastSettleRate: COAST_SETTLE_RATE_OFFROAD,
         accel: ACCEL * OFFROAD_ACCEL_SCALE,
         brakeDecel: BRAKE_DECEL * 0.92,
         reverseDragPerS: FRICTION * 0.58,

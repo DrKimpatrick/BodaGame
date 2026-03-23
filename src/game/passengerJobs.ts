@@ -14,6 +14,10 @@ export type RideJobPhase = 'pickup' | 'carrying'
 export type RideStop = {
   x: number
   z: number
+  /** Which road orientation this stop sits beside; used for bay rendering/orientation. */
+  roadAxis: 'vertical' | 'horizontal'
+  /** +1 / -1 side from strip center along the cross-axis. */
+  sideSign: 1 | -1
   /** Short label for HUD / billboard */
   name: string
 }
@@ -144,7 +148,13 @@ function stopOnRoadsideVertical(
     ROAD_W / 2 + SIDEWALK_WIDTH * 0.52 + 0.14
   const side = segmentRandom(seed, salt, 12) < 0.5 ? 1 : -1
   const x = cx + side * shoulder
-  return { x, z, name: stopName(seed, salt + 20) }
+  return {
+    x,
+    z,
+    roadAxis: 'vertical',
+    sideSign: side as 1 | -1,
+    name: stopName(seed, salt + 20),
+  }
 }
 
 /** Beside E–W carriageway (murram shoulder), not in the lane. */
@@ -165,7 +175,13 @@ function stopOnRoadsideHorizontal(
     ROAD_W / 2 + SIDEWALK_WIDTH * 0.52 + 0.14
   const side = segmentRandom(seed, salt, 14) < 0.5 ? 1 : -1
   const z = cz + side * shoulder
-  return { x, z, name: stopName(seed, salt + 21) }
+  return {
+    x,
+    z,
+    roadAxis: 'horizontal',
+    sideSign: side as 1 | -1,
+    name: stopName(seed, salt + 21),
+  }
 }
 
 function randomRoadsideStop(serial: number, tries: number, saltBase: number): RideStop {

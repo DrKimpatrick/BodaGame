@@ -13,6 +13,7 @@ import { ThirdPersonCamera } from './ThirdPersonCamera'
 import { JobRouteGuide } from './JobRouteGuide'
 import { JobTargetPin } from './JobTargetPin'
 import { JobWaitingPassenger } from './JobWaitingPassenger'
+import { JobParkingBays } from './JobParkingBays'
 
 export function GameScene() {
   const bodaRef = useRef<RapierRigidBody>(null)
@@ -71,6 +72,7 @@ export function GameScene() {
       </Physics>
       <JobTargetPin />
       <JobWaitingPassenger />
+      <JobParkingBays />
     </>
   )
 }
