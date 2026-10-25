@@ -1,0 +1,12 @@
+{
+  "name": "Women on Wheels: Road Rules",
+  "short_name": "Road Rules",
+  "description": "Learn Uganda's road signs and rules by riding a boda boda through Kampala.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0f1014",
+  "theme_color": "#0f1014",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,4 +1,4 @@
-import { NUM_BLOCKS, ROAD_W, roadStripCenterX, roadStripCenterZ } from './cityGrid'
+import { ewHalf, ewKind, NUM_BLOCKS, nsHalf, nsKind, roadStripCenterX, roadStripCenterZ } from './cityGrid'
 import { SIDEWALK_WIDTH } from './roadSpatial'
 
 export function segmentRandom(a: number, b: number, salt: number) {
@@ -13,6 +13,8 @@ export function listZebraVerticalSites(): ZebraVerticalSite[] {
   const out: ZebraVerticalSite[] = []
   for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
     const cx = roadStripCenterX(vi)
+    // Murram roads have no zebra crossings.
+    if (nsKind(vi) === 'murram') continue
     for (let j = 0; j < NUM_BLOCKS; j++) {
       if (segmentRandom(vi, j, 505) > 0.28) continue
       const z = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
@@ -26,6 +28,7 @@ export function listZebraHorizontalSites(): ZebraHorizontalSite[] {
   const out: ZebraHorizontalSite[] = []
   for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
     const cz = roadStripCenterZ(hj)
+    if (ewKind(hj) === 'murram') continue
     for (let i = 0; i < NUM_BLOCKS; i++) {
       if (segmentRandom(i, hj, 606) > 0.28) continue
       const x = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
@@ -35,7 +38,8 @@ export function listZebraHorizontalSites(): ZebraHorizontalSite[] {
   return out
 }
 
-const SEG_MARGIN = 2.2
+/** Gap between a pavement walk and the crossing road's edge. */
+const SEG_MARGIN = 1.2
 
 export type SidewalkAlongVertical = {
   key: string
@@ -49,15 +53,15 @@ export type SidewalkAlongVertical = {
 /** Murram strip beside N–S carriageways (pedestrians walk ±Z). */
 export function listSidewalkAlongVertical(): SidewalkAlongVertical[] {
   const out: SidewalkAlongVertical[] = []
-  const hw = ROAD_W / 2
   const ox = SIDEWALK_WIDTH * 0.38
   for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
     const cx = roadStripCenterX(vi)
+    const hw = nsHalf(vi)
     for (let j = 0; j < NUM_BLOCKS; j++) {
       /** Murram / shoulder strips with walkers (~55% of segments skipped). */
       if (segmentRandom(vi, j, 750) > 0.55) continue
-      const z0 = roadStripCenterZ(j) + SEG_MARGIN
-      const z1 = roadStripCenterZ(j + 1) - SEG_MARGIN
+      const z0 = roadStripCenterZ(j) + ewHalf(j) + SEG_MARGIN
+      const z1 = roadStripCenterZ(j + 1) - ewHalf(j + 1) - SEG_MARGIN
       if (z1 <= z0 + 2) continue
       const east = segmentRandom(vi, j, 751) < 0.5
       const x = east ? cx + hw + ox : cx - hw - ox
@@ -79,14 +83,14 @@ export type SidewalkAlongHorizontal = {
 /** Murram strip beside E–W carriageways (pedestrians walk ±X). */
 export function listSidewalkAlongHorizontal(): SidewalkAlongHorizontal[] {
   const out: SidewalkAlongHorizontal[] = []
-  const hw = ROAD_W / 2
   const oz = SIDEWALK_WIDTH * 0.38
   for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
     const cz = roadStripCenterZ(hj)
+    const hw = ewHalf(hj)
     for (let i = 0; i < NUM_BLOCKS; i++) {
       if (segmentRandom(i, hj, 752) > 0.55) continue
-      const x0 = roadStripCenterX(i) + SEG_MARGIN
-      const x1 = roadStripCenterX(i + 1) - SEG_MARGIN
+      const x0 = roadStripCenterX(i) + nsHalf(i) + SEG_MARGIN
+      const x1 = roadStripCenterX(i + 1) - nsHalf(i + 1) - SEG_MARGIN
       if (x1 <= x0 + 2) continue
       const north = segmentRandom(i, hj, 753) < 0.5
       const z = north ? cz + hw + oz : cz - hw - oz

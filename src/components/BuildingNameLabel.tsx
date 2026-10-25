@@ -69,7 +69,7 @@ export function BuildingNameLabel({
   })
 
   return (
-    <mesh ref={meshRef} position={position} renderOrder={4}>
+    <mesh ref={meshRef} position={position} renderOrder={4} userData={{ dynamic: true }}>
       <planeGeometry args={[width, h]} />
       <meshBasicMaterial
         map={map}

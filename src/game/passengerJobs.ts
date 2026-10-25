@@ -2,7 +2,8 @@ import {
   CITY_START,
   CITY_TOTAL,
   NUM_BLOCKS,
-  ROAD_W,
+  ewHalf,
+  nsHalf,
   roadStripCenterX,
   roadStripCenterZ,
 } from './cityGrid'
@@ -144,8 +145,7 @@ function stopOnRoadsideVertical(
   const halfRun = Math.abs(z1 - z0) / 2
   const zJitter = (segmentRandom(seed, salt, 11) - 0.5) * Math.min(halfRun * 0.55, 10)
   const z = mid + zJitter
-  const shoulder =
-    ROAD_W / 2 + SIDEWALK_WIDTH * 0.52 + 0.14
+  const shoulder = nsHalf(vi) + SIDEWALK_WIDTH * 0.52 + 0.14
   const side = segmentRandom(seed, salt, 12) < 0.5 ? 1 : -1
   const x = cx + side * shoulder
   return {
@@ -171,8 +171,7 @@ function stopOnRoadsideHorizontal(
   const halfRun = Math.abs(x1 - x0) / 2
   const xJitter = (segmentRandom(seed, salt, 13) - 0.5) * Math.min(halfRun * 0.55, 10)
   const x = mid + xJitter
-  const shoulder =
-    ROAD_W / 2 + SIDEWALK_WIDTH * 0.52 + 0.14
+  const shoulder = ewHalf(hj) + SIDEWALK_WIDTH * 0.52 + 0.14
   const side = segmentRandom(seed, salt, 14) < 0.5 ? 1 : -1
   const z = cz + side * shoulder
   return {
@@ -234,7 +233,11 @@ export function rideRecordTimeLimitMs(pathMeters: number): number {
   return Math.min(RIDE_RECORD_MAX_MS, Math.max(RIDE_RECORD_MIN_MS, raw))
 }
 
-const MIN_LEG_M = 38
+const MIN_LEG_M = 90
+/** Keep trips to a few minutes' ride across the bigger city. */
+const MAX_LEG_M = 420
+/** Furthest a new passenger waits from the rider (m, along the streets). */
+const MAX_PICKUP_M = 170
 /** Fares scaled so a typical job comfortably covers fuel burn + wear (repairs are cheaper per pt). */
 const PAYOUT_BASE = 28_000
 const PAYOUT_PER_100M = 11_000
@@ -242,15 +245,22 @@ const PAYOUT_PER_100M = 11_000
 /**
  * Deterministic job from serial. Pickup / drop are on murram shoulders beside carriageways, not in lanes.
  */
-export function generateRideJob(serial: number): RideJob {
+export function generateRideJob(serial: number, from?: { x: number; z: number }): RideJob {
   let pickup: RideStop
   let dropoff: RideStop
   let tries = 0
+  // Passengers flag the rider down nearby: keep the ride to the pickup short when we know where she is.
+  const farFromRider = (p: RideStop) => from != null && Math.abs(p.x - from.x) + Math.abs(p.z - from.z) > MAX_PICKUP_M
   do {
     pickup = randomRoadsideStop(serial, tries, 901)
     dropoff = randomRoadsideStop(serial, tries, 920)
     tries++
-  } while (manhattanStripMeters(pickup, dropoff) < MIN_LEG_M && tries < 55)
+  } while (
+    (manhattanStripMeters(pickup, dropoff) < MIN_LEG_M ||
+      manhattanStripMeters(pickup, dropoff) > MAX_LEG_M ||
+      (tries < 140 && farFromRider(pickup))) &&
+    tries < 160
+  )
 
   const m = manhattanStripMeters(pickup, dropoff)
   const payoutUgx = Math.floor(

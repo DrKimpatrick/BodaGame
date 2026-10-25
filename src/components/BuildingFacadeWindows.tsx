@@ -137,10 +137,11 @@ export function MidriseWindowGrids({
   const d = footprintD
   const baseY = meshCenterY - totalHeight / 2
   const rowH = totalHeight / floors
-  const colsX = Math.max(3, Math.min(14, Math.floor(w / 0.42)))
-  const colsZ = Math.max(3, Math.min(14, Math.floor(d / 0.42)))
-  const winW = Math.min(0.3, (w - 0.35) / colsX - 0.06)
-  const winH = Math.min(0.38, rowH - 0.12)
+  // Real-scale windows: ~1.4 m wide on a ~2.3 m rhythm, 1.6 m tall per 3.1 m floor.
+  const colsX = Math.max(2, Math.min(10, Math.floor(w / 2.3)))
+  const colsZ = Math.max(2, Math.min(10, Math.floor(d / 2.3)))
+  const winW = Math.min(1.4, (w - 0.8) / colsX - 0.5)
+  const winH = Math.min(1.6, rowH - 1.2)
 
   const panes: ReactNode[] = []
   let idx = 0

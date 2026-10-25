@@ -1,7 +1,7 @@
 /**
  * Speed humps, potholes, and shared placement math for road visuals + bike feedback.
  */
-import { NUM_BLOCKS, ROAD_W, roadStripCenterX, roadStripCenterZ } from './cityGrid'
+import { ewHalf, ewKind, NUM_BLOCKS, nsHalf, nsKind, roadStripCenterX, roadStripCenterZ, type RoadKind } from './cityGrid'
 import {
   segmentRandom,
   ZEBRA_HORIZONTAL_SITES,
@@ -11,12 +11,11 @@ import {
 export const ROAD_TOP_Y = 0.06
 export const HUMP_HALF_H = 0.1
 export const HUMP_ALONG = 1.28
-/** Ellipsoid semi-axes in XZ (matches scaled unit sphere in RoadNetwork). */
-export const HUMP_AX = ROAD_W * 0.4
+/** Along-road semi-axis of a hump; the across-road semi-axis is per site (`ax`, 80% of the road half). */
 export const HUMP_AZ = HUMP_ALONG
 
-export type SpeedHumpVertical = { key: string; cx: number; z: number }
-export type SpeedHumpHorizontal = { key: string; x: number; cz: number }
+export type SpeedHumpVertical = { key: string; cx: number; z: number; ax: number }
+export type SpeedHumpHorizontal = { key: string; x: number; cz: number; ax: number }
 
 /** Hump centre offset along traffic (±Z or ±X) before the zebra deck. */
 const ZEBRA_HUMP_LEAD = 2.42
@@ -34,11 +33,13 @@ export function listSpeedHumpSites(): {
       key: `hzv-${z.key}-s`,
       cx: z.cx,
       z: z.z - ZEBRA_HUMP_LEAD,
+      ax: nsHalf(z.vi) * 0.8,
     })
     vertical.push({
       key: `hzv-${z.key}-n`,
       cx: z.cx,
       z: z.z + ZEBRA_HUMP_LEAD,
+      ax: nsHalf(z.vi) * 0.8,
     })
   }
   const horizontal: SpeedHumpHorizontal[] = []
@@ -47,11 +48,13 @@ export function listSpeedHumpSites(): {
       key: `hzh-${h.key}-w`,
       x: h.x - ZEBRA_HUMP_LEAD,
       cz: h.cz,
+      ax: ewHalf(h.hj) * 0.8,
     })
     horizontal.push({
       key: `hzh-${h.key}-e`,
       x: h.x + ZEBRA_HUMP_LEAD,
       cz: h.cz,
+      ax: ewHalf(h.hj) * 0.8,
     })
   }
   return { vertical, horizontal }
@@ -66,9 +69,10 @@ export type PotholeSite = {
   depth: number
 }
 
-/** Potholes per road block along a strip (2–5). */
-function potholeCount(a: number, b: number, salt: number): number {
-  return 2 + Math.floor(segmentRandom(a, b, salt) * 3.001)
+/** Potholes per road block: few on the main roads, many on side streets and murram. */
+function potholeCount(a: number, b: number, salt: number, kind: RoadKind): number {
+  const base = kind === 'murram' ? 5 : kind === 'street' ? 3 : kind === 'main' ? 1 : 0
+  return base + Math.floor(segmentRandom(a, b, salt) * 3.001)
 }
 
 export function listPotholeSites(): PotholeSite[] {
@@ -77,10 +81,10 @@ export function listPotholeSites(): PotholeSite[] {
     const cx = roadStripCenterX(vi)
     for (let j = 0; j < NUM_BLOCKS; j++) {
       const mid = (roadStripCenterZ(j) + roadStripCenterZ(j + 1)) / 2
-      const n = potholeCount(vi, j, 947)
+      const n = potholeCount(vi, j, 947, nsKind(vi))
       for (let k = 0; k < n; k++) {
         const z = mid + (segmentRandom(vi, j, 948 + k * 17) - 0.5) * 21
-        const x = cx + (segmentRandom(vi, j, 949 + k * 17) - 0.5) * ROAD_W * 0.78
+        const x = cx + (segmentRandom(vi, j, 949 + k * 17) - 0.5) * nsHalf(vi) * 1.56
         const r = 0.42 + segmentRandom(vi, j, 950 + k * 17) * 0.62
         const depth = 0.45 + segmentRandom(vi, j, 951 + k * 17) * 0.55
         out.push({ key: `ph-v-${vi}-${j}-${k}`, x, z, r, depth })
@@ -91,10 +95,10 @@ export function listPotholeSites(): PotholeSite[] {
     const cz = roadStripCenterZ(hj)
     for (let i = 0; i < NUM_BLOCKS; i++) {
       const mid = (roadStripCenterX(i) + roadStripCenterX(i + 1)) / 2
-      const n = potholeCount(i, hj, 952)
+      const n = potholeCount(i, hj, 952, ewKind(hj))
       for (let k = 0; k < n; k++) {
         const x = mid + (segmentRandom(i, hj, 953 + k * 17) - 0.5) * 21
-        const z = cz + (segmentRandom(i, hj, 954 + k * 17) - 0.5) * ROAD_W * 0.78
+        const z = cz + (segmentRandom(i, hj, 954 + k * 17) - 0.5) * ewHalf(hj) * 1.56
         const r = 0.4 + segmentRandom(i, hj, 955 + k * 17) * 0.58
         const depth = 0.45 + segmentRandom(i, hj, 956 + k * 17) * 0.55
         out.push({ key: `ph-h-${i}-${hj}-${k}`, x, z, r, depth })
@@ -104,17 +108,17 @@ export function listPotholeSites(): PotholeSite[] {
   return out
 }
 
-function ynOnVerticalHump(tx: number, tz: number, cx: number, z: number): number {
-  const xn = (tx - cx) / HUMP_AX
+function ynOnVerticalHump(tx: number, tz: number, cx: number, z: number, ax: number): number {
+  const xn = (tx - cx) / ax
   const zn = (tz - z) / HUMP_AZ
   const s = xn * xn + zn * zn
   if (s >= 1) return 0
   return Math.sqrt(1 - s)
 }
 
-function ynOnHorizontalHump(tx: number, tz: number, x: number, cz: number): number {
+function ynOnHorizontalHump(tx: number, tz: number, x: number, cz: number, ax: number): number {
   const xn = (tx - x) / HUMP_ALONG
-  const zn = (tz - cz) / HUMP_AX
+  const zn = (tz - cz) / ax
   const s = xn * xn + zn * zn
   if (s >= 1) return 0
   return Math.sqrt(1 - s)
@@ -169,16 +173,16 @@ export function sampleRoadSurfaceBikeEffect(
   let best: { yn: number; grad: number } | null = null
 
   for (const p of vertical) {
-    const yn = ynOnVerticalHump(tx, tz, p.cx, p.z)
+    const yn = ynOnVerticalHump(tx, tz, p.cx, p.z, p.ax)
     if (yn <= 0) continue
-    const ynF = ynOnVerticalHump(tx + forwardX * eps, tz + forwardZ * eps, p.cx, p.z)
+    const ynF = ynOnVerticalHump(tx + forwardX * eps, tz + forwardZ * eps, p.cx, p.z, p.ax)
     const g = (ynF - yn) / eps
     if (!best || yn > best.yn) best = { yn, grad: g }
   }
   for (const p of horizontal) {
-    const yn = ynOnHorizontalHump(tx, tz, p.x, p.cz)
+    const yn = ynOnHorizontalHump(tx, tz, p.x, p.cz, p.ax)
     if (yn <= 0) continue
-    const ynF = ynOnHorizontalHump(tx + forwardX * eps, tz + forwardZ * eps, p.x, p.cz)
+    const ynF = ynOnHorizontalHump(tx + forwardX * eps, tz + forwardZ * eps, p.x, p.cz, p.ax)
     const g = (ynF - yn) / eps
     if (!best || yn > best.yn) best = { yn, grad: g }
   }

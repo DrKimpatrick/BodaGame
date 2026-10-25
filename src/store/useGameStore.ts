@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { playBloodImpactFeedback } from '../audio/bloodImpactFeedback'
+import { segmentRandom } from '../game/roadDecorPlacements'
+import { realisticFare, START_CASH } from '../roadRules/constants'
 import {
   generateRideJob,
   manhattanTravelMeters,
@@ -12,7 +14,7 @@ import {
 export const COLLISION_GRACE_MS = 2200
 
 /** Bike spawn XZ (matches `Boda`); used to defer ped knock / condition until you leave the intersection. */
-export const BIKE_SPAWN_XZ = { x: 0, z: 0 } as const
+export const BIKE_SPAWN_XZ = { x: -4.0, z: 12 } as const
 /** Min horizontal distance from spawn before bike↔pedestrian knock & condition loss can apply. */
 export const BIKE_SPAWN_PED_CLEAR_M = 2.85
 
@@ -371,7 +373,23 @@ export type GameState = {
   setHudModalFreezesWorld: (freeze: boolean) => void
   /** Incremented on {@link resetSession} so HUD can close local modals. */
   hudDismissModalsNonce: number
+  /** Fare paid on the most recent drop-off (read by the road-rules shift ledger). */
+  lastFareUgx: number
+  /** Bike headlight (L / touch button). */
+  headlight: boolean
+  toggleHeadlight: () => void
+  /** Shift conditions: rain makes brakes weaker; dusk needs the headlight. */
+  weather: Weather
+  setWeather: (w: Weather) => void
+  /** Economy profile; `rules` uses realistic Kampala fares and fuel burn. */
+  economy: Economy
+  /** Multiplier on fuel burn per metre (rules economy burns less: the city is small). */
+  fuelBurnScale: number
+  setEconomy: (e: Economy, startingMoney?: number) => void
 }
+
+export type Weather = 'clear' | 'rain' | 'dusk'
+export type Economy = 'free' | 'rules'
 
 /** Bike–ped knockdown + condition loss (vehicle hits do not use spawn clearance). */
 export function shouldApplyBikePedestrianInteraction(): boolean {
@@ -402,6 +420,13 @@ function appendLedger(
     ...entry,
   }
   return [row, ...ledger].slice(0, LEDGER_CAP)
+}
+
+/** In the rules economy fares are what a Kampala passenger actually pays (UGX 2,000–10,000). */
+function economyJob(job: RideJob, economy: Economy, serial: number): RideJob {
+  if (economy !== 'rules') return job
+  const m = manhattanTravelMeters(job.pickup.x, job.pickup.z, job.dropoff.x, job.dropoff.z)
+  return { ...job, payoutUgx: realisticFare(m, segmentRandom(serial, 1, 907)) }
 }
 
 function nextCollisionPenaltyDeadline(): number {
@@ -459,6 +484,8 @@ const initialSession = (): Pick<
   | 'rideScorePopups'
   | 'hudModalFreezesWorld'
   | 'hudDismissModalsNonce'
+  | 'headlight'
+  | 'lastFareUgx'
 > => ({
   money: STARTING_MONEY_UGX,
   fuel: FUEL_MAX,
@@ -499,10 +526,25 @@ const initialSession = (): Pick<
   rideScorePopups: [],
   hudModalFreezesWorld: false,
   hudDismissModalsNonce: 0,
+  headlight: false,
+  lastFareUgx: 0,
 })
 
 export const useGameStore = create<GameState>((set, get) => ({
   ...initialSession(),
+  weather: 'clear',
+  economy: 'free',
+  fuelBurnScale: 0.25,
+  toggleHeadlight: () => set((s) => ({ headlight: !s.headlight })),
+  setWeather: (weather) => set({ weather }),
+  setEconomy: (economy, startingMoney) =>
+    set({
+      economy,
+      // The map is compressed ~3:1, so a 600 m trip stands for ~2 km. A boda burns about UGX 300 of
+      // petrol on that; the rules economy matches it. Free ride keeps a stronger burn (bigger fares).
+      fuelBurnScale: economy === 'rules' ? 0.012 : 0.25,
+      ...(startingMoney != null ? { money: moneyInt(startingMoney) } : {}),
+    }),
   resetSession: () => {
     try {
       sessionStorage.removeItem(SESSION_STORAGE_PROGRESS_KEY)
@@ -512,6 +554,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const nonce = get().hudDismissModalsNonce + 1
     set({
       ...initialSession(),
+      money: get().economy === 'rules' ? START_CASH : STARTING_MONEY_UGX,
       collisionPenaltiesAfterMs: nextCollisionPenaltyDeadline(),
       hudDismissModalsNonce: nonce,
     })
@@ -622,7 +665,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   assignRideJob: () => {
     const s = get()
     const serial = s.rideJobSerial + 1
-    const job = generateRideJob(serial)
+    const job = economyJob(generateRideJob(serial, { x: s.bikeMapX, z: s.bikeMapZ }), s.economy, serial)
     const path = manhattanTravelMeters(
       s.bikeMapX,
       s.bikeMapZ,
@@ -649,8 +692,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     let bonusUgx = 0
     if (beat) {
       bonusUgx = Math.min(
-        10_000,
-        Math.round(850 + s.rideLegPathMeters * 14),
+        s.economy === 'rules' ? 1_000 : 10_000,
+        Math.round((850 + s.rideLegPathMeters * 14) * (s.economy === 'rules' ? 0.1 : 1)),
       )
       get().earnUgx(bonusUgx, 'Record time — quick pickup')
     }
@@ -682,8 +725,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     let bonusUgx = 0
     if (beat) {
       bonusUgx = Math.min(
-        12_000,
-        Math.round(1000 + s.rideLegPathMeters * 16),
+        s.economy === 'rules' ? 1_000 : 12_000,
+        Math.round((1000 + s.rideLegPathMeters * 16) * (s.economy === 'rules' ? 0.1 : 1)),
       )
       get().earnUgx(bonusUgx, 'Record time — fast delivery')
     }
@@ -706,7 +749,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     const serial = s0.rideJobSerial + 1
-    const nextJob = generateRideJob(serial)
+    const nextJob = economyJob(generateRideJob(serial, { x: s0.bikeMapX, z: s0.bikeMapZ }), s0.economy, serial)
     const pathToPickup = manhattanTravelMeters(
       s0.bikeMapX,
       s0.bikeMapZ,
@@ -719,6 +762,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       rideJobSerial: serial,
       rideJobRouteOrder: 'xFirst',
       rideCompletedDeliveries: deliveries,
+      lastFareUgx: j.payoutUgx,
       riderLevelUpToastNonce,
       riderLevelUpToastLevel,
       rideNextPassengerToastNonce: s0.rideNextPassengerToastNonce + 1,

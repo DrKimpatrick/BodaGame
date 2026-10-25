@@ -1,4 +1,3 @@
-import { Html, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import {
   CuboidCollider,
@@ -18,7 +17,6 @@ import {
   type ForwardedRef,
 } from 'react'
 import * as THREE from 'three'
-import { clone as cloneSkinnedScene } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
 import {
@@ -31,24 +29,26 @@ import {
   RIDE_SCORE_LOSS_PEDESTRIAN,
   RIDE_SCORE_LOSS_VEHICLE,
   RIDE_SCORE_POINTS_PER_WORLD_M,
-  shouldApplyBikePedestrianInteraction,
   useGameStore,
 } from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
-import {
-  jobPassengerCoatBlueMat,
-  jobPassengerCoatRedMat,
-  jobPassengerPantsMat,
-  jobPassengerSkinMat,
-} from '@game/jobPassengerMaterials'
+import { bikeTelemetry, emitBikeCollision, onPedestrianStrike } from '../roadRules/world/telemetry'
+import { useSettingsStore } from '../store/useSettingsStore'
+import { BodaModel } from './BodaModel'
+import { PassengerModel, RiderModel } from './RiderModel'
 import {
   getPotholeStrikeEnvelope,
   sampleRoadSurfaceBikeEffect,
 } from '@game/roadSurfaceFeatures'
-import { isDeepOffRoad, isDrivableSurface } from '@game/roadSpatial'
+import { isDeepOffRoad, isDrivableSurface, roadKindAt } from '@game/roadSpatial'
 
-const MAX_FORWARD = 14
+/** ~68 km/h: a boda can break the 50 limit, so the speed rule means something. */
+const MAX_FORWARD = 19
+/** Murram shoulder / pavement edge: drivable but slow (~32 km/h). */
+const SHOULDER_SPEED_CAP = 9
+/** Unpaved murram: rutted and dusty, ~43 km/h at most. */
+const MURRAM_SPEED_CAP = 12
 const MAX_REVERSE = 10
 const ACCEL = 28
 /** Extra oomph when building reverse from standstill (S while stopped). */
@@ -56,13 +56,10 @@ const REVERSE_ACCEL_SCALE = 1.4
 const FRICTION = 6.5
 const TURN_SPEED = 2.4
 const BRAKE_DECEL = 42
-/**
- * Off-limits / shoulder / deep grass: much higher top speed and thrust than
- * on tarmac (arcade “open field” feel — still never hard-zeroed).
- */
+/** Grass / dirt off the network: slow and draggy, like a real bike on rough ground. */
 const OFFROAD_DRAG_PER_S = 1.25
-const OFFROAD_ACCEL_SCALE = 1.65
-const OFFROAD_SPEED_CAP = 36
+const OFFROAD_ACCEL_SCALE = 0.55
+const OFFROAD_SPEED_CAP = 6
 const OFFROAD_REVERSE_SCALE = 0.95
 
 /** After hitting a walker: brief throttle lock. */
@@ -140,10 +137,10 @@ function stepGasBrakeCoastSpeed(params: {
 }
 
 /** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
-const RIDER_PLACEHOLDER_GLTF =
-  'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb'
 
-const SPAWN: [number, number, number] = [0, 0.32, 0]
+/** Left lane just short of the centre junction, facing −Z (heading S keeps left at −X). */
+/** Entebbe Rd kerb lane (heading S, keep left), just south of the Kampala Rd junction. */
+const SPAWN: [number, number, number] = [-4.0, 0.32, 12]
 
 function assignForwardedRef<T>(
   ref: ForwardedRef<T> | undefined,
@@ -153,373 +150,55 @@ function assignForwardedRef<T>(
   else if (ref) ref.current = value
 }
 
-/** Glossy commuter red (tank, fenders) */
-const matRed = {
-  color: '#d42429',
-  metalness: 0.28,
-  roughness: 0.16,
-} as const
 
-/** Frame, seat, rubber, plastics */
-const matBlack = {
-  color: '#141414',
-  metalness: 0.06,
-  roughness: 0.88,
-} as const
-
-/** Engine, exhaust, shocks, chain guard */
-const matSilver = {
-  color: '#9ca3af',
-  metalness: 0.82,
-  roughness: 0.32,
-} as const
-
-/** Rim + dark trim */
-const matRim = {
-  color: '#0a0a0a',
-  metalness: 0.35,
-  roughness: 0.45,
-} as const
-
-const matTire = {
-  color: '#0d0d0d',
-  metalness: 0.02,
-  roughness: 0.94,
-} as const
-
-const matGlass = {
-  color: '#fef3c7',
-  metalness: 0.1,
-  roughness: 0.15,
-  emissive: '#2a2010',
-  emissiveIntensity: 0.15,
-} as const
-
-/** High-viz reflector vest */
-const matVest = {
-  color: '#facc15',
-  emissive: '#ca8a04',
-  emissiveIntensity: 0.22,
-  metalness: 0.04,
-  roughness: 0.55,
-} as const
-
-function RiderJobDestBillboard() {
-  const job = useGameStore((s) => s.rideJob)
-  if (!job) return null
-  const target = job.phase === 'pickup' ? job.pickup : job.dropoff
-  const phaseLabel = job.phase === 'pickup' ? 'Pick up' : 'Drop off'
-  return (
-    <Html
-      position={[0, 2.38, -0.06]}
-      center
-      distanceFactor={11}
-      zIndexRange={[200, 0]}
-      style={{
-        pointerEvents: 'none',
-        userSelect: 'none',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <div className="max-w-[min(200px,45vw)] rounded-xl border-2 border-amber-400/90 border-b-4 border-b-amber-950 bg-zinc-950/94 px-2.5 py-1.5 text-center shadow-[0_4px_0_rgba(69,26,3,0.75)] ring-1 ring-amber-300/40 backdrop-blur-sm">
-        <p className="text-[8px] font-black uppercase tracking-[0.2em] text-amber-300/95">
-          {phaseLabel}
-        </p>
-        <p className="mt-0.5 text-[12px] font-black leading-tight text-white drop-shadow-sm">
-          {target.name}
-        </p>
-        <p className="mt-1 font-mono text-[10px] font-black text-emerald-400">
-          {job.payoutUgx.toLocaleString()} UGX
-        </p>
-      </div>
-    </Html>
-  )
-}
-
-/** Pillion passenger (red / blue coat) — visible while job phase is `carrying`. */
+/** Pillion passenger — visible while the job phase is `carrying`. */
 function PassengerOnBike() {
   const phase = useGameStore((s) => s.rideJob?.phase)
-  const legL = useRef<THREE.Group>(null)
-  const legR = useRef<THREE.Group>(null)
-
-  useFrame(({ clock }) => {
-    if (phase !== 'carrying') return
-    const w = Math.sin(clock.elapsedTime * 5.8 + 1.1) * 0.055
-    if (legL.current) legL.current.rotation.x = w
-    if (legR.current) legR.current.rotation.x = -w
-  })
-
-  if (phase !== 'carrying') return null
-
-  return (
-    <group position={[0, 0.74, 0.56]} rotation={[0.16, Math.PI, 0]}>
-      <group scale={0.9} position={[0, -0.3, 0]}>
-        <mesh position={[0, 1.32, -0.05]} castShadow material={jobPassengerSkinMat}>
-          <sphereGeometry args={[0.11, 10, 10]} />
-        </mesh>
-        <mesh position={[-0.07, 0.95, -0.03]} castShadow material={jobPassengerCoatRedMat}>
-          <boxGeometry args={[0.14, 0.48, 0.18]} />
-        </mesh>
-        <mesh position={[0.07, 0.95, -0.03]} castShadow material={jobPassengerCoatBlueMat}>
-          <boxGeometry args={[0.14, 0.48, 0.18]} />
-        </mesh>
-        <mesh
-          position={[-0.15, 1.02, -0.14]}
-          rotation={[0.35, 0, 0.55]}
-          castShadow
-          material={jobPassengerCoatRedMat}
-        >
-          <boxGeometry args={[0.07, 0.07, 0.22]} />
-        </mesh>
-        <mesh
-          position={[0.15, 1.02, -0.14]}
-          rotation={[0.35, 0, -0.55]}
-          castShadow
-          material={jobPassengerCoatBlueMat}
-        >
-          <boxGeometry args={[0.07, 0.07, 0.22]} />
-        </mesh>
-        <group ref={legL} position={[-0.12, 0.66, 0.08]} rotation={[0.08, 0, 0.12]}>
-          <mesh position={[0, -0.15, 0]} castShadow material={jobPassengerPantsMat}>
-            <boxGeometry args={[0.1, 0.34, 0.1]} />
-          </mesh>
-        </group>
-        <group ref={legR} position={[0.12, 0.66, 0.08]} rotation={[0.08, 0, -0.12]}>
-          <mesh position={[0, -0.15, 0]} castShadow material={jobPassengerPantsMat}>
-            <boxGeometry args={[0.1, 0.34, 0.1]} />
-          </mesh>
-        </group>
-      </group>
-    </group>
-  )
+  return phase === 'carrying' ? <PassengerModel /> : null
 }
 
-function RiderHumanoid() {
-  const { scene } = useGLTF(RIDER_PLACEHOLDER_GLTF)
-  const riderRoot = useMemo(() => {
-    // scene.clone(true) leaves SkinnedMesh hands bound to the original armature — they stay behind.
-    const root = cloneSkinnedScene(scene)
-    root.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && /torso/i.test(obj.name)) {
-        obj.material = new THREE.MeshStandardMaterial({ ...matVest })
-        obj.castShadow = true
-      }
-    })
-    return root
-  }, [scene])
-
-  return (
-    <group position={[0, 0.72, 0.28]} rotation={[0, Math.PI, 0]}>
-      <primitive object={riderRoot} scale={0.22} />
-    </group>
-  )
+function RiderOnBike() {
+  const helmetCam = useSettingsStore((s) => s.camera === 'helmet')
+  return <RiderModel hideHead={helmetCam} />
 }
 
-useGLTF.preload(RIDER_PLACEHOLDER_GLTF)
-
-function Wheel({ z }: { z: number }) {
-  return (
-    <group position={[0, 0, z]}>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.31, 0.31, 0.11, 20]} />
-        <meshStandardMaterial {...matTire} />
-      </mesh>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.2, 0.2, 0.12, 20]} />
-        <meshStandardMaterial {...matRim} />
-      </mesh>
-      {[0, 1, 2, 3, 4].map((i) => {
-        const a = (i / 5) * Math.PI * 2
-        return (
-          <mesh
-            key={i}
-            position={[0, Math.cos(a) * 0.1, Math.sin(a) * 0.1]}
-            rotation={[0, -a, 0]}
-            castShadow
-          >
-            <boxGeometry args={[0.03, 0.18, 0.035]} />
-            <meshStandardMaterial {...matRim} />
-          </mesh>
-        )
-      })}
-      <mesh rotation={[0, 0, Math.PI / 2]}>
-        <torusGeometry args={[0.2, 0.012, 8, 24]} />
-        <meshStandardMaterial {...matRed} roughness={0.35} metalness={0.2} />
-      </mesh>
-    </group>
-  )
-}
-
-function BodaBikeModel() {
+/**
+ * Headlight: a forward spot (aimed at a child target; the old light pointed at the world origin) plus a
+ * glowing lens. Off by default; the rule monitor checks it on dusk shifts.
+ */
+function BikeHeadlight() {
+  const on = useGameStore((s) => s.headlight)
+  const quality = useSettingsStore((s) => s.quality)
+  const target = useMemo(() => {
+    const o = new THREE.Object3D()
+    o.position.set(0, 0.1, -9)
+    return o
+  }, [])
+  useEffect(() => {
+    bikeTelemetry.headlight = on
+  }, [on])
   return (
     <group>
-      <Wheel z={-0.78} />
-      <Wheel z={0.78} />
-
-      <mesh
-        position={[0, 0.22, -0.05]}
-        rotation={[0.55, 0, 0]}
-        castShadow
-      >
-        <cylinderGeometry args={[0.035, 0.035, 0.95, 8]} />
-        <meshStandardMaterial {...matBlack} />
+      <mesh position={[0, 0.55, -0.63]}>
+        <circleGeometry args={[0.085, 16]} />
+        <meshBasicMaterial color={on ? '#fff6dc' : '#3b3524'} toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 0.38, 0.35]} rotation={[-0.35, 0, 0]} castShadow>
-        <cylinderGeometry args={[0.032, 0.032, 0.75, 8]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-
-      <mesh position={[0, 0.12, 0.02]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <torusGeometry args={[0.22, 0.022, 8, 20]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-
-      <mesh position={[0, 0.08, 0.06]} castShadow receiveShadow>
-        <boxGeometry args={[0.38, 0.28, 0.36]} />
-        <meshStandardMaterial {...matSilver} />
-      </mesh>
-      <mesh position={[0, 0.06, 0.22]} castShadow>
-        <cylinderGeometry args={[0.1, 0.1, 0.12, 12]} />
-        <meshStandardMaterial {...matSilver} />
-      </mesh>
-
-      <mesh position={[-0.12, 0.04, 0.52]} rotation={[0, 0.08, 0]} castShadow>
-        <boxGeometry args={[0.06, 0.06, 0.42]} />
-        <meshStandardMaterial {...matSilver} metalness={0.75} roughness={0.4} />
-      </mesh>
-
-      <mesh
-        position={[-0.22, 0.1, 0.35]}
-        rotation={[0, 0, Math.PI / 2.3]}
-        castShadow
-      >
-        <cylinderGeometry args={[0.045, 0.055, 0.55, 10]} />
-        <meshStandardMaterial {...matSilver} />
-      </mesh>
-
-      <mesh position={[0, 0.48, -0.18]} castShadow receiveShadow>
-        <sphereGeometry args={[0.26, 16, 12]} />
-        <meshStandardMaterial {...matRed} />
-      </mesh>
-      <mesh position={[0, 0.5, -0.28]} castShadow>
-        <boxGeometry args={[0.36, 0.08, 0.14]} />
-        <meshStandardMaterial color="#f5f5f5" roughness={0.4} metalness={0.1} />
-      </mesh>
-
-      <mesh position={[0.22, 0.28, 0.08]} castShadow receiveShadow>
-        <boxGeometry args={[0.04, 0.22, 0.38]} />
-        <meshStandardMaterial {...matRed} />
-      </mesh>
-      <mesh position={[-0.22, 0.28, 0.08]} castShadow receiveShadow>
-        <boxGeometry args={[0.04, 0.22, 0.38]} />
-        <meshStandardMaterial {...matRed} />
-      </mesh>
-
-      <mesh position={[0, 0.52, 0.32]} castShadow receiveShadow>
-        <boxGeometry args={[0.36, 0.1, 0.62]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[0, 0.62, 0.28]} castShadow>
-        <boxGeometry args={[0.34, 0.04, 0.5]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[0, 0.72, 0.5]} castShadow>
-        <boxGeometry args={[0.28, 0.03, 0.2]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[0.12, 0.66, 0.52]} castShadow>
-        <cylinderGeometry args={[0.018, 0.018, 0.28, 6]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[-0.12, 0.66, 0.52]} castShadow>
-        <cylinderGeometry args={[0.018, 0.018, 0.28, 6]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-
-      {[-0.13, 0.13].map((x) => (
-        <group key={x} position={[x, 0.32, 0.48]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.028, 0.028, 0.22, 8]} />
-            <meshStandardMaterial {...matSilver} />
-          </mesh>
-          <mesh position={[0, -0.06, 0]} castShadow>
-            <cylinderGeometry args={[0.045, 0.045, 0.08, 10]} />
-            <meshStandardMaterial {...matSilver} metalness={0.85} roughness={0.25} />
-          </mesh>
-        </group>
-      ))}
-
-      {[-0.1, 0.1].map((x) => (
-        <mesh key={x} position={[x, 0.28, -0.62]} castShadow>
-          <cylinderGeometry args={[0.03, 0.028, 0.62, 8]} />
-          <meshStandardMaterial {...matBlack} />
-        </mesh>
-      ))}
-
-      {[-0.1, 0.1].map((x) => (
-        <mesh key={`g-${x}`} position={[x, 0.08, -0.58]} castShadow>
-          <cylinderGeometry args={[0.038, 0.034, 0.22, 8]} />
-          <meshStandardMaterial {...matBlack} roughness={0.92} />
-        </mesh>
-      ))}
-
-      <mesh position={[0, 0.56, -0.48]} castShadow>
-        <boxGeometry args={[0.24, 0.05, 0.08]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-
-      <mesh position={[0, 0.58, -0.5]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.02, 0.02, 0.72, 8]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-
-      <mesh position={[0, 0.52, -0.78]} castShadow>
-        <boxGeometry args={[0.32, 0.12, 0.1]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[0, 0.48, -0.82]} castShadow receiveShadow>
-        <sphereGeometry args={[0.11, 16, 12]} />
-        <meshStandardMaterial {...matGlass} />
-      </mesh>
-      <mesh position={[0, 0.42, -0.76]} castShadow>
-        <boxGeometry args={[0.34, 0.06, 0.12]} />
-        <meshStandardMaterial {...matRed} />
-      </mesh>
-
-      <mesh
-        position={[0, 0.12, -0.82]}
-        rotation={[0.35, 0, 0]}
-        castShadow
-      >
-        <boxGeometry args={[0.28, 0.04, 0.22]} />
-        <meshStandardMaterial {...matRed} />
-      </mesh>
-
-      {[-0.2, 0.2].map((x) => (
-        <mesh key={`s-${x}`} position={[x, 0.46, -0.8]} castShadow>
-          <sphereGeometry args={[0.035, 10, 10]} />
-          <meshStandardMaterial
-            color="#ea580c"
-            emissive="#7c2d12"
-            emissiveIntensity={0.25}
-            roughness={0.5}
-            metalness={0.1}
-          />
-        </mesh>
-      ))}
-
-      <mesh
-        position={[0, 0.22, 0.88]}
-        rotation={[-0.4, 0, 0]}
-        castShadow
-      >
-        <boxGeometry args={[0.26, 0.04, 0.28]} />
-        <meshStandardMaterial {...matBlack} />
-      </mesh>
-      <mesh position={[0, 0.38, 0.92]} castShadow>
-        <boxGeometry args={[0.12, 0.08, 0.06]} />
-        <meshStandardMaterial color="#7f1d1d" emissive="#450a0a" emissiveIntensity={0.2} />
-      </mesh>
+      <primitive object={target} />
+      {on ? (
+        <spotLight
+          position={[0, 0.55, -0.66]}
+          target={target}
+          angle={0.55}
+          penumbra={0.5}
+          intensity={9}
+          decay={1.4}
+          distance={34}
+          color="#fff1d6"
+          castShadow={quality === 'high'}
+          shadow-mapSize={[512, 512]}
+          shadow-bias={-0.0002}
+        />
+      ) : null}
     </group>
   )
 }
@@ -631,6 +310,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         )
         st.triggerBloodImpactFlash('vehicle')
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_VEHICLE)
+        emitBikeCollision('vehicle')
         return
       }
       if (ud?.kind === 'building') {
@@ -646,10 +326,18 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         const st = useGameStore.getState()
         st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_BUILDING))
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_BUILDING)
+        emitBikeCollision('building')
         return
       }
-      if (ud?.kind === 'pedestrian') {
-        if (!shouldApplyBikePedestrianInteraction()) return
+    },
+    [],
+  )
+
+  // Pedestrians are instanced (no physics bodies); the crowd reports strikes by distance.
+  useEffect(
+    () =>
+      onPedestrianStrike('bike', () => {
+        const now = performance.now()
         if (now < noPedestrianStunUntil.current) return
         noPedestrianStunUntil.current = now + 700
         speed.current *= 0.38
@@ -658,10 +346,22 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
         st.triggerBloodImpactFlash('pedestrian')
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_PEDESTRIAN)
-      }
-    },
+        emitBikeCollision('pedestrian')
+      }),
     [],
   )
+
+  // Dev-only: teleport the bike (for testing rules at a given spot), e.g. __wowTeleport(0, -205, Math.PI).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const fn = (x: number, z: number, yawRad: number) => {
+      const body = rb.current
+      if (!body) return
+      body.setTranslation({ x, y: SPAWN[1], z }, true)
+      yaw.current = yawRad
+    }
+    Object.assign(window, { __wowTeleport: fn })
+  }, [])
 
   useAfterPhysicsStep(() => {
     const body = rb.current
@@ -738,6 +438,9 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     }
 
     const fuelLeft = useGameStore.getState().fuel
+    // Wet tarmac: weaker brakes and a little less drive (rain shifts).
+    const wet = useGameStore.getState().weather === 'rain'
+    const grip = wet ? 0.58 : 1
 
     if (drivable) {
       if (fuelLeft > 0 && !brokenDown) {
@@ -746,8 +449,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           speedRef: speed,
           gas,
           brake,
-          accel: ACCEL,
-          brakeDecel: BRAKE_DECEL,
+          accel: ACCEL * (wet ? 0.85 : 1),
+          brakeDecel: BRAKE_DECEL * grip,
           reverseDragPerS: FRICTION * 0.55,
         })
       } else if (fuelLeft > 0 && brokenDown) {
@@ -779,7 +482,14 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       if (Math.abs(speed.current) < 0.04) speed.current = 0
     }
 
-    const capFwd = drivable ? MAX_FORWARD : OFFROAD_SPEED_CAP
+    const surfaceKind = drivable ? roadKindAt(t.x, t.z) : null
+    const capFwd = !drivable
+      ? OFFROAD_SPEED_CAP
+      : surfaceKind === 'murram'
+        ? MURRAM_SPEED_CAP
+        : surfaceKind
+          ? MAX_FORWARD
+          : SHOULDER_SPEED_CAP
     const capRev = drivable ? MAX_REVERSE : MAX_REVERSE * OFFROAD_REVERSE_SCALE
     speed.current = THREE.MathUtils.clamp(speed.current, -capRev, capFwd)
 
@@ -828,6 +538,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       },
       true,
     )
+
+    bikeTelemetry.x = t.x
+    bikeTelemetry.z = t.z
+    bikeTelemetry.yaw = yaw.current
+    bikeTelemetry.speed = speed.current
 
     const nextOffroad = isDeepOffRoad(t.x, t.z)
     if (nextOffroad !== offroadRef.current) {
@@ -926,7 +641,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         const dist = Math.hypot(t.x - prev.x, t.z - prev.z)
         if (dist > 1e-6) {
           const stRide = useGameStore.getState()
-          const burn = dist * FUEL_PER_WORLD_METER
+          const burn = dist * FUEL_PER_WORLD_METER * stRide.fuelBurnScale
           const f = stRide.fuel
           if (f > 0) {
             stRide.setFuel(Math.max(0, f - burn))
@@ -971,21 +686,15 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     >
       <CuboidCollider args={[0.48, 0.36, 1.05]} position={[0, 0.35, 0]} />
       <group ref={visualRef}>
-        <BodaBikeModel />
-        <RiderHumanoid />
-        <PassengerOnBike />
-        <RiderJobDestBillboard />
-        <spotLight
-          position={[0, 0.62, -0.35]}
-          angle={0.5}
-          penumbra={0.42}
-          intensity={2.8}
-          distance={38}
-          color="#fff4e0"
-          castShadow
-          shadow-mapSize={[512, 512]}
-          shadow-bias={-0.0001}
-        />
+        {/* Physics origin is 0.31 m up (wheel centre); the model is built from the ground. */}
+        <group position={[0, -0.31, 0]}>
+          <BodaModel />
+          <group position={[0, 0.21, 0]}>
+            <RiderOnBike />
+            <PassengerOnBike />
+          </group>
+        </group>
+        <BikeHeadlight />
         {isOffroad ? (
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0.95, 1.1, 24]} />

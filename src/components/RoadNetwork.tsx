@@ -1,689 +1,451 @@
+import { CuboidCollider, RigidBody } from '@react-three/rapier'
 import type { ReactElement } from 'react'
 import { useMemo } from 'react'
 import * as THREE from 'three'
+import { asphaltTexture, humpTexture, murramTexture } from './realism/textures'
 import {
-  BLOCK,
   CITY_START,
   CITY_TOTAL,
+  ewHalf,
+  ewKind,
+  MEDIAN_W,
   NUM_BLOCKS,
-  ROAD_W,
+  nsHalf,
+  nsKind,
   roadStripCenterX,
   roadStripCenterZ,
+  type RoadKind,
 } from '@game/cityGrid'
-import {
-  segmentRandom,
-  ZEBRA_HORIZONTAL_SITES,
-  ZEBRA_VERTICAL_SITES,
-} from '@game/roadDecorPlacements'
-import {
-  HUMP_ALONG,
-  HUMP_HALF_H,
-  listPotholeSites,
-  listSpeedHumpSites,
-  ROAD_TOP_Y,
-} from '@game/roadSurfaceFeatures'
+import { ROUNDABOUTS } from '@game/kampalaMap'
+import { segmentRandom, ZEBRA_HORIZONTAL_SITES, ZEBRA_VERTICAL_SITES } from '@game/roadDecorPlacements'
+import { HUMP_ALONG, HUMP_HALF_H, listPotholeSites, listSpeedHumpSites, ROAD_TOP_Y } from '@game/roadSurfaceFeatures'
 import { SIDEWALK_WIDTH } from '@game/roadSpatial'
+import { ROUNDABOUT } from '../roadRules/world/junctions'
 
-const Z0 = CITY_START
-const Z1 = CITY_START + CITY_TOTAL
-const X0 = CITY_START
-const X1 = CITY_START + CITY_TOTAL
-const HALF = ROAD_W / 2
+/**
+ * Kampala's road mix, drawn per road type:
+ * - dual carriageway: two lanes each way, raised median with a black-and-white kerb and grass, edge lines;
+ * - main road: two lanes each way, double solid centre line, dashed lane lines, edge lines;
+ * - side street: one lane each way, faded dashed centre line, patched / dusty tarmac;
+ * - murram: red unpaved road, no markings.
+ * Main roads and dual carriageways have open concrete drains beyond the pavement, as on Kampala's streets.
+ * Everything is static and merged by StaticBatch.
+ */
 
-const LINE_Y = 0.062
-const SHOULDER_INSET = 0.07
-const SHOULDER_W = 0.11
-const DASH_LEN = 2.2
-const DASH_GAP = 2.8
-const WORN_RATIO = 0.4
-/** Half-width of the overlapping road square at each crossing (ROAD_W / 2). */
-const INTERSECTION_HALF = HALF
-/** Extra gap so dashes / shoulders don’t bleed into the junction. */
-const MARK_PAD = 0.1
-/** Radius of outer white corner fillet (matches reference: rounded junction corners). */
-const CORNER_FILLET_R = 0.92
+const LINE_Y = ROAD_TOP_Y + 0.002
+const DASH_LEN = 2.6
+const DASH_GAP = 3.4
+const DRAIN_W = 0.7
+const MEDIAN_H = 0.22
 
-const STRIP_CENTERS_X = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterX(k))
-const STRIP_CENTERS_Z = Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => roadStripCenterZ(k))
-
-const lineMatFresh = new THREE.MeshBasicMaterial({
-  color: '#f0f0ea',
-  toneMapped: false,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
-})
-
-const lineMatFaded = new THREE.MeshBasicMaterial({
-  color: '#9c9a92',
-  toneMapped: false,
-  opacity: 0.52,
-  transparent: true,
-  depthWrite: false,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
-})
-
-const lineMatWorn = new THREE.MeshBasicMaterial({
-  color: '#6a6860',
-  toneMapped: false,
-  opacity: 0.26,
-  transparent: true,
-  depthWrite: false,
-  polygonOffset: true,
-  polygonOffsetFactor: -1.2,
-  polygonOffsetUnits: -1,
-})
-
-function pickRoadLineMat(ia: number, ib: number, salt: number): THREE.MeshBasicMaterial {
-  const r = segmentRandom(ia, ib, salt)
-  if (r < 0.27) return lineMatWorn
-  if (r < 0.54) return lineMatFaded
-  return lineMatFresh
-}
-
-function dashOverlapsIntersectionAlongZ(z: number): boolean {
-  const ext = INTERSECTION_HALF + DASH_LEN / 2 + MARK_PAD
-  return STRIP_CENTERS_Z.some((iz) => Math.abs(z - iz) < ext)
-}
-
-function dashOverlapsIntersectionAlongX(x: number): boolean {
-  const ext = INTERSECTION_HALF + DASH_LEN / 2 + MARK_PAD
-  return STRIP_CENTERS_X.some((ix) => Math.abs(x - ix) < ext)
-}
-
-/** Straight shoulder runs along Z between intersection boxes (for N–S strips). */
-function verticalShoulderZRanges(): [number, number][] {
-  const sorted = [...STRIP_CENTERS_Z].sort((a, b) => a - b)
-  const out: [number, number][] = []
-  let zLo = Z0
-  for (const iz of sorted) {
-    const zHi = iz - INTERSECTION_HALF - MARK_PAD * 0.5
-    if (zHi - zLo > 0.2) out.push([zLo, zHi])
-    zLo = iz + INTERSECTION_HALF + MARK_PAD * 0.5
-  }
-  if (Z1 - zLo > 0.2) out.push([zLo, Z1])
-  return out
-}
-
-/** Straight shoulder runs along X between intersection boxes (for E–W strips). */
-function horizontalShoulderXRanges(): [number, number][] {
-  const sorted = [...STRIP_CENTERS_X].sort((a, b) => a - b)
-  const out: [number, number][] = []
-  let xLo = X0
-  for (const ix of sorted) {
-    const xHi = ix - INTERSECTION_HALF - MARK_PAD * 0.5
-    if (xHi - xLo > 0.2) out.push([xLo, xHi])
-    xLo = ix + INTERSECTION_HALF + MARK_PAD * 0.5
-  }
-  if (X1 - xLo > 0.2) out.push([xLo, X1])
-  return out
-}
-
-const VERTICAL_SHOULDER_Z_RANGES = verticalShoulderZRanges()
-const HORIZONTAL_SHOULDER_X_RANGES = horizontalShoulderXRanges()
-
-/** Quarter-ring white fillets at the four outer corners of each intersection. */
-function IntersectionCornerFillets() {
-  const filletInner = Math.max(0.06, CORNER_FILLET_R - SHOULDER_W)
-  const segs = 14
-  const elems: ReactElement[] = []
-  let key = 0
-  for (let vi = 0; vi <= NUM_BLOCKS; vi++) {
-    const ix = roadStripCenterX(vi)
-    for (let hj = 0; hj <= NUM_BLOCKS; hj++) {
-      const iz = roadStripCenterZ(hj)
-      const corners: { ox: number; oz: number; thetaStart: number }[] = [
-        { ox: ix + INTERSECTION_HALF - CORNER_FILLET_R, oz: iz + INTERSECTION_HALF - CORNER_FILLET_R, thetaStart: 0 },
-        { ox: ix - INTERSECTION_HALF + CORNER_FILLET_R, oz: iz + INTERSECTION_HALF - CORNER_FILLET_R, thetaStart: Math.PI / 2 },
-        { ox: ix - INTERSECTION_HALF + CORNER_FILLET_R, oz: iz - INTERSECTION_HALF + CORNER_FILLET_R, thetaStart: Math.PI },
-        {
-          ox: ix + INTERSECTION_HALF - CORNER_FILLET_R,
-          oz: iz - INTERSECTION_HALF + CORNER_FILLET_R,
-          thetaStart: (3 * Math.PI) / 2,
-        },
-      ]
-      for (let c = 0; c < 4; c++) {
-        const { ox, oz, thetaStart } = corners[c]!
-        elems.push(
-          <mesh
-            key={`fillet-${key++}`}
-            position={[ox, LINE_Y, oz]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            material={pickRoadLineMat(vi, hj * 11 + c, 823)}
-          >
-            <ringGeometry args={[filletInner, CORNER_FILLET_R, segs, 1, thetaStart, Math.PI / 2]} />
-          </mesh>,
-        )
-      }
-    }
-  }
-  return <group>{elems}</group>
-}
-
-/** High-contrast old tarmac: #1a1a1a + subtle grain (normal-style noise in albedo). */
-function createOldTarmacTexture() {
-  const s = 256
-  const c = document.createElement('canvas')
-  c.width = c.height = s
-  const ctx = c.getContext('2d')
-  if (!ctx) return new THREE.Texture()
-  ctx.fillStyle = '#1a1a1a'
-  ctx.fillRect(0, 0, s, s)
-  for (let i = 0; i < 12000; i++) {
-    const v = Math.random()
-    ctx.fillStyle =
-      v > 0.5
-        ? `rgba(255,255,255,${0.012 + Math.random() * 0.028})`
-        : `rgba(0,0,0,${0.02 + Math.random() * 0.06})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1)
-  }
-  for (let i = 0; i < 2500; i++) {
-    ctx.fillStyle = `rgba(45,45,48,${0.15 + Math.random() * 0.25})`
-    ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 1)
-  }
-  const t = new THREE.CanvasTexture(c)
-  t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.repeat.set(CITY_TOTAL / 8, CITY_TOTAL / 8)
-  t.colorSpace = THREE.SRGBColorSpace
-  return t
-}
+/* ---------- Materials ---------- */
 
 function createWornTarmacTexture() {
   const s = 256
   const c = document.createElement('canvas')
   c.width = c.height = s
-  const ctx = c.getContext('2d')
-  if (!ctx) return new THREE.Texture()
+  const ctx = c.getContext('2d')!
   ctx.fillStyle = '#2f3236'
   ctx.fillRect(0, 0, s, s)
   for (let i = 0; i < 12000; i++) {
     ctx.fillStyle = `rgba(160,160,160,${0.01 + Math.random() * 0.045})`
     ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1)
   }
+  // Red murram dust and patch repairs, typical of Kampala side streets.
   for (let i = 0; i < 48; i++) {
-    const x = Math.random() * s
-    const y = Math.random() * s
-    const rx = 7 + Math.random() * 20
-    const rz = 5 + Math.random() * 16
     const red = 105 + Math.floor(Math.random() * 35)
     const green = 62 + Math.floor(Math.random() * 18)
     const blue = 30 + Math.floor(Math.random() * 14)
     ctx.fillStyle = `rgba(${red},${green},${blue},${0.2 + Math.random() * 0.26})`
     ctx.beginPath()
-    ctx.ellipse(x, y, rx, rz, Math.random() * Math.PI, 0, Math.PI * 2)
+    ctx.ellipse(Math.random() * s, Math.random() * s, 7 + Math.random() * 20, 5 + Math.random() * 16, Math.random() * Math.PI, 0, Math.PI * 2)
     ctx.fill()
+  }
+  for (let i = 0; i < 10; i++) {
+    ctx.fillStyle = `rgba(20,20,22,${0.35 + Math.random() * 0.3})`
+    ctx.fillRect(Math.random() * s, Math.random() * s, 18 + Math.random() * 40, 12 + Math.random() * 30)
   }
   const t = new THREE.CanvasTexture(c)
   t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.repeat.set(3.4, 2.2)
+  t.repeat.set(2, 6)
   t.colorSpace = THREE.SRGBColorSpace
   return t
 }
 
-const dirtMatProps = {
-  color: '#5c4a38',
-  roughness: 0.92,
-  metalness: 0.02,
-} as const
+const mats = (() => {
+  const tarmacTex = asphaltTexture().clone()
+  tarmacTex.repeat.set(2, 10)
+  tarmacTex.needsUpdate = true
+  const murramTex = murramTexture().clone()
+  murramTex.repeat.set(2, 12)
+  murramTex.needsUpdate = true
+  const shoulderTex = murramTexture().clone()
+  shoulderTex.repeat.set(1.2, 40)
+  shoulderTex.needsUpdate = true
+  const kerbCanvas = document.createElement('canvas')
+  kerbCanvas.width = 64
+  kerbCanvas.height = 8
+  const g = kerbCanvas.getContext('2d')!
+  g.fillStyle = '#f2f2ee'
+  g.fillRect(0, 0, 32, 8)
+  g.fillStyle = '#141414'
+  g.fillRect(32, 0, 32, 8)
+  const kerbTex = new THREE.CanvasTexture(kerbCanvas)
+  kerbTex.colorSpace = THREE.SRGBColorSpace
+  kerbTex.wrapS = kerbTex.wrapT = THREE.RepeatWrapping
+  kerbTex.repeat.set(1, 12)
+  return {
+    tarmac: new THREE.MeshStandardMaterial({ map: tarmacTex, color: '#9a9a9a', roughness: 0.9 }),
+    worn: new THREE.MeshStandardMaterial({ map: createWornTarmacTexture(), color: '#b0aca6', roughness: 0.95 }),
+    murram: new THREE.MeshStandardMaterial({ map: murramTex, color: '#d8c1ac', roughness: 1 }),
+    shoulder: new THREE.MeshStandardMaterial({ map: shoulderTex, color: '#c9b6a6', roughness: 0.96 }),
+    kerb: new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }),
+    medianGrass: new THREE.MeshStandardMaterial({ color: '#4f7d33', roughness: 0.95 }),
+    drain: new THREE.MeshStandardMaterial({ color: '#2b2622', roughness: 1 }),
+    concrete: new THREE.MeshStandardMaterial({ color: '#a7a299', roughness: 0.9 }),
+    line: new THREE.MeshBasicMaterial({ color: '#f0f0ea', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
+    lineFaded: new THREE.MeshBasicMaterial({
+      color: '#a8a69e',
+      toneMapped: false,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+    zebra: new THREE.MeshBasicMaterial({ color: '#f2f2f0', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1.5, polygonOffsetUnits: -1 }),
+    hump: new THREE.MeshStandardMaterial({ map: humpTexture(), roughness: 0.8 }),
+    potholeDeep: new THREE.MeshStandardMaterial({ color: '#1b1814', roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
+    potholeRim: new THREE.MeshStandardMaterial({ color: '#3b3732', roughness: 0.96, polygonOffset: true, polygonOffsetFactor: -0.8, polygonOffsetUnits: -1 }),
+  }
+})()
 
-const ZEBRA_Y = 0.066
-const ZEBRA_STRIPE = 0.32
-const ZEBRA_GAP = 0.3
-const ZEBRA_COVER = 0.86 /** fraction of ROAD_W covered along each axis */
+const surfaceFor = (kind: RoadKind, worn: boolean) => (kind === 'murram' ? mats.murram : worn ? mats.worn : mats.tarmac)
 
-const zebraStripeMat = new THREE.MeshBasicMaterial({
-  color: '#f2f2f0',
-  toneMapped: false,
-  polygonOffset: true,
-  polygonOffsetFactor: -1.5,
-  polygonOffsetUnits: -1,
-})
+const roundaboutCentres = ROUNDABOUTS.map((r) => ({ x: roadStripCenterX(r.i), z: roadStripCenterZ(r.j) }))
 
-/** Rounded transverse hump on an N–S carriageway (ellipsoid, traffic ±Z). */
-function SpeedHumpVerticalRoad({
-  cx,
-  z,
-  material,
-}: {
-  cx: number
-  z: number
-  material: THREE.MeshStandardMaterial
-}) {
+/** Distance to keep a median clear of a roundabout's paved circle at a junction centre (x, z). */
+function medianTrim(x: number, z: number): number {
+  return roundaboutCentres.some((c) => Math.abs(c.x - x) < 0.1 && Math.abs(c.z - z) < 0.1) ? ROUNDABOUT.disc + 0.8 : 0
+}
+
+/* ---------- One road segment between two junctions ---------- */
+
+type Seg = {
+  key: string
+  axis: 'ns' | 'ew'
+  kind: RoadKind
+  half: number
+  /** Road centre (the coordinate across the road). */
+  c: number
+  /** Start / end along the road (junction box edges). */
+  a0: number
+  a1: number
+  /** Junction centres at each end (for roundabout trimming). */
+  j0: number
+  j1: number
+  worn: boolean
+}
+
+function buildSegments(): Seg[] {
+  const out: Seg[] = []
+  for (let i = 0; i <= NUM_BLOCKS; i++) {
+    for (let j = 0; j < NUM_BLOCKS; j++) {
+      out.push({
+        key: `v-${i}-${j}`,
+        axis: 'ns',
+        kind: nsKind(i),
+        half: nsHalf(i),
+        c: roadStripCenterX(i),
+        a0: roadStripCenterZ(j) + ewHalf(j),
+        a1: roadStripCenterZ(j + 1) - ewHalf(j + 1),
+        j0: roadStripCenterZ(j),
+        j1: roadStripCenterZ(j + 1),
+        worn: nsKind(i) === 'street' && segmentRandom(i, j, 17) < 0.55,
+      })
+    }
+  }
+  for (let j = 0; j <= NUM_BLOCKS; j++) {
+    for (let i = 0; i < NUM_BLOCKS; i++) {
+      out.push({
+        key: `h-${j}-${i}`,
+        axis: 'ew',
+        kind: ewKind(j),
+        half: ewHalf(j),
+        c: roadStripCenterZ(j),
+        a0: roadStripCenterX(i) + nsHalf(i),
+        a1: roadStripCenterX(i + 1) - nsHalf(i + 1),
+        j0: roadStripCenterX(i),
+        j1: roadStripCenterX(i + 1),
+        worn: ewKind(j) === 'street' && segmentRandom(j, i, 31) < 0.55,
+      })
+    }
+  }
+  return out
+}
+
+/** Place a flat or upright box/plane in segment space: `across` offset from the road centre, `along` position. */
+function segPos(s: Seg, across: number, along: number, y: number): [number, number, number] {
+  return s.axis === 'ns' ? [s.c + across, y, along] : [along, y, s.c + across]
+}
+/** Box size in world axes for (width across, height, length along). */
+function segSize(s: Seg, across: number, h: number, along: number): [number, number, number] {
+  return s.axis === 'ns' ? [across, h, along] : [along, h, across]
+}
+
+function Line({ s, across, a0, a1, faded, width = 0.12 }: { s: Seg; across: number; a0: number; a1: number; faded?: boolean; width?: number }) {
+  const len = a1 - a0
+  if (len <= 0.1) return null
   return (
     <mesh
-      position={[cx, ROAD_TOP_Y + HUMP_HALF_H, z]}
-      scale={[ROAD_W * 0.4, HUMP_HALF_H, HUMP_ALONG]}
-      castShadow
-      receiveShadow
-      material={material}
+      position={segPos(s, across, (a0 + a1) / 2, LINE_Y)}
+      rotation={[-Math.PI / 2, 0, s.axis === 'ns' ? 0 : Math.PI / 2]}
+      material={faded ? mats.lineFaded : mats.line}
     >
-      <sphereGeometry args={[1, 14, 10]} />
+      <planeGeometry args={[width, len]} />
     </mesh>
   )
 }
 
-/** Rounded transverse hump on an E–W carriageway (traffic ±X). */
-function SpeedHumpHorizontalRoad({
-  x,
-  cz,
-  material,
-}: {
-  x: number
-  cz: number
-  material: THREE.MeshStandardMaterial
-}) {
-  return (
-    <mesh
-      position={[x, ROAD_TOP_Y + HUMP_HALF_H, cz]}
-      scale={[HUMP_ALONG, HUMP_HALF_H, ROAD_W * 0.4]}
-      castShadow
-      receiveShadow
-      material={material}
-    >
-      <sphereGeometry args={[1, 14, 10]} />
-    </mesh>
-  )
-}
-
-/** Stripes across a N–S road (traffic ±Z): wide along X, thin along Z. */
-function ZebraAcrossVerticalRoad({ cx, z }: { cx: number; z: number }) {
-  const span = ROAD_W * ZEBRA_COVER
-  const period = ZEBRA_STRIPE + ZEBRA_GAP
-  const n = Math.max(4, Math.floor(span / period))
-  const used = n * period - ZEBRA_GAP
-  const startOff = -used / 2 + ZEBRA_STRIPE / 2
-  const roadW = ROAD_W * 0.94
-
-  const bars: ReactElement[] = []
-  for (let k = 0; k < n; k++) {
-    bars.push(
-      <mesh
-        key={k}
-        position={[cx, ZEBRA_Y, z + startOff + k * period]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        material={zebraStripeMat}
-      >
-        <planeGeometry args={[roadW, ZEBRA_STRIPE]} />
-      </mesh>,
-    )
+function Dashes({ s, across, faded }: { s: Seg; across: number; faded?: boolean }) {
+  const items: ReactElement[] = []
+  const period = DASH_LEN + DASH_GAP
+  for (let a = s.a0 + 1.5; a + DASH_LEN < s.a1 - 1.5; a += period) {
+    items.push(<Line key={a} s={s} across={across} a0={a} a1={a + DASH_LEN} faded={faded} />)
   }
-  return <group>{bars}</group>
+  return <>{items}</>
 }
 
-/** Stripes across an E–W road (traffic ±X): thin along X, wide along Z. */
-function ZebraAcrossHorizontalRoad({ x, cz }: { x: number; cz: number }) {
-  const span = ROAD_W * ZEBRA_COVER
-  const period = ZEBRA_STRIPE + ZEBRA_GAP
-  const n = Math.max(4, Math.floor(span / period))
-  const used = n * period - ZEBRA_GAP
-  const startOff = -used / 2 + ZEBRA_STRIPE / 2
-  const roadW = ROAD_W * 0.94
-
-  const bars: ReactElement[] = []
-  for (let k = 0; k < n; k++) {
-    bars.push(
-      <mesh
-        key={k}
-        position={[x + startOff + k * period, ZEBRA_Y, cz]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        material={zebraStripeMat}
-      >
-        <planeGeometry args={[ZEBRA_STRIPE, roadW]} />
-      </mesh>,
-    )
-  }
-  return <group>{bars}</group>
-}
-
-function VerticalRoadStrip({
-  cx,
-  tarmacMat,
-  wornMat,
-  stripIndex,
-}: {
-  cx: number
-  tarmacMat: THREE.MeshStandardMaterial
-  wornMat: THREE.MeshStandardMaterial
-  stripIndex: number
-}) {
-  const dashes = useMemo(() => {
-    const items: ReactElement[] = []
-    const period = DASH_LEN + DASH_GAP
-    let z = Z0 + DASH_LEN / 2
-    let i = 0
-    while (z < Z1 - DASH_LEN / 2) {
-      if (!dashOverlapsIntersectionAlongZ(z)) {
-        items.push(
-          <mesh
-            key={`d-${i}`}
-            position={[cx, LINE_Y, z]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            material={pickRoadLineMat(stripIndex, i, 707)}
-          >
-            <planeGeometry args={[0.16, DASH_LEN]} />
-          </mesh>,
-        )
-      }
-      z += period
-      i++
-    }
-    return items
-  }, [cx, stripIndex])
-
-  const midZ = (Z0 + Z1) / 2
-  const roadSegments = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS }, (_, seg) => {
-        const length = BLOCK + ROAD_W
-        const z = CITY_START + ROAD_W / 2 + seg * length + length / 2
-        const worn = segmentRandom(stripIndex, seg, 17) < WORN_RATIO
-        return (
-          <mesh key={`vr-${seg}`} position={[cx, 0.03, z]} receiveShadow material={worn ? wornMat : tarmacMat}>
-            <boxGeometry args={[ROAD_W, 0.06, length]} />
-          </mesh>
-        )
-      }),
-    [cx, stripIndex, tarmacMat, wornMat],
-  )
-
-  const xLeft = cx - HALF + SHOULDER_INSET
-  const xRight = cx + HALF - SHOULDER_INSET
-
-  return (
-    <group>
-      {roadSegments}
-      {VERTICAL_SHOULDER_Z_RANGES.map(([za, zb], si) => {
-        const len = zb - za
-        const zm = (za + zb) / 2
-        return (
-          <group key={`vs-${stripIndex}-${si}`}>
-            <mesh
-              position={[xLeft, LINE_Y, zm]}
-              rotation={[-Math.PI / 2, 0, 0]}
-              material={pickRoadLineMat(stripIndex, si, 717)}
-            >
-              <planeGeometry args={[SHOULDER_W, len]} />
-            </mesh>
-            <mesh
-              position={[xRight, LINE_Y, zm]}
-              rotation={[-Math.PI / 2, 0, 0]}
-              material={pickRoadLineMat(stripIndex, si + 64, 718)}
-            >
-              <planeGeometry args={[SHOULDER_W, len]} />
-            </mesh>
-          </group>
-        )
-      })}
-      {dashes}
-      <mesh position={[cx + HALF + SIDEWALK_WIDTH / 2, 0.022, midZ]} receiveShadow>
-        <boxGeometry args={[SIDEWALK_WIDTH, 0.028, CITY_TOTAL]} />
-        <meshStandardMaterial {...dirtMatProps} />
-      </mesh>
-      <mesh position={[cx - HALF - SIDEWALK_WIDTH / 2, 0.022, midZ]} receiveShadow>
-        <boxGeometry args={[SIDEWALK_WIDTH, 0.028, CITY_TOTAL]} />
-        <meshStandardMaterial {...dirtMatProps} />
-      </mesh>
-    </group>
-  )
-}
-
-function HorizontalRoadStrip({
-  cz,
-  tarmacMat,
-  wornMat,
-  stripIndex,
-}: {
-  cz: number
-  tarmacMat: THREE.MeshStandardMaterial
-  wornMat: THREE.MeshStandardMaterial
-  stripIndex: number
-}) {
-  const dashes = useMemo(() => {
-    const items: ReactElement[] = []
-    const period = DASH_LEN + DASH_GAP
-    let x = X0 + DASH_LEN / 2
-    let i = 0
-    while (x < X1 - DASH_LEN / 2) {
-      if (!dashOverlapsIntersectionAlongX(x)) {
-        items.push(
-          <mesh
-            key={`hd-${i}`}
-            position={[x, LINE_Y, cz]}
-            rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-            material={pickRoadLineMat(stripIndex, i, 807)}
-          >
-            <planeGeometry args={[0.16, DASH_LEN]} />
-          </mesh>,
-        )
-      }
-      x += period
-      i++
-    }
-    return items
-  }, [cz, stripIndex])
-
-  const midX = (X0 + X1) / 2
-  const roadSegments = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS }, (_, seg) => {
-        const length = BLOCK + ROAD_W
-        const x = CITY_START + ROAD_W / 2 + seg * length + length / 2
-        const worn = segmentRandom(stripIndex, seg, 31) < WORN_RATIO
-        return (
-          <mesh key={`hr-${seg}`} position={[x, 0.03, cz]} receiveShadow material={worn ? wornMat : tarmacMat}>
-            <boxGeometry args={[length, 0.06, ROAD_W]} />
-          </mesh>
-        )
-      }),
-    [cz, stripIndex, tarmacMat, wornMat],
-  )
-
-  const zSouth = cz - HALF + SHOULDER_INSET
-  const zNorth = cz + HALF - SHOULDER_INSET
-
-  return (
-    <group>
-      {roadSegments}
-      {HORIZONTAL_SHOULDER_X_RANGES.map(([xa, xb], si) => {
-        const len = xb - xa
-        const xm = (xa + xb) / 2
-        return (
-          <group key={`hs-${stripIndex}-${si}`}>
-            <mesh
-              position={[xm, LINE_Y, zSouth]}
-              rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-              material={pickRoadLineMat(stripIndex, si, 727)}
-            >
-              <planeGeometry args={[SHOULDER_W, len]} />
-            </mesh>
-            <mesh
-              position={[xm, LINE_Y, zNorth]}
-              rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-              material={pickRoadLineMat(stripIndex, si + 64, 728)}
-            >
-              <planeGeometry args={[SHOULDER_W, len]} />
-            </mesh>
-          </group>
-        )
-      })}
-      {dashes}
-      <mesh position={[midX, 0.022, cz + HALF + SIDEWALK_WIDTH / 2]} receiveShadow>
-        <boxGeometry args={[CITY_TOTAL, 0.028, SIDEWALK_WIDTH]} />
-        <meshStandardMaterial {...dirtMatProps} />
-      </mesh>
-      <mesh position={[midX, 0.022, cz - HALF - SIDEWALK_WIDTH / 2]} receiveShadow>
-        <boxGeometry args={[CITY_TOTAL, 0.028, SIDEWALK_WIDTH]} />
-        <meshStandardMaterial {...dirtMatProps} />
-      </mesh>
-    </group>
-  )
-}
-
-/** Charcoal tarmac, dashed centre line, solid shoulders, murram strips (no physics). */
-export function RoadNetwork() {
-  const tarmacTex = useMemo(() => createOldTarmacTexture(), [])
-  const wornTex = useMemo(() => createWornTarmacTexture(), [])
-  const tarmacMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: tarmacTex,
-        color: '#1a1a1a',
-        roughness: 0.94,
-        metalness: 0.02,
-      }),
-    [tarmacTex],
-  )
-  const wornMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: wornTex,
-        color: '#2f3236',
-        roughness: 0.98,
-        metalness: 0.01,
-      }),
-    [wornTex],
-  )
-
-  const vertical = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => (
-        <VerticalRoadStrip
-          key={`v-${k}`}
-          cx={roadStripCenterX(k)}
-          tarmacMat={tarmacMat}
-          wornMat={wornMat}
-          stripIndex={k}
-        />
-      )),
-    [tarmacMat, wornMat],
-  )
-
-  const horizontal = useMemo(
-    () =>
-      Array.from({ length: NUM_BLOCKS + 1 }, (_, k) => (
-        <HorizontalRoadStrip
-          key={`h-${k}`}
-          cz={roadStripCenterZ(k)}
-          tarmacMat={tarmacMat}
-          wornMat={wornMat}
-          stripIndex={k}
-        />
-      )),
-    [tarmacMat, wornMat],
-  )
-
-  const zebraCrossings = useMemo(() => {
-    const out: ReactElement[] = []
-    for (const s of ZEBRA_VERTICAL_SITES) {
-      out.push(<ZebraAcrossVerticalRoad key={s.key} cx={s.cx} z={s.z} />)
-    }
-    for (const s of ZEBRA_HORIZONTAL_SITES) {
-      out.push(<ZebraAcrossHorizontalRoad key={s.key} x={s.x} cz={s.cz} />)
-    }
-    return out
-  }, [])
-
-  const speedHumps = useMemo(() => {
-    const { vertical, horizontal } = listSpeedHumpSites()
-    const out: ReactElement[] = []
-    for (const h of vertical) {
-      out.push(
-        <SpeedHumpVerticalRoad key={h.key} cx={h.cx} z={h.z} material={tarmacMat} />,
-      )
-    }
-    for (const h of horizontal) {
-      out.push(
-        <SpeedHumpHorizontalRoad key={h.key} x={h.x} cz={h.cz} material={tarmacMat} />,
-      )
-    }
-    return out
-  }, [tarmacMat])
-
-  const potholeDeepMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#060504',
-        roughness: 1,
-        metalness: 0,
-        emissive: '#1a0f08',
-        emissiveIntensity: 0.12,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-      }),
-    [],
-  )
-  const potholeAsphaltMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#2a2520',
-        roughness: 0.96,
-        metalness: 0.03,
-        polygonOffset: true,
-        polygonOffsetFactor: -0.8,
-        polygonOffsetUnits: -1,
-      }),
-    [],
-  )
-  const potholeCrackMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#8a7a68',
-        roughness: 0.88,
-        metalness: 0.06,
-        emissive: '#3d3228',
-        emissiveIntensity: 0.08,
-        polygonOffset: true,
-        polygonOffsetFactor: -0.6,
-        polygonOffsetUnits: -1,
-      }),
-    [],
-  )
-
-  const potholeMeshes = useMemo(() => {
-    return listPotholeSites().map((p) => {
-      const rot = (p.x * 0.17 + p.z * 0.13) % (Math.PI * 2)
+function SegmentMarkings({ s }: { s: Seg }) {
+  const edge = s.half - 0.28
+  switch (s.kind) {
+    case 'dual': {
+      const laneLine = MEDIAN_W / 2 + (s.half - MEDIAN_W / 2) / 2
       return (
-        <group key={p.key}>
-          <mesh
-            position={[p.x, ROAD_TOP_Y - 0.024, p.z]}
-            rotation={[-Math.PI / 2, 0, rot]}
-            material={potholeDeepMat}
-            renderOrder={1}
-          >
-            <circleGeometry args={[p.r * 0.92, 28]} />
-          </mesh>
-          <mesh
-            position={[p.x, ROAD_TOP_Y + 0.002, p.z]}
-            rotation={[-Math.PI / 2, 0, rot]}
-            material={potholeAsphaltMat}
-            renderOrder={2}
-          >
-            <ringGeometry args={[p.r * 0.18, p.r * 1.04, 24]} />
-          </mesh>
-          <mesh
-            position={[p.x, ROAD_TOP_Y + 0.005, p.z]}
-            rotation={[-Math.PI / 2, 0, rot * 1.7]}
-            material={potholeCrackMat}
-            renderOrder={3}
-          >
-            <ringGeometry args={[p.r * 0.28, p.r * 0.88, 22]} />
-          </mesh>
-        </group>
+        <>
+          <Dashes s={s} across={laneLine} />
+          <Dashes s={s} across={-laneLine} />
+          <Line s={s} across={edge} a0={s.a0} a1={s.a1} />
+          <Line s={s} across={-edge} a0={s.a0} a1={s.a1} />
+        </>
       )
-    })
-  }, [potholeDeepMat, potholeAsphaltMat, potholeCrackMat])
+    }
+    case 'main':
+      return (
+        <>
+          <Line s={s} across={0.14} a0={s.a0} a1={s.a1} width={0.1} />
+          <Line s={s} across={-0.14} a0={s.a0} a1={s.a1} width={0.1} />
+          <Dashes s={s} across={s.half / 2} />
+          <Dashes s={s} across={-s.half / 2} />
+          <Line s={s} across={edge} a0={s.a0} a1={s.a1} faded />
+          <Line s={s} across={-edge} a0={s.a0} a1={s.a1} faded />
+        </>
+      )
+    case 'street':
+      return <Dashes s={s} across={0} faded={s.worn} />
+    default:
+      return null
+  }
+}
 
+/** Raised median with black-and-white kerb and grass, trimmed back from roundabouts. */
+function Median({ s }: { s: Seg }) {
+  const a0 = Math.max(s.a0 + 0.4, s.j0 + medianTrim(s.axis === 'ns' ? s.c : s.j0, s.axis === 'ns' ? s.j0 : s.c))
+  const a1 = Math.min(s.a1 - 0.4, s.j1 - medianTrim(s.axis === 'ns' ? s.c : s.j1, s.axis === 'ns' ? s.j1 : s.c))
+  const len = a1 - a0
+  if (len < 1) return null
+  const mid = (a0 + a1) / 2
+  return (
+    <>
+      <mesh position={segPos(s, 0, mid, ROAD_TOP_Y + MEDIAN_H / 2)} material={mats.kerb} castShadow receiveShadow>
+        <boxGeometry args={segSize(s, MEDIAN_W, MEDIAN_H, len)} />
+      </mesh>
+      <mesh position={segPos(s, 0, mid, ROAD_TOP_Y + MEDIAN_H + 0.005)} rotation={[-Math.PI / 2, 0, s.axis === 'ns' ? 0 : Math.PI / 2]} material={mats.medianGrass} receiveShadow>
+        <planeGeometry args={[MEDIAN_W - 0.24, len]} />
+      </mesh>
+    </>
+  )
+}
+
+/** Solid medians: you can't ride across a dual carriageway. */
+function MedianColliders({ segs }: { segs: Seg[] }) {
+  const dual = segs.filter((s) => s.kind === 'dual')
+  return (
+    <RigidBody type="fixed" colliders={false} userData={{ kind: 'building' }}>
+      {dual.map((s) => {
+        const a0 = Math.max(s.a0 + 0.4, s.j0 + medianTrim(s.axis === 'ns' ? s.c : s.j0, s.axis === 'ns' ? s.j0 : s.c))
+        const a1 = Math.min(s.a1 - 0.4, s.j1 - medianTrim(s.axis === 'ns' ? s.c : s.j1, s.axis === 'ns' ? s.j1 : s.c))
+        if (a1 - a0 < 1) return null
+        const [hx, , hz] = segSize(s, MEDIAN_W / 2, 0, (a1 - a0) / 2)
+        return <CuboidCollider key={s.key} args={[hx, 0.5, hz]} position={segPos(s, 0, (a0 + a1) / 2, 0.5)} />
+      })}
+    </RigidBody>
+  )
+}
+
+function Segment({ s }: { s: Seg }) {
+  const len = s.a1 - s.a0
+  if (len <= 0.1) return null
+  const mid = (s.a0 + s.a1) / 2
   return (
     <group>
-      {vertical}
-      {horizontal}
-      <IntersectionCornerFillets />
-      {speedHumps}
-      {potholeMeshes}
-      {zebraCrossings}
+      <mesh position={segPos(s, 0, mid, 0.03)} material={surfaceFor(s.kind, s.worn)} receiveShadow>
+        <boxGeometry args={segSize(s, s.half * 2, 0.06, len)} />
+      </mesh>
+      <SegmentMarkings s={s} />
+      {s.kind === 'dual' ? <Median s={s} /> : null}
+    </group>
+  )
+}
+
+/** Pavement strips (murram) the full length of each road, plus open drains along main roads. */
+function Verges() {
+  const items: ReactElement[] = []
+  const mid = CITY_START + CITY_TOTAL / 2
+  const strip = (axis: 'ns' | 'ew', k: number) => {
+    const c = axis === 'ns' ? roadStripCenterX(k) : roadStripCenterZ(k)
+    const half = axis === 'ns' ? nsHalf(k) : ewHalf(k)
+    const kind = axis === 'ns' ? nsKind(k) : ewKind(k)
+    for (const side of [-1, 1]) {
+      const across = side * (half + SIDEWALK_WIDTH / 2)
+      const pos: [number, number, number] = axis === 'ns' ? [c + across, 0.022, mid] : [mid, 0.022, c + across]
+      const size: [number, number, number] = axis === 'ns' ? [SIDEWALK_WIDTH, 0.028, CITY_TOTAL] : [CITY_TOTAL, 0.028, SIDEWALK_WIDTH]
+      items.push(
+        <mesh key={`sw-${axis}-${k}-${side}`} position={pos} material={mats.shoulder} receiveShadow>
+          <boxGeometry args={size} />
+        </mesh>,
+      )
+      if (kind === 'main' || kind === 'dual') {
+        // Open drain (dark channel with concrete lips) beyond the pavement, broken at each crossing road.
+        const dAcross = side * (half + SIDEWALK_WIDTH + DRAIN_W / 2)
+        for (let n = 0; n < NUM_BLOCKS; n++) {
+          const crossA = axis === 'ns' ? ewHalf(n) : nsHalf(n)
+          const crossB = axis === 'ns' ? ewHalf(n + 1) : nsHalf(n + 1)
+          const startA = axis === 'ns' ? roadStripCenterZ(n) : roadStripCenterX(n)
+          const startB = axis === 'ns' ? roadStripCenterZ(n + 1) : roadStripCenterX(n + 1)
+          const a0 = startA + crossA + SIDEWALK_WIDTH + 0.2
+          const a1 = startB - crossB - SIDEWALK_WIDTH - 0.2
+          const len = a1 - a0
+          if (len < 1) continue
+          const am = (a0 + a1) / 2
+          const at = (acr: number, y: number): [number, number, number] => (axis === 'ns' ? [c + acr, y, am] : [am, y, c + acr])
+          const sz = (w: number, h: number): [number, number, number] => (axis === 'ns' ? [w, h, len] : [len, h, w])
+          items.push(
+            <mesh key={`dr-${axis}-${k}-${side}-${n}`} position={at(dAcross, 0.012)} material={mats.drain}>
+              <boxGeometry args={sz(DRAIN_W, 0.02)} />
+            </mesh>,
+          )
+          for (const lip of [-1, 1]) {
+            items.push(
+              <mesh key={`dl-${axis}-${k}-${side}-${n}-${lip}`} position={at(dAcross + lip * (DRAIN_W / 2 + 0.06), 0.06)} material={mats.concrete}>
+                <boxGeometry args={sz(0.12, 0.12)} />
+              </mesh>,
+            )
+          }
+        }
+      }
+    }
+  }
+  for (let k = 0; k <= NUM_BLOCKS; k++) {
+    strip('ns', k)
+    strip('ew', k)
+  }
+  return <>{items}</>
+}
+
+/** Junction boxes sized by the two crossing roads. */
+function JunctionBoxes() {
+  const items: ReactElement[] = []
+  for (let i = 0; i <= NUM_BLOCKS; i++) {
+    for (let j = 0; j <= NUM_BLOCKS; j++) {
+      const murram = nsKind(i) === 'murram' && ewKind(j) === 'murram'
+      items.push(
+        <mesh key={`jb-${i}-${j}`} position={[roadStripCenterX(i), 0.031, roadStripCenterZ(j)]} material={murram ? mats.murram : mats.tarmac} receiveShadow>
+          <boxGeometry args={[nsHalf(i) * 2, 0.062, ewHalf(j) * 2]} />
+        </mesh>,
+      )
+    }
+  }
+  return <>{items}</>
+}
+
+function Zebras() {
+  const items: ReactElement[] = []
+  const stripes = (key: string, cx: number, cz: number, half: number, axis: 'ns' | 'ew') => {
+    const span = half * 2 * 0.9
+    const n = Math.floor(span / 0.62)
+    for (let k = 0; k < n; k++) {
+      const off = -span / 2 + 0.31 + k * 0.62
+      items.push(
+        <mesh
+          key={`${key}-${k}`}
+          position={axis === 'ns' ? [cx + off, ROAD_TOP_Y + 0.006, cz] : [cx, ROAD_TOP_Y + 0.006, cz + off]}
+          rotation={[-Math.PI / 2, 0, axis === 'ns' ? 0 : Math.PI / 2]}
+          material={mats.zebra}
+        >
+          <planeGeometry args={[0.32, 3]} />
+        </mesh>,
+      )
+    }
+  }
+  for (const s of ZEBRA_VERTICAL_SITES) stripes(s.key, s.cx, s.z, nsHalf(s.vi), 'ns')
+  for (const s of ZEBRA_HORIZONTAL_SITES) stripes(s.key, s.x, s.cz, ewHalf(s.hj), 'ew')
+  return <>{items}</>
+}
+
+function Humps() {
+  const { vertical, horizontal } = useMemo(() => listSpeedHumpSites(), [])
+  return (
+    <>
+      {vertical.map((h) => (
+        <mesh key={h.key} position={[h.cx, ROAD_TOP_Y + HUMP_HALF_H, h.z]} scale={[h.ax, HUMP_HALF_H, HUMP_ALONG]} material={mats.hump} castShadow receiveShadow>
+          <sphereGeometry args={[1, 10, 5]} />
+        </mesh>
+      ))}
+      {horizontal.map((h) => (
+        <mesh key={h.key} position={[h.x, ROAD_TOP_Y + HUMP_HALF_H, h.cz]} scale={[HUMP_ALONG, HUMP_HALF_H, h.ax]} material={mats.hump} castShadow receiveShadow>
+          <sphereGeometry args={[1, 10, 5]} />
+        </mesh>
+      ))}
+    </>
+  )
+}
+
+function Potholes() {
+  const sites = useMemo(() => listPotholeSites(), [])
+  return (
+    <>
+      {sites.map((p) => {
+        const rot = (p.x * 0.17 + p.z * 0.13) % (Math.PI * 2)
+        return (
+          <group key={p.key}>
+            <mesh position={[p.x, ROAD_TOP_Y + 0.001, p.z]} rotation={[-Math.PI / 2, 0, rot]} material={mats.potholeDeep}>
+              <circleGeometry args={[p.r * 0.92, 12]} />
+            </mesh>
+            <mesh position={[p.x, ROAD_TOP_Y + 0.003, p.z]} rotation={[-Math.PI / 2, 0, rot]} material={mats.potholeRim}>
+              <ringGeometry args={[p.r * 0.7, p.r * 1.04, 12]} />
+            </mesh>
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+export function RoadNetwork() {
+  const segs = useMemo(() => buildSegments(), [])
+  return (
+    <group>
+      <Verges />
+      <JunctionBoxes />
+      {segs.map((s) => (
+        <Segment key={s.key} s={s} />
+      ))}
+      <MedianColliders segs={segs} />
+      <Zebras />
+      <Humps />
+      <Potholes />
     </group>
   )
 }

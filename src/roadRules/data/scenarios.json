@@ -1,0 +1,1180 @@
+[
+  {
+    "id": "stop",
+    "kind": "sign",
+    "sign": "stop",
+    "name": "Stop sign",
+    "setup": "Wandegeya junction. A STOP sign, and a matatu coming fast from the right.",
+    "actors": [
+      "🚌"
+    ],
+    "rule": "At a STOP sign you must come to a complete halt at the line, look both ways, and only go when it is clear. Slowing down is not stopping.",
+    "options": [
+      {
+        "text": "Stop completely, look both ways, then go",
+        "ok": true,
+        "outcome": "You wait, the matatu roars past, and you cross safely.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Slow down and roll through",
+        "ok": false,
+        "outcome": "The matatu clips your back wheel and you skid. A traffic officer writes you a fine.",
+        "fine": 20000,
+        "life": 25,
+        "jail": 0
+      },
+      {
+        "text": "Speed up and beat the matatu",
+        "ok": false,
+        "outcome": "You cut across its path. It brakes hard, you go down, and the police arrive.",
+        "fine": 30000,
+        "life": 45,
+        "jail": 1
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "giveway",
+    "kind": "sign",
+    "sign": "giveway",
+    "name": "Give way sign",
+    "setup": "Joining Jinja Road from a side street. GIVE WAY sign. The main road is thick with traffic.",
+    "actors": [
+      "🚚",
+      "🚗"
+    ],
+    "rule": "GIVE WAY means traffic on the main road has priority. Be ready to stop and only go when there is a safe gap.",
+    "options": [
+      {
+        "text": "Slow down and wait for a safe gap",
+        "ok": true,
+        "outcome": "You wait a few seconds, then slot in safely.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Push in. They will brake",
+        "ok": false,
+        "outcome": "A truck cannot stop in time. You are thrown off your bike.",
+        "fine": 15000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Hoot and go",
+        "ok": false,
+        "outcome": "Hooting does not give you priority. A car swerves and clips you.",
+        "fine": 10000,
+        "life": 20,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "red",
+    "kind": "sign",
+    "sign": "redlight",
+    "name": "Red traffic light",
+    "setup": "Red light on Kampala Road. The junction looks empty.",
+    "actors": [
+      "🚗",
+      "🚶"
+    ],
+    "rule": "Red means stop behind the line. Riding through red lights is one of the leading causes of boda crashes.",
+    "options": [
+      {
+        "text": "Stop behind the line and wait for green",
+        "ok": true,
+        "outcome": "Green comes. You go, and nobody is hurt.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Slip through. Nothing is coming",
+        "ok": false,
+        "outcome": "A car on green hits your front wheel. A police officer saw everything.",
+        "fine": 50000,
+        "life": 40,
+        "jail": 2
+      },
+      {
+        "text": "Stop on the zebra crossing, past the line",
+        "ok": false,
+        "outcome": "Pedestrians squeeze around you. The officer fines you for blocking the crossing.",
+        "fine": 10000,
+        "life": 0,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "zebra",
+    "kind": "sign",
+    "sign": "zebra",
+    "name": "Pedestrian crossing",
+    "setup": "A mother and two children step onto the zebra crossing at Nakasero.",
+    "actors": [
+      "👩",
+      "👧",
+      "🧒"
+    ],
+    "rule": "Pedestrians on a zebra crossing have priority. Slow down, stop, and wait until they are across.",
+    "options": [
+      {
+        "text": "Slow down and stop for them",
+        "ok": true,
+        "outcome": "They cross safely. The mother nods at you.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Hoot and swerve around them",
+        "ok": false,
+        "outcome": "A child stumbles back and you clip her. She is taken to hospital and you are arrested.",
+        "fine": 40000,
+        "life": 20,
+        "jail": 5
+      },
+      {
+        "text": "Speed up to pass before they cross",
+        "ok": false,
+        "outcome": "You hit the mother. You are arrested at the scene.",
+        "fine": 40000,
+        "life": 35,
+        "jail": 7
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "school",
+    "kind": "sign",
+    "sign": "school",
+    "name": "School children ahead",
+    "setup": "School is out. Children pour onto the road near Kabalagala.",
+    "actors": [
+      "🧒",
+      "👧",
+      "🧒"
+    ],
+    "rule": "Near schools, children are unpredictable. Slow down, watch the verges, and be ready to stop.",
+    "options": [
+      {
+        "text": "Slow right down and be ready to stop",
+        "ok": true,
+        "outcome": "You crawl through. A boy dashes out and you stop in time.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Keep your speed. They are on the other side",
+        "ok": false,
+        "outcome": "A child runs across. You brake too late and hit him. You are arrested.",
+        "fine": 30000,
+        "life": 30,
+        "jail": 4
+      },
+      {
+        "text": "Hoot at them to clear the road",
+        "ok": false,
+        "outcome": "The children scatter and one runs into your path. You fall.",
+        "fine": 15000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "speed",
+    "kind": "sign",
+    "sign": "speed50",
+    "name": "Speed limit 50",
+    "setup": "A 50 sign in the built-up area. A friend revs beside you: \"Race me!\"",
+    "actors": [
+      "🏍️"
+    ],
+    "rule": "A speed limit sign is a maximum, not a target. Ride slower when the road is busy or wet.",
+    "options": [
+      {
+        "text": "Stay at or below 50 km/h",
+        "ok": true,
+        "outcome": "He races off. You stay safe and your fare pays you well.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Race him at 80",
+        "ok": false,
+        "outcome": "You hit a pothole at speed and lose control.",
+        "fine": 30000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Go 65. Just a little over",
+        "ok": false,
+        "outcome": "A police speed check waves you down. You brake late and wobble.",
+        "fine": 20000,
+        "life": 15,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "overtake",
+    "kind": "sign",
+    "sign": "noovertake",
+    "name": "No overtaking",
+    "setup": "A slow truck ahead. A NO OVERTAKING sign. The road looks clear.",
+    "actors": [
+      "🚛"
+    ],
+    "rule": "Do not overtake where a sign or a solid centre line says no. You cannot see what is coming round the bend.",
+    "options": [
+      {
+        "text": "Stay behind the truck",
+        "ok": true,
+        "outcome": "You wait. A matatu comes round the bend, right where you would have been.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Overtake. It looks clear enough",
+        "ok": false,
+        "outcome": "A matatu appears round the bend, head-on.",
+        "fine": 40000,
+        "life": 60,
+        "jail": 0
+      },
+      {
+        "text": "Overtake on the left, on the verge",
+        "ok": false,
+        "outcome": "You clip a pedestrian's bag and slide on the gravel.",
+        "fine": 20000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "noentry",
+    "kind": "sign",
+    "sign": "noentry",
+    "name": "No entry",
+    "setup": "Kampala Road is jammed. The one-way street beside you is empty, with a NO ENTRY sign.",
+    "actors": [
+      "🚗",
+      "🚗"
+    ],
+    "rule": "NO ENTRY means vehicles must not enter from this side. Riding against traffic is a leading cause of boda crashes.",
+    "options": [
+      {
+        "text": "Stay in the jam, or take the long way round",
+        "ok": true,
+        "outcome": "It takes longer, but you arrive in one piece.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Ride the wrong way. Just 100 metres",
+        "ok": false,
+        "outcome": "A taxi comes round the corner straight at you. Police catch you.",
+        "fine": 40000,
+        "life": 45,
+        "jail": 2
+      },
+      {
+        "text": "Wait until nobody is watching, then go",
+        "ok": false,
+        "outcome": "Someone is always watching. A car swerves and you go down.",
+        "fine": 30000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "police",
+    "kind": "rule",
+    "sign": "e:👮",
+    "name": "Traffic officer",
+    "setup": "A traffic officer steps out and raises a hand. You are running late for a fare.",
+    "actors": [
+      "👮"
+    ],
+    "rule": "Always obey a traffic officer's signal. It overrides signs and lights.",
+    "options": [
+      {
+        "text": "Stop, greet, and show your permit",
+        "ok": true,
+        "outcome": "He checks your papers and waves you on.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Ride on. You will explain later",
+        "ok": false,
+        "outcome": "The officer radios ahead. You are arrested at the next junction.",
+        "fine": 50000,
+        "life": 10,
+        "jail": 3
+      },
+      {
+        "text": "Turn into a side street to avoid him",
+        "ok": false,
+        "outcome": "He follows. You are fined and your bike is held.",
+        "fine": 30000,
+        "life": 20,
+        "jail": 1
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "ambulance",
+    "kind": "rule",
+    "sign": "e:🚑",
+    "name": "Emergency vehicle",
+    "setup": "A siren behind you on Entebbe Road.",
+    "actors": [
+      "🚑"
+    ],
+    "rule": "Give way to emergency vehicles. Move to the left and stop until they pass.",
+    "options": [
+      {
+        "text": "Move to the left and stop until it passes",
+        "ok": true,
+        "outcome": "It races past. Someone gets to hospital faster.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Speed up to stay ahead of it",
+        "ok": false,
+        "outcome": "You block the ambulance. The driver has to force past you.",
+        "fine": 20000,
+        "life": 15,
+        "jail": 0
+      },
+      {
+        "text": "Hold your lane. You have priority",
+        "ok": false,
+        "outcome": "You do not. The ambulance forces you off the road.",
+        "fine": 15000,
+        "life": 10,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "helmet",
+    "kind": "rule",
+    "sign": "e:⛑️",
+    "name": "Helmets",
+    "setup": "Your passenger has no helmet. She says it is only five minutes away.",
+    "actors": [
+      "👩"
+    ],
+    "rule": "Rider and passenger must both wear a helmet, fastened. A helmet that is not fastened is as dangerous as none.",
+    "options": [
+      {
+        "text": "No helmet, no ride. Give her your spare",
+        "ok": true,
+        "outcome": "She wears it. You both ride safely.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Fine, five minutes only",
+        "ok": false,
+        "outcome": "A pothole throws her onto the road. She is badly hurt and the police blame you.",
+        "fine": 30000,
+        "life": 10,
+        "jail": 3
+      },
+      {
+        "text": "Let her hold your helmet in her hands",
+        "ok": false,
+        "outcome": "A checkpoint stops you. A helmet in the hand protects nobody.",
+        "fine": 20000,
+        "life": 0,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "pickup",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "extra",
+    "kind": "rule",
+    "sign": "e:👥",
+    "name": "One passenger",
+    "setup": "Three people want to ride with you and offer UGX 15,000 in total.",
+    "actors": [
+      "👥",
+      "👩"
+    ],
+    "rule": "One passenger at most, sitting astride and facing forward. An overloaded bike cannot balance or brake.",
+    "options": [
+      {
+        "text": "One passenger only. Turn down the rest",
+        "ok": true,
+        "outcome": "You lose the big fare, but keep your bike stable.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Take all three. It is a big fare",
+        "ok": false,
+        "outcome": "The bike is unbalanced and you fall at the first corner.",
+        "fine": 40000,
+        "life": 40,
+        "jail": 2
+      },
+      {
+        "text": "Take two. Only a short distance",
+        "ok": false,
+        "outcome": "The bike wobbles and drags on the brakes. Police fine you.",
+        "fine": 25000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 3000,
+    "trigger": "pickup",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "phone",
+    "kind": "rule",
+    "sign": "e:📱",
+    "name": "Phone while riding",
+    "setup": "Your phone rings. It is a big client.",
+    "actors": [
+      "📱"
+    ],
+    "rule": "Never use a phone while riding. Stop safely, then call back.",
+    "options": [
+      {
+        "text": "Let it ring. Call back when you stop",
+        "ok": true,
+        "outcome": "You call back ten minutes later and still get the job.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Answer it. One hand is fine",
+        "ok": false,
+        "outcome": "You wobble, drift toward a pedestrian, and fall.",
+        "fine": 20000,
+        "life": 30,
+        "jail": 0
+      },
+      {
+        "text": "Tuck the phone under your helmet and talk",
+        "ok": false,
+        "outcome": "You cannot hear the horn behind you. A boda clips you.",
+        "fine": 20000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "anytime",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "beer",
+    "kind": "rule",
+    "sign": "e:🍺",
+    "name": "Alcohol",
+    "setup": "A friend at the stage offers you a beer before your next fare.",
+    "actors": [
+      "🍺",
+      "🏍️"
+    ],
+    "rule": "Never ride after drinking. Alcohol slows your reactions and blurs your judgement.",
+    "options": [
+      {
+        "text": "No. Water only",
+        "ok": true,
+        "outcome": "Your friend laughs. You ride home with a clear head.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "One bottle will not hurt",
+        "ok": false,
+        "outcome": "Your reactions are slow. You misjudge a turn and crash.",
+        "fine": 50000,
+        "life": 50,
+        "jail": 7
+      },
+      {
+        "text": "Only if I eat first",
+        "ok": false,
+        "outcome": "Food does not undo alcohol. You drift wide on a corner.",
+        "fine": 40000,
+        "life": 30,
+        "jail": 5
+      }
+    ],
+    "reward": 5000,
+    "trigger": "anytime",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "round",
+    "kind": "sign",
+    "sign": "roundabout",
+    "name": "Roundabout",
+    "setup": "A roundabout at Kibuye. Cars are already circling.",
+    "actors": [
+      "🚗",
+      "🚌"
+    ],
+    "rule": "In Uganda we drive on the left. At a roundabout, give way to traffic already in it, coming from your right, and go clockwise.",
+    "options": [
+      {
+        "text": "Slow down and give way to traffic from your right",
+        "ok": true,
+        "outcome": "You spot a gap and join without stopping anyone.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Enter fast. You have momentum",
+        "ok": false,
+        "outcome": "A car already in the circle hits your side.",
+        "fine": 25000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Cut across the middle the short way",
+        "ok": false,
+        "outcome": "You ride against traffic in the circle. A bus horn is the last thing you hear before you fall.",
+        "fine": 40000,
+        "life": 50,
+        "jail": 1
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "rail",
+    "kind": "sign",
+    "sign": "w:🚆",
+    "name": "Level crossing",
+    "setup": "A railway level crossing. The lights are flashing and the bell is ringing.",
+    "actors": [
+      "🚆"
+    ],
+    "rule": "Always stop at a level crossing when the lights flash. Never try to beat a train.",
+    "options": [
+      {
+        "text": "Stop well back and wait until it has passed",
+        "ok": true,
+        "outcome": "The train thunders by. You cross when the lights stop.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Dash across before the train",
+        "ok": false,
+        "outcome": "The train clips your bike. You survive, barely.",
+        "fine": 30000,
+        "life": 80,
+        "jail": 0
+      },
+      {
+        "text": "Squeeze round the barrier",
+        "ok": false,
+        "outcome": "You slip through, but the train is closer than it looked.",
+        "fine": 30000,
+        "life": 70,
+        "jail": 2
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "slippery",
+    "kind": "sign",
+    "sign": "w:🌧️",
+    "name": "Slippery road",
+    "setup": "Heavy rain on the Masaka road. A SLIPPERY ROAD sign.",
+    "actors": [
+      "🌧️"
+    ],
+    "rule": "In rain, ride slower, keep more distance, and brake early and gently.",
+    "options": [
+      {
+        "text": "Slow down and brake gently",
+        "ok": true,
+        "outcome": "Your tyres grip. You arrive wet but safe.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Keep your speed. Your fare is late",
+        "ok": false,
+        "outcome": "Your rear wheel slides out on a corner.",
+        "fine": 10000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Brake hard at the bend",
+        "ok": false,
+        "outcome": "Your wheels lock and you go down.",
+        "fine": 10000,
+        "life": 30,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "bump",
+    "kind": "sign",
+    "sign": "bump",
+    "name": "Speed bump",
+    "setup": "A speed bump sign near the market.",
+    "actors": [
+      "🛒",
+      "🚶"
+    ],
+    "rule": "Slow down for speed bumps and cross them straight. Hitting one fast can throw you and your passenger.",
+    "options": [
+      {
+        "text": "Slow down and cross straight",
+        "ok": true,
+        "outcome": "You glide over. Your passenger says nothing, which is good.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Fly over it",
+        "ok": false,
+        "outcome": "Your passenger is thrown up and you lose control.",
+        "fine": 10000,
+        "life": 25,
+        "jail": 0
+      },
+      {
+        "text": "Swerve onto the pavement to avoid it",
+        "ok": false,
+        "outcome": "You scatter market shoppers and a woman falls.",
+        "fine": 15000,
+        "life": 15,
+        "jail": 1
+      }
+    ],
+    "reward": 3000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "lights",
+    "kind": "rule",
+    "sign": "e:💡",
+    "name": "Lights and visibility",
+    "setup": "It is 6:40 pm and getting dark.",
+    "actors": [
+      "🌆"
+    ],
+    "rule": "Wear a bright jacket and use your headlight when it is dim or dark, so others can see you.",
+    "options": [
+      {
+        "text": "Switch on your headlight and wear your reflector jacket",
+        "ok": true,
+        "outcome": "Drivers see you early and give you space.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Save fuel. Ride without lights",
+        "ok": false,
+        "outcome": "A car does not see you until it is too late.",
+        "fine": 15000,
+        "life": 40,
+        "jail": 0
+      },
+      {
+        "text": "Turn the light on, but take off the jacket. It is hot",
+        "ok": false,
+        "outcome": "Half-visible is still invisible. A driver misjudges your speed.",
+        "fine": 10000,
+        "life": 15,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "turn",
+    "kind": "rule",
+    "sign": "e:↪️",
+    "name": "Turning right",
+    "setup": "You need to turn right across traffic at Buganda Road.",
+    "actors": [
+      "🚌",
+      "🚗"
+    ],
+    "rule": "Check behind, signal early, and turn only when the way is clear. Never make a U-turn in the middle of the road.",
+    "options": [
+      {
+        "text": "Check behind, signal, then turn when it is clear",
+        "ok": true,
+        "outcome": "You turn smoothly and nobody honks.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Cut across. A matatu is far behind",
+        "ok": false,
+        "outcome": "It was not far enough. It hits you in the turn.",
+        "fine": 20000,
+        "life": 40,
+        "jail": 0
+      },
+      {
+        "text": "Make a U-turn in the middle of the road",
+        "ok": false,
+        "outcome": "A car cannot stop in time.",
+        "fine": 30000,
+        "life": 45,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "pavement",
+    "kind": "rule",
+    "sign": "e:🚶",
+    "name": "Pavements",
+    "setup": "The jam is total. The pavement is empty.",
+    "actors": [
+      "🚗",
+      "🚗"
+    ],
+    "rule": "Pavements are for pedestrians. Stay on the road, even in a jam.",
+    "options": [
+      {
+        "text": "Stay on the road and wait",
+        "ok": true,
+        "outcome": "It takes ten minutes. Nobody is hurt.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Ride on the pavement. Just this once",
+        "ok": false,
+        "outcome": "A woman steps out of a shop and you knock her down.",
+        "fine": 30000,
+        "life": 15,
+        "jail": 3
+      },
+      {
+        "text": "Ride the pavement slowly, hooting",
+        "ok": false,
+        "outcome": "Slow or not, it is still the pedestrians' space. You are fined.",
+        "fine": 20000,
+        "life": 5,
+        "jail": 1
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "works",
+    "kind": "sign",
+    "sign": "w:🚧",
+    "name": "Road works",
+    "setup": "Road works ahead. A flagman waves a red flag.",
+    "actors": [
+      "🚧",
+      "👷"
+    ],
+    "rule": "Slow down at road works, obey the flagman, and watch for loose gravel and trenches.",
+    "options": [
+      {
+        "text": "Slow down and follow the flagman",
+        "ok": true,
+        "outcome": "He waves you through the safe line.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Ignore him and go",
+        "ok": false,
+        "outcome": "You hit loose gravel at the edge of a trench.",
+        "fine": 20000,
+        "life": 40,
+        "jail": 0
+      },
+      {
+        "text": "Overtake the queue along the raw edge",
+        "ok": false,
+        "outcome": "The edge crumbles and you fall.",
+        "fine": 15000,
+        "life": 30,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "cattle",
+    "kind": "sign",
+    "sign": "w:🐄",
+    "name": "Animals on the road",
+    "setup": "Rural road near Mbarara. A cattle sign, and a herd on the road.",
+    "actors": [
+      "🐄",
+      "🐄"
+    ],
+    "rule": "Slow down for animals and wait. They will not move for a horn.",
+    "options": [
+      {
+        "text": "Slow down and wait for the herd to clear",
+        "ok": true,
+        "outcome": "The herd ambles off. You ride on.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Hoot and push through",
+        "ok": false,
+        "outcome": "The herd panics and a cow knocks your bike over.",
+        "fine": 5000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Speed up before they cross",
+        "ok": false,
+        "outcome": "A calf steps out and you hit it.",
+        "fine": 10000,
+        "life": 45,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "astride",
+    "kind": "rule",
+    "sign": "e:👗",
+    "name": "Passenger seating",
+    "setup": "Your passenger, in a long skirt, wants to sit sideways.",
+    "actors": [
+      "👩"
+    ],
+    "rule": "Passengers must sit astride, facing forward. Loose clothing can catch in the wheel.",
+    "options": [
+      {
+        "text": "Ask her to sit astride and tuck her skirt in",
+        "ok": true,
+        "outcome": "She adjusts. The ride is steady and safe.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Let her sit sideways. It is comfortable for her",
+        "ok": false,
+        "outcome": "She slips off at the first bump.",
+        "fine": 20000,
+        "life": 20,
+        "jail": 0
+      },
+      {
+        "text": "Let her sit sideways, but ride slowly",
+        "ok": false,
+        "outcome": "Even at low speed, her skirt catches your wheel.",
+        "fine": 20000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 4000,
+    "trigger": "pickup",
+    "source": "prototype-v1"
+  },
+  {
+    "id": "luggage",
+    "kind": "rule",
+    "sign": "e:🍌",
+    "name": "Loads",
+    "setup": "A trader at Nakasero market wants you to carry four bunches of matooke and her too.",
+    "actors": [
+      "🍌",
+      "👩"
+    ],
+    "rule": "Never carry a load wider than your handlebars or one that blocks your view or balance. Make two trips or send the load by car.",
+    "options": [
+      {
+        "text": "Take her and one bunch. Send the rest by pick-up",
+        "ok": true,
+        "outcome": "The bike stays steady and she gets the rest delivered.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Tie all four bunches on the sides",
+        "ok": false,
+        "outcome": "The bike sways at the first turn and you scrape a taxi.",
+        "fine": 15000,
+        "life": 20,
+        "jail": 0
+      },
+      {
+        "text": "Let her hold two bunches on her lap",
+        "ok": false,
+        "outcome": "She cannot hold on. At a bump she leans and you both fall.",
+        "fine": 20000,
+        "life": 25,
+        "jail": 0
+      }
+    ],
+    "reward": 4000,
+    "trigger": "pickup",
+    "source": "v2-draft"
+  },
+  {
+    "id": "child",
+    "kind": "rule",
+    "sign": "e:🧒",
+    "name": "Children on the bike",
+    "setup": "A mother asks you to sit her small son on the fuel tank in front of you.",
+    "actors": [
+      "👩",
+      "🧒"
+    ],
+    "rule": "Never carry a child on the fuel tank in front of you. A child must sit behind an adult, held securely, with a helmet that fits, or travel another way.",
+    "options": [
+      {
+        "text": "Ask the mother to hold him behind you, with a child helmet",
+        "ok": true,
+        "outcome": "You ride slowly. Both arrive safely.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Sit him on the tank. It is only a short ride",
+        "ok": false,
+        "outcome": "You brake hard for a matatu and the boy hits the handlebars.",
+        "fine": 30000,
+        "life": 15,
+        "jail": 3
+      },
+      {
+        "text": "Let him stand on the footrest",
+        "ok": false,
+        "outcome": "He slips at a pothole. You stop just in time, but police saw it.",
+        "fine": 20000,
+        "life": 5,
+        "jail": 1
+      }
+    ],
+    "reward": 4000,
+    "trigger": "pickup",
+    "source": "v2-draft"
+  },
+  {
+    "id": "flood",
+    "kind": "sign",
+    "sign": "w:🌊",
+    "name": "Flooded road",
+    "setup": "After heavy rain the road at Bwaise is under brown water. You cannot see the bottom.",
+    "actors": [
+      "🌊"
+    ],
+    "rule": "Do not ride into water when you cannot see the road. It can hide deep potholes and open drains, and fast water can sweep a bike away.",
+    "options": [
+      {
+        "text": "Turn back and take the higher road",
+        "ok": true,
+        "outcome": "It takes longer. Later you hear a car was stuck in that water.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Ride through fast to keep momentum",
+        "ok": false,
+        "outcome": "Your front wheel drops into a hidden drain.",
+        "fine": 10000,
+        "life": 45,
+        "jail": 0
+      },
+      {
+        "text": "Follow the taxi through slowly",
+        "ok": false,
+        "outcome": "The taxi is taller than you. Your engine floods and stalls mid-water.",
+        "fine": 15000,
+        "life": 20,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "v2-draft"
+  },
+  {
+    "id": "nightsafety",
+    "kind": "rule",
+    "sign": "e:🌙",
+    "name": "Safe at night",
+    "setup": "It is late. A man asks for a ride to a dark, empty road outside town and offers double.",
+    "actors": [
+      "🌙",
+      "🧔"
+    ],
+    "rule": "Your safety comes first. At night, share your trip details with your stage, stick to lit routes, and you may refuse a ride that does not feel safe.",
+    "options": [
+      {
+        "text": "Say no politely, or ride only with your stage knowing where you go",
+        "ok": true,
+        "outcome": "You lose the fare but get home safe.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Take it quietly. Double pay is double pay",
+        "ok": false,
+        "outcome": "On the empty road he tries to take your bike. You escape, but you are hurt.",
+        "fine": 20000,
+        "life": 35,
+        "jail": 0
+      },
+      {
+        "text": "Take it, but switch your phone off to save battery",
+        "ok": false,
+        "outcome": "Nobody can reach you when the bike breaks down in the dark.",
+        "fine": 10000,
+        "life": 20,
+        "jail": 0
+      }
+    ],
+    "reward": 5000,
+    "trigger": "pickup",
+    "source": "v2-draft"
+  },
+  {
+    "id": "permit",
+    "kind": "rule",
+    "sign": "e:🪪",
+    "name": "Papers",
+    "setup": "A traffic officer at a checkpoint asks for your riding permit and the bike's papers.",
+    "actors": [
+      "👮"
+    ],
+    "rule": "Carry your riding permit and the bike's registration whenever you ride. Riding without them is an offence.",
+    "options": [
+      {
+        "text": "Show your permit and the bike papers",
+        "ok": true,
+        "outcome": "The officer checks them and waves you on.",
+        "fine": 0,
+        "life": 0,
+        "jail": 0
+      },
+      {
+        "text": "Say you left them at home",
+        "ok": false,
+        "outcome": "The bike is impounded until you bring them.",
+        "fine": 40000,
+        "life": 0,
+        "jail": 1
+      },
+      {
+        "text": "Offer him something small to let you go",
+        "ok": false,
+        "outcome": "Bribery is a crime. You are arrested.",
+        "fine": 50000,
+        "life": 0,
+        "jail": 3
+      }
+    ],
+    "reward": 5000,
+    "trigger": "road",
+    "source": "v2-draft"
+  }
+]

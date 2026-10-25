@@ -1,23 +1,27 @@
 import {
   CITY_START,
   CITY_TOTAL,
+  ewHalf,
+  ewKind,
   NUM_BLOCKS,
-  ROAD_W,
+  nsHalf,
+  nsKind,
+  ROAD_WIDTH,
   roadStripCenterX,
   roadStripCenterZ,
+  type RoadKind,
 } from './cityGrid'
 
 /** Trees only spawn if distance to any road slab ≥ this (world units). */
 export const GREEN_ZONE_DISTANCE = 5
 
 /** Murram / grass strip width outside white shoulder line. */
-export const SIDEWALK_WIDTH = 1.25
+export const SIDEWALK_WIDTH = 2.2
 
 const XMIN = CITY_START
 const XMAX = CITY_START + CITY_TOTAL
 const ZMIN = CITY_START
 const ZMAX = CITY_START + CITY_TOTAL
-const HALF_W = ROAD_W / 2
 /** Include strip edges (float error) so the lane test doesn’t flicker false. */
 const LANE_EDGE_EPS = 0.1
 
@@ -39,37 +43,36 @@ export function minDistToRoadNetwork(x: number, z: number): number {
   let d = Infinity
   for (let k = 0; k <= NUM_BLOCKS; k++) {
     const cx = roadStripCenterX(k)
-    d = Math.min(
-      d,
-      distPointToRect(x, z, cx - HALF_W, cx + HALF_W, ZMIN, ZMAX),
-    )
+    const h = nsHalf(k)
+    d = Math.min(d, distPointToRect(x, z, cx - h, cx + h, ZMIN, ZMAX))
   }
   for (let k = 0; k <= NUM_BLOCKS; k++) {
     const cz = roadStripCenterZ(k)
-    d = Math.min(
-      d,
-      distPointToRect(x, z, XMIN, XMAX, cz - HALF_W, cz + HALF_W),
-    )
+    const h = ewHalf(k)
+    d = Math.min(d, distPointToRect(x, z, XMIN, XMAX, cz - h, cz + h))
   }
   return d
 }
 
+/** Road type under (x, z), or null when not on a road (junction boxes take the wider road's type). */
+export function roadKindAt(x: number, z: number): RoadKind | null {
+  let best: RoadKind | null = null
+  for (let k = 0; k <= NUM_BLOCKS; k++) {
+    if (Math.abs(x - roadStripCenterX(k)) <= nsHalf(k) + LANE_EDGE_EPS && z >= ZMIN && z <= ZMAX) {
+      const kind = nsKind(k)
+      if (!best || ROAD_WIDTH[kind] > ROAD_WIDTH[best]) best = kind
+    }
+    if (Math.abs(z - roadStripCenterZ(k)) <= ewHalf(k) + LANE_EDGE_EPS && x >= XMIN && x <= XMAX) {
+      const kind = ewKind(k)
+      if (!best || ROAD_WIDTH[kind] > ROAD_WIDTH[best]) best = kind
+    }
+  }
+  return best
+}
+
 /** True if the point lies on any road surface (driving lane). */
 export function isOnRoad(x: number, z: number): boolean {
-  const half = HALF_W + LANE_EDGE_EPS
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const cx = roadStripCenterX(k)
-    if (Math.abs(x - cx) <= half && z >= ZMIN && z <= ZMAX) {
-      return true
-    }
-  }
-  for (let k = 0; k <= NUM_BLOCKS; k++) {
-    const cz = roadStripCenterZ(k)
-    if (Math.abs(z - cz) <= half && x >= XMIN && x <= XMAX) {
-      return true
-    }
-  }
-  return false
+  return roadKindAt(x, z) != null
 }
 
 /**

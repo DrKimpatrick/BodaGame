@@ -11,11 +11,25 @@ import {
   CITY_START,
   CITY_TOTAL,
   NUM_BLOCKS,
-  ROAD_W,
+  ewKind,
+  laneCentres,
+  nsKind,
   roadStripCenterX,
   roadStripCenterZ,
 } from '@game/cityGrid'
 import { segmentRandom } from '@game/roadDecorPlacements'
+import { StaticBatch } from './StaticBatch'
+import { VehicleModel } from './realism/Vehicles'
+import { vehicleCollider, vehicleNose, type VehicleKind } from './realism/vehicleSpecs'
+import {
+  axisOf,
+  ROUNDABOUT,
+  distToStopLine,
+  junctionAt,
+  mustYield,
+  signalAspect,
+} from '../roadRules/world/junctions'
+import { bikeTelemetry, trafficTelemetry, worldClock } from '../roadRules/world/telemetry'
 
 const X0 = CITY_START
 const Z0 = CITY_START
@@ -25,35 +39,22 @@ const EDGE = 3.5
 /** Extra meters past city edge so respawns are off-screen / in fog before they drive in. */
 const SPAWN_BEYOND = 64
 const IZ_EPS = 0.2
-/** Half road width (m) — vehicles must stay within one carriageway. */
-const ROAD_HALF = ROAD_W * 0.5
 /**
- * Two parallel tracks on the same side of the strip (positive offset from centerline).
- * Previously both slots used one offset, so cars shared the same line and clipped through each other.
+ * Uganda keep-left routing: vehicles use the lanes on the left of their heading. Lane centres come from the
+ * road type (one lane each way on streets / murram, two on main roads, beside the median on dual
+ * carriageways). Vertical roads offset on X, horizontal roads offset on Z.
  */
-const LANE_OFF_INNER = 0.36
-/** Keep outer track + ~0.92 m vehicle half-width inside one carriageway (`ROAD_W / 2`). */
-const LANE_OFF_OUTER = Math.min(0.95, ROAD_HALF - 0.92)
-function lateralOffsetFromSlot(slot: number): number {
-  return slot === 0 ? LANE_OFF_INNER : LANE_OFF_OUTER
-}
-/**
- * Uganda keep-left routing: for each heading, place vehicles on the left carriageway.
- * Vertical roads offset on X, horizontal roads offset on Z.
- */
-function laneOffsetForHeading(
-  mode: 'v' | 'h',
-  heading: Heading,
-  laneSlot: number,
-): number {
-  const mag = lateralOffsetFromSlot(laneSlot)
+function laneOffsetForHeading(mode: 'v' | 'h', heading: Heading, laneSlot: number, strip: number): number {
+  const [inner, outer] = laneCentres(mode === 'v' ? nsKind(strip) : ewKind(strip))
+  const mag = laneSlot % 2 === 0 ? inner : outer
+  // Left of travel: heading N (+Z) → +X, S → −X, E (+X) → −Z, W → +Z.
   if (mode === 'v') {
-    return heading === 'N' ? -mag : mag
+    return heading === 'N' ? mag : -mag
   }
-  return heading === 'E' ? mag : -mag
+  return heading === 'E' ? -mag : mag
 }
 /** Two logical slots per strip (inner vs outer track on same carriageway). */
-const LANES_PER_STRIP = 2
+const LANES_PER_STRIP = 3
 
 function flatOccV(vi: number, laneSlot: number): number {
   return vi * LANES_PER_STRIP + laneSlot
@@ -76,18 +77,6 @@ function firstFreeH(occH: boolean[], hj: number): number | null {
   return null
 }
 
-export type VehicleKind =
-  | 'taxi'
-  | 'trailer'
-  | 'pickup'
-  | 'bus'
-  | 'bicycle'
-  | 'motorbike'
-  | 'sedan'
-  | 'van'
-  | 'suv'
-  | 'matatu'
-
 type Heading = 'N' | 'S' | 'E' | 'W'
 
 type Agent = {
@@ -105,6 +94,81 @@ type Agent = {
   z: number
   /** Occupancy slot: flat index into occV / occH (strip × lane). */
   slot: { t: 'v' | 'h'; idx: number }
+  /**
+   * Going round a roundabout: clockwise arc (angle decreasing) from the entry to the exit point, radius
+   * easing from the entry distance to the ring and back out.
+   */
+  round?: { cx: number; cz: number; th: number; th0: number; th1: number; r0: number; r1: number; ex: number; ez: number }
+}
+
+/** Clockwise travel around a roundabout. Returns true while still on the arc. */
+function advanceRound(a: Agent, d: number, speedNow: number): boolean {
+  const r = a.round!
+  const span = r.th0 - r.th1
+  const t0 = (r.th0 - r.th) / span
+  const rad = t0 < 0.25 ? THREE.MathUtils.lerp(r.r0, ROUNDABOUT.ring, t0 / 0.25) : t0 > 0.75 ? THREE.MathUtils.lerp(ROUNDABOUT.ring, r.r1, (t0 - 0.75) / 0.25) : ROUNDABOUT.ring
+  r.th -= (Math.max(1.5, speedNow) * d) / rad
+  if (r.th <= r.th1) {
+    a.x = r.ex
+    a.z = r.ez
+    a.round = undefined
+    return false
+  }
+  a.x = r.cx + Math.cos(r.th) * rad
+  a.z = r.cz + Math.sin(r.th) * rad
+  return true
+}
+
+/** Begin going round: choose the exit (same rules as a junction), then plan the arc to it. */
+function startRound(a: Agent, i: number, j: number, occV: boolean[], occH: boolean[], rng: () => number) {
+  const cx = roadStripCenterX(i)
+  const cz = roadStripCenterZ(j)
+  const entryX = a.x
+  const entryZ = a.z
+  pickNextAtIntersection(a, i, j, occV, occH, rng)
+  const edge = ROUNDABOUT.disc + 0.4
+  let ex: number
+  let ez: number
+  switch (a.heading) {
+    case 'N':
+      ex = cx + a.laneV
+      ez = cz + edge
+      break
+    case 'S':
+      ex = cx + a.laneV
+      ez = cz - edge
+      break
+    case 'E':
+      ex = cx + edge
+      ez = cz + a.laneH
+      break
+    case 'W':
+      ex = cx - edge
+      ez = cz + a.laneH
+      break
+  }
+  const th0 = Math.atan2(entryZ - cz, entryX - cx)
+  let th1 = Math.atan2(ez - cz, ex - cx)
+  while (th1 >= th0 - 0.3) th1 -= Math.PI * 2
+  a.x = entryX
+  a.z = entryZ
+  a.round = {
+    cx,
+    cz,
+    th: th0,
+    th0,
+    th1,
+    r0: Math.hypot(entryX - cx, entryZ - cz),
+    r1: Math.hypot(ex - cx, ez - cz),
+    ex,
+    ez,
+  }
+}
+
+/** Yaw of the clockwise tangent at the agent's arc angle. */
+function roundYaw(a: Agent): number {
+  const th = a.round!.th
+  return Math.atan2(-Math.sin(th), -Math.cos(th))
 }
 
 function pickKind(salt: number): VehicleKind {
@@ -207,7 +271,7 @@ function pickNextAtIntersection(
     a.mode = 'v'
     a.vi = viStrip
     a.laneSlot = laneSlot
-    a.laneV = laneOffsetForHeading('v', heading, laneSlot)
+    a.laneV = laneOffsetForHeading('v', heading, laneSlot, viStrip)
   }
   const claimH = (hjStrip: number, laneSlot: number, heading: Heading) => {
     releaseOld()
@@ -217,7 +281,7 @@ function pickNextAtIntersection(
     a.mode = 'h'
     a.hj = hjStrip
     a.laneSlot = laneSlot
-    a.laneH = laneOffsetForHeading('h', heading, laneSlot)
+    a.laneH = laneOffsetForHeading('h', heading, laneSlot, hjStrip)
   }
 
   if (a.mode === 'v') {
@@ -229,7 +293,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'N'
-            a.laneV = laneOffsetForHeading('v', 'N', a.laneSlot)
+            a.laneV = laneOffsetForHeading('v', 'N', a.laneSlot, a.vi)
             a.x = cx + a.laneV
             a.z = cz
           },
@@ -266,7 +330,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'S'
-            a.laneV = laneOffsetForHeading('v', 'S', a.laneSlot)
+            a.laneV = laneOffsetForHeading('v', 'S', a.laneSlot, a.vi)
             a.x = cx + a.laneV
             a.z = cz
           },
@@ -308,7 +372,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'E'
-            a.laneH = laneOffsetForHeading('h', 'E', a.laneSlot)
+            a.laneH = laneOffsetForHeading('h', 'E', a.laneSlot, a.hj)
             a.x = cx
             a.z = cz0 + a.laneH
           },
@@ -345,7 +409,7 @@ function pickNextAtIntersection(
           w: 0.4,
           go: () => {
             a.heading = 'W'
-            a.laneH = laneOffsetForHeading('h', 'W', a.laneSlot)
+            a.laneH = laneOffsetForHeading('h', 'W', a.laneSlot, a.hj)
             a.x = cx
             a.z = cz0 + a.laneH
           },
@@ -386,13 +450,13 @@ function pickNextAtIntersection(
     a.laneSlot = ls
     if (a.mode === 'v') {
       a.heading = a.heading === 'N' ? 'S' : 'N'
-      a.laneV = laneOffsetForHeading('v', a.heading, ls)
+      a.laneV = laneOffsetForHeading('v', a.heading, ls, a.vi)
       a.x = cxu + a.laneV
       a.z = czu
     } else {
       const czh = roadStripCenterZ(jNode)
       a.heading = a.heading === 'E' ? 'W' : 'E'
-      a.laneH = laneOffsetForHeading('h', a.heading, ls)
+      a.laneH = laneOffsetForHeading('h', a.heading, ls, a.hj)
       a.x = cxu
       a.z = czh + a.laneH
     }
@@ -411,12 +475,12 @@ function pickNextAtIntersection(
   opts[opts.length - 1].go()
 }
 
-const LANE_SPAWN_STAGGER = 3.1
+const LANE_SPAWN_STAGGER = 14
 
 function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
   const north = segmentRandom(vi, salt, 801) < 0.5
   const heading: Heading = north ? 'N' : 'S'
-  const loff = laneOffsetForHeading('v', heading, laneSlot)
+  const loff = laneOffsetForHeading('v', heading, laneSlot, vi)
   const cx = roadStripCenterX(vi)
   const k = pickKind(vi * 97 + salt + laneSlot * 13)
   const zOff = laneSlot * LANE_SPAWN_STAGGER
@@ -441,7 +505,7 @@ function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
 function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
   const east = segmentRandom(hj, salt, 811) < 0.5
   const heading: Heading = east ? 'E' : 'W'
-  const loff = laneOffsetForHeading('h', heading, laneSlot)
+  const loff = laneOffsetForHeading('h', heading, laneSlot, hj)
   const cz = roadStripCenterZ(hj)
   const k = pickKind(hj * 89 + salt + laneSlot * 11)
   const xOff = laneSlot * LANE_SPAWN_STAGGER
@@ -485,6 +549,19 @@ function integrateAgent(
   speedNow: number,
 ): boolean {
   const d = Math.min(dt, 0.055)
+  if (a.round) {
+    advanceRound(a, d, speedNow)
+    return true
+  }
+  // Reached a roundabout's give-way line: go round instead of straight through the island.
+  const kNext = nextJunctionIndex(a)
+  if (kNext >= 0) {
+    const jnR = a.mode === 'v' ? junctionAt(a.vi, kNext) : junctionAt(kNext, a.hj)
+    if (jnR?.control === 'roundabout' && distToStopLine(jnR, a.heading, a.x, a.z) <= 0) {
+      startRound(a, jnR.i, jnR.j, occV, occH, rng)
+      return true
+    }
+  }
   const { vx, vz } = velocityWithSpeed(a, speedNow)
   const px = a.x
   const pz = a.z
@@ -569,37 +646,6 @@ function integrateAgent(
   return true
 }
 
-/** Rough cuboid half-extents + local center (Y) for solid traffic vs boda. X = half width — kept small so wide bodies fit one carriageway. */
-function vehicleColliderForKind(kind: VehicleKind): {
-  args: [number, number, number]
-  pos: [number, number, number]
-} {
-  switch (kind) {
-    case 'bus':
-      return { args: [0.88, 0.66, 4.2], pos: [0, 0.7, 0] }
-    case 'trailer':
-      return { args: [0.8, 0.5, 4.45], pos: [0, 0.48, -0.38] }
-    case 'pickup':
-      return { args: [0.9, 0.44, 2.12], pos: [0, 0.42, -0.1] }
-    case 'taxi':
-      return { args: [0.86, 0.42, 2.02], pos: [0, 0.38, 0] }
-    case 'bicycle':
-      return { args: [0.5, 0.42, 0.52], pos: [0, 0.34, 0] }
-    case 'motorbike':
-      return { args: [0.32, 0.36, 0.95], pos: [0, 0.34, 0.06] }
-    case 'sedan':
-      return { args: [0.82, 0.4, 1.88], pos: [0, 0.36, 0] }
-    case 'van':
-      return { args: [0.86, 0.48, 2.05], pos: [0, 0.46, 0.08] }
-    case 'suv':
-      return { args: [0.88, 0.38, 2.02], pos: [0, 0.42, 0.02] }
-    case 'matatu':
-      return { args: [0.82, 0.48, 2.45], pos: [0, 0.52, 0] }
-    default:
-      return { args: [0.8, 0.4, 1.78], pos: [0, 0.36, 0] }
-  }
-}
-
 function applyAgentToRigidBody(
   a: Agent,
   rb: RapierRigidBody,
@@ -608,721 +654,142 @@ function applyAgentToRigidBody(
 ) {
   if (world.getRigidBody(rb.handle) == null) return
   rb.setTranslation({ x: a.x, y: 0.09, z: a.z }, true)
-  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad)
+  const q = tmpAgentQuat.setFromAxisAngle(Y_UP, yawRad)
   rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
 }
 
-const tireMat = new THREE.MeshStandardMaterial({
-  color: '#0c0c0c',
-  roughness: 0.92,
-  metalness: 0.02,
-  envMapIntensity: 0.35,
-})
+const Y_UP = new THREE.Vector3(0, 1, 0)
+const tmpAgentQuat = new THREE.Quaternion()
 
-const glassMat = new THREE.MeshStandardMaterial({
-  color: '#1e293b',
-  roughness: 0.22,
-  metalness: 0.45,
-  envMapIntensity: 1.35,
-})
+/** Comfortable braking (m/s²) the speed profile is planned with; the smoother allows a bit more. */
+const PLAN_DECEL = 3.0
+/** Gap kept behind the rider's bike. */
+// Far enough that a car queuing behind the rider stays behind the chase camera (~5 m back).
+const BIKE_GAP = 6.5
 
-const glassRearMat = new THREE.MeshStandardMaterial({
-  color: '#0c1929',
-  roughness: 0.28,
-  metalness: 0.5,
-  envMapIntensity: 1.1,
-})
-
-const rimMat = new THREE.MeshStandardMaterial({
-  color: '#2a2a2a',
-  roughness: 0.4,
-  metalness: 0.55,
-  envMapIntensity: 0.75,
-})
-
-const trafficDoorSeamMat = new THREE.MeshStandardMaterial({
-  color: '#1c1917',
-  roughness: 0.7,
-  metalness: 0.15,
-  envMapIntensity: 0.42,
-})
-
-const trafficHandleMat = new THREE.MeshStandardMaterial({
-  color: '#52525b',
-  roughness: 0.34,
-  metalness: 0.68,
-  envMapIntensity: 0.88,
-})
-
-/** B-pillar + front/rear door seams + handles (both sides). Local +Z = front. */
-function TrafficCarFourDoor({
-  halfW,
-  y,
-  zFrontSeam,
-  zRearSeam,
-  zFrontHandle,
-  zRearHandle,
-  seamH = 0.32,
-}: {
-  halfW: number
-  y: number
-  zFrontSeam: number
-  zRearSeam: number
-  zFrontHandle: number
-  zRearHandle: number
-  seamH?: number
-}) {
-  const xl = halfW + 0.016
-  const xr = -halfW - 0.016
-  const bpH = seamH + 0.1
-  return (
-    <group>
-      <mesh position={[xl - 0.008, y, 0]} castShadow receiveShadow material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.052, bpH, 0.085]} />
-      </mesh>
-      <mesh position={[xr + 0.008, y, 0]} castShadow receiveShadow material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.052, bpH, 0.085]} />
-      </mesh>
-      <mesh position={[xl, y, zFrontSeam]} castShadow={false} material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.038, seamH, 0.05]} />
-      </mesh>
-      <mesh position={[xl, y, zRearSeam]} castShadow={false} material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.038, seamH, 0.05]} />
-      </mesh>
-      <mesh position={[xr, y, zFrontSeam]} castShadow={false} material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.038, seamH, 0.05]} />
-      </mesh>
-      <mesh position={[xr, y, zRearSeam]} castShadow={false} material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.038, seamH, 0.05]} />
-      </mesh>
-      <mesh position={[xl + 0.022, y + 0.025, zFrontHandle]} castShadow material={trafficHandleMat}>
-        <boxGeometry args={[0.05, 0.042, 0.13]} />
-      </mesh>
-      <mesh position={[xl + 0.022, y + 0.025, zRearHandle]} castShadow material={trafficHandleMat}>
-        <boxGeometry args={[0.05, 0.042, 0.13]} />
-      </mesh>
-      <mesh position={[xr - 0.022, y + 0.025, zFrontHandle]} castShadow material={trafficHandleMat}>
-        <boxGeometry args={[0.05, 0.042, 0.13]} />
-      </mesh>
-      <mesh position={[xr - 0.022, y + 0.025, zRearHandle]} castShadow material={trafficHandleMat}>
-        <boxGeometry args={[0.05, 0.042, 0.13]} />
-      </mesh>
-    </group>
-  )
+function stopProfile(d: number): number {
+  return d <= 0.2 ? 0 : Math.sqrt(2 * PLAN_DECEL * d)
 }
 
-/** Sliding / wide side door hint (vans, matatu). */
-function TrafficSlidingDoorSide({
-  halfW,
-  y,
-  zPanel,
-  widthZ,
-  tall = 0.55,
-}: {
-  halfW: number
-  y: number
-  zPanel: number
-  widthZ: number
-  tall?: number
-}) {
-  const xl = halfW + 0.014
-  return (
-    <group>
-      <mesh position={[xl, y, zPanel]} castShadow={false} material={trafficDoorSeamMat}>
-        <boxGeometry args={[0.04, tall, widthZ]} />
-      </mesh>
-      <mesh position={[xl + 0.026, y - 0.05, zPanel]} castShadow material={trafficHandleMat}>
-        <boxGeometry args={[0.055, 0.04, 0.22]} />
-      </mesh>
-    </group>
-  )
+/** Index of the next junction strip ahead along the agent's heading, or -1. */
+function nextJunctionIndex(a: Agent): number {
+  switch (a.heading) {
+    case 'N':
+      for (let k = 0; k <= NUM_BLOCKS; k++) if (roadStripCenterZ(k) > a.z + 0.05) return k
+      return -1
+    case 'S':
+      for (let k = NUM_BLOCKS; k >= 0; k--) if (roadStripCenterZ(k) < a.z - 0.05) return k
+      return -1
+    case 'E':
+      for (let k = 0; k <= NUM_BLOCKS; k++) if (roadStripCenterX(k) > a.x + 0.05) return k
+      return -1
+    case 'W':
+      for (let k = NUM_BLOCKS; k >= 0; k--) if (roadStripCenterX(k) < a.x - 0.05) return k
+      return -1
+  }
 }
 
 /**
- * Emissive-only lamps — no PointLights here. Hundreds of traffic agents × 2 lights
- * exceed WebGL fragment uniform limits ("too many uniforms") on many GPUs.
+ * Target speed honouring signals, STOP / give-way lines and the rider's bike ahead.
+ * `hold` keeps per-agent STOP state: [junction key already stopped at, release time].
  */
-function VehicleHeadlights({ lx, rx, y, z }: { lx: number; rx: number; y: number; z: number }) {
-  return (
-    <group>
-      <mesh position={[lx, y, z]} castShadow={false}>
-        <boxGeometry args={[0.14, 0.09, 0.06]} />
-        <meshStandardMaterial
-          color="#fffefb"
-          emissive="#ffe9a8"
-          emissiveIntensity={3.2}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh position={[rx, y, z]} castShadow={false}>
-        <boxGeometry args={[0.14, 0.09, 0.06]} />
-        <meshStandardMaterial
-          color="#fffefb"
-          emissive="#ffe9a8"
-          emissiveIntensity={3.2}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
-  )
-}
-
-/** Tyre + rim, axle along local X (left/right of car). */
-function WheelAxleX({
-  x,
-  y,
-  z,
-  radius,
-  width,
-}: {
-  x: number
-  y: number
-  z: number
-  radius: number
-  width: number
-}) {
-  return (
-    <group position={[x, y, z]}>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow material={tireMat}>
-        <cylinderGeometry args={[radius, radius, width, 18]} />
-      </mesh>
-      <mesh rotation={[0, 0, Math.PI / 2]} castShadow material={rimMat}>
-        <cylinderGeometry args={[radius * 0.52, radius * 0.52, width + 0.04, 12]} />
-      </mesh>
-    </group>
-  )
-}
-
-function WheelsFour({
-  halfTrack,
-  wheelY,
-  frontZ,
-  rearZ,
-  radius,
-  tireWidth,
-}: {
-  halfTrack: number
-  wheelY: number
-  frontZ: number
-  rearZ: number
-  radius: number
-  tireWidth: number
-}) {
-  return (
-    <group>
-      <WheelAxleX x={halfTrack} y={wheelY} z={frontZ} radius={radius} width={tireWidth} />
-      <WheelAxleX x={-halfTrack} y={wheelY} z={frontZ} radius={radius} width={tireWidth} />
-      <WheelAxleX x={halfTrack} y={wheelY} z={rearZ} radius={radius} width={tireWidth} />
-      <WheelAxleX x={-halfTrack} y={wheelY} z={rearZ} radius={radius} width={tireWidth} />
-    </group>
-  )
-}
-
-/** Extra axle for buses / long trucks (same track). */
-function WheelsSix({
-  halfTrack,
-  wheelY,
-  zPositions,
-  radius,
-  tireWidth,
-}: {
-  halfTrack: number
-  wheelY: number
-  zPositions: [number, number, number]
-  radius: number
-  tireWidth: number
-}) {
-  return (
-    <group>
-      {zPositions.flatMap((z) => [
-        <WheelAxleX key={`l-${z}`} x={halfTrack} y={wheelY} z={z} radius={radius} width={tireWidth} />,
-        <WheelAxleX key={`r-${z}`} x={-halfTrack} y={wheelY} z={z} radius={radius} width={tireWidth} />,
-      ])}
-    </group>
-  )
-}
-
-function VehicleMesh({ kind }: { kind: VehicleKind }) {
-  switch (kind) {
-    case 'taxi':
-      return (
-        <group scale={[0.94, 0.98, 0.98]}>
-          <mesh position={[0, 0.38, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.72, 0.5, 4.05]} />
-            <meshStandardMaterial color="#facc15" roughness={0.52} metalness={0.12} envMapIntensity={0.95} />
-          </mesh>
-          <mesh position={[0, 0.62, 0.92]} castShadow material={glassMat}>
-            <boxGeometry args={[1.52, 0.34, 0.95]} />
-          </mesh>
-          <mesh position={[0, 0.58, -0.95]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.48, 0.28, 0.72]} />
-          </mesh>
-          <mesh position={[0.89, 0.52, 0.15]} castShadow material={glassMat}>
-            <boxGeometry args={[0.095, 0.24, 1.88]} />
-          </mesh>
-          <mesh position={[-0.89, 0.52, 0.15]} castShadow material={glassMat}>
-            <boxGeometry args={[0.095, 0.24, 1.88]} />
-          </mesh>
-          <mesh position={[0, 0.42, -0.35]} castShadow>
-            <boxGeometry args={[1.74, 0.08, 1.6]} />
-            <meshStandardMaterial color="#111827" roughness={0.75} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={0.87}
-            y={0.42}
-            zFrontSeam={0.44}
-            zRearSeam={-0.5}
-            zFrontHandle={0.64}
-            zRearHandle={-0.3}
-            seamH={0.3}
-          />
-          <WheelsFour
-            halfTrack={0.74}
-            wheelY={0.3}
-            frontZ={1.38}
-            rearZ={-1.38}
-            radius={0.34}
-            tireWidth={0.26}
-          />
-          <VehicleHeadlights lx={0.62} rx={-0.62} y={0.41} z={1.92} />
-        </group>
-      )
-    case 'pickup':
-      return (
-        <group scale={[0.86, 0.96, 0.94]}>
-          <mesh position={[0, 0.42, 0.55]} castShadow receiveShadow>
-            <boxGeometry args={[1.95, 0.58, 2.35]} />
-            <meshStandardMaterial color="#6b7280" roughness={0.62} metalness={0.2} envMapIntensity={0.88} />
-          </mesh>
-          <mesh position={[0, 0.4, -1.35]} castShadow receiveShadow>
-            <boxGeometry args={[1.9, 0.45, 2.1]} />
-            <meshStandardMaterial color="#9ca3af" roughness={0.7} metalness={0.1} envMapIntensity={0.82} />
-          </mesh>
-          <mesh position={[0, 0.6, 1.05]} castShadow material={glassMat}>
-            <boxGeometry args={[1.76, 0.32, 0.88]} />
-          </mesh>
-          <mesh position={[0, 0.52, -0.35]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.65, 0.22, 0.55]} />
-          </mesh>
-          <mesh position={[1, 0.48, 0.65]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.22, 1.08]} />
-          </mesh>
-          <mesh position={[-1, 0.48, 0.65]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.22, 1.08]} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={0.98}
-            y={0.46}
-            zFrontSeam={1.12}
-            zRearSeam={0.22}
-            zFrontHandle={1.28}
-            zRearHandle={0.32}
-            seamH={0.26}
-          />
-          <WheelsFour
-            halfTrack={0.8}
-            wheelY={0.32}
-            frontZ={1.52}
-            rearZ={-0.15}
-            radius={0.36}
-            tireWidth={0.27}
-          />
-          <WheelsFour
-            halfTrack={0.8}
-            wheelY={0.29}
-            frontZ={-0.85}
-            rearZ={-2.15}
-            radius={0.36}
-            tireWidth={0.27}
-          />
-          <VehicleHeadlights lx={0.68} rx={-0.68} y={0.5} z={1.55} />
-        </group>
-      )
-    case 'bus':
-      return (
-        <group scale={[0.71, 0.94, 0.9]}>
-          <mesh position={[0, 0.78, 0]} castShadow receiveShadow>
-            <boxGeometry args={[2.45, 1.38, 9.6]} />
-            <meshStandardMaterial color="#1d4ed8" roughness={0.48} metalness={0.14} envMapIntensity={0.9} />
-          </mesh>
-          <mesh position={[0, 0.95, 0]} castShadow>
-            <boxGeometry args={[2.35, 0.55, 8.8]} />
-            <meshStandardMaterial color="#93c5fd" roughness={0.25} metalness={0.22} envMapIntensity={1.05} />
-          </mesh>
-          <mesh position={[0, 0.98, 4.35]} castShadow material={glassMat}>
-            <boxGeometry args={[2.28, 0.48, 0.75]} />
-          </mesh>
-          <mesh position={[0, 0.96, -4.35]} castShadow material={glassRearMat}>
-            <boxGeometry args={[2.26, 0.45, 0.7]} />
-          </mesh>
-          <mesh position={[1.22, 0.5, 0]} castShadow>
-            <boxGeometry args={[0.07, 0.85, 9.5]} />
-            <meshStandardMaterial color="#cbd5e1" roughness={0.5} metalness={0.12} envMapIntensity={0.68} />
-          </mesh>
-          {[-3.35, -2.05, -0.75, 0.55, 1.85, 3.15].map((bz, i) => (
-            <mesh key={`bw-r-${i}`} position={[1.21, 0.82, bz]} castShadow material={glassMat}>
-              <boxGeometry args={[0.1, 0.52, 0.88]} />
-            </mesh>
-          ))}
-          {[-3.35, -2.05, -0.75, 0.55, 1.85, 3.15].map((bz, i) => (
-            <mesh key={`bw-l-${i}`} position={[-1.21, 0.82, bz]} castShadow material={glassMat}>
-              <boxGeometry args={[0.1, 0.52, 0.88]} />
-            </mesh>
-          ))}
-          <mesh position={[1.18, 0.45, 3.65]} castShadow material={trafficDoorSeamMat}>
-            <boxGeometry args={[0.09, 0.75, 0.12]} />
-          </mesh>
-          <WheelsSix
-            halfTrack={0.98}
-            wheelY={0.43}
-            zPositions={[3.35, 0.15, -3.35]}
-            radius={0.48}
-            tireWidth={0.3}
-          />
-          <VehicleHeadlights lx={1.02} rx={-1.02} y={0.46} z={4.52} />
-        </group>
-      )
-    case 'trailer':
-      return (
-        <group scale={[0.66, 0.92, 0.88]}>
-          <mesh position={[0, 0.52, 2.15]} castShadow receiveShadow>
-            <boxGeometry args={[2.05, 1.12, 2.65]} />
-            <meshStandardMaterial color="#b91c1c" roughness={0.55} metalness={0.17} envMapIntensity={0.9} />
-          </mesh>
-          <mesh position={[0, 0.7, 2.62]} castShadow material={glassMat}>
-            <boxGeometry args={[1.86, 0.4, 0.88]} />
-          </mesh>
-          <mesh position={[1.01, 0.55, 2.1]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.3, 1.32]} />
-          </mesh>
-          <mesh position={[-1.01, 0.55, 2.1]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.3, 1.32]} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={1.02}
-            y={0.52}
-            zFrontSeam={2.78}
-            zRearSeam={1.62}
-            zFrontHandle={2.92}
-            zRearHandle={1.74}
-            seamH={0.3}
-          />
-          <WheelsFour
-            halfTrack={0.84}
-            wheelY={0.35}
-            frontZ={3.05}
-            rearZ={1.35}
-            radius={0.4}
-            tireWidth={0.28}
-          />
-          <mesh position={[0, 0.62, -2.9]} castShadow receiveShadow>
-            <boxGeometry args={[2.2, 1.05, 7.2]} />
-            <meshStandardMaterial color="#57534e" roughness={0.72} metalness={0.08} envMapIntensity={0.55} />
-          </mesh>
-          <mesh position={[0, 0.95, -2.9]} castShadow>
-            <boxGeometry args={[2.15, 0.08, 7.1]} />
-            <meshStandardMaterial
-              color="#fbbf24"
-              roughness={0.5}
-              emissive="#713f12"
-              emissiveIntensity={0.15}
-              envMapIntensity={0.45}
-            />
-          </mesh>
-          <WheelsSix
-            halfTrack={0.9}
-            wheelY={0.37}
-            zPositions={[-0.35, -2.85, -5.35]}
-            radius={0.44}
-            tireWidth={0.3}
-          />
-          <VehicleHeadlights lx={0.74} rx={-0.74} y={0.52} z={3.08} />
-        </group>
-      )
-    case 'bicycle':
-      return (
-        <group scale={0.95}>
-          <mesh position={[0, 0.45, 0]} castShadow>
-            <cylinderGeometry args={[0.38, 0.38, 0.04, 12]} />
-            <meshStandardMaterial color="#374151" roughness={0.65} envMapIntensity={0.5} />
-          </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0.32, 0]} castShadow>
-            <cylinderGeometry args={[0.03, 0.03, 1.15, 6]} />
-            <meshStandardMaterial color="#1f2937" roughness={0.6} envMapIntensity={0.45} />
-          </mesh>
-          <group position={[0, 0.22, 0.42]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
-              <cylinderGeometry args={[0.36, 0.36, 0.1, 18]} />
-            </mesh>
-            <mesh material={rimMat}>
-              <cylinderGeometry args={[0.21, 0.21, 0.11, 10]} />
-            </mesh>
-          </group>
-          <group position={[0, 0.22, -0.42]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
-              <cylinderGeometry args={[0.36, 0.36, 0.1, 18]} />
-            </mesh>
-            <mesh material={rimMat}>
-              <cylinderGeometry args={[0.21, 0.21, 0.11, 10]} />
-            </mesh>
-          </group>
-        </group>
-      )
-    case 'motorbike':
-      return (
-        <group>
-          <mesh position={[0, 0.38, 0.05]} castShadow receiveShadow>
-            <boxGeometry args={[0.52, 0.42, 1.85]} />
-            <meshStandardMaterial color="#dc2626" roughness={0.45} metalness={0.22} envMapIntensity={0.85} />
-          </mesh>
-          <mesh position={[0, 0.56, 0.58]} castShadow material={glassMat}>
-            <boxGeometry args={[0.38, 0.26, 0.44]} />
-          </mesh>
-          <mesh position={[0.27, 0.52, 0.35]} castShadow material={glassMat}>
-            <boxGeometry args={[0.06, 0.16, 0.28]} />
-          </mesh>
-          <mesh position={[-0.27, 0.52, 0.35]} castShadow material={glassMat}>
-            <boxGeometry args={[0.06, 0.16, 0.28]} />
-          </mesh>
-          <mesh position={[0.265, 0.42, 0.12]} castShadow material={trafficDoorSeamMat}>
-            <boxGeometry args={[0.035, 0.2, 0.06]} />
-          </mesh>
-          <mesh position={[-0.265, 0.42, 0.12]} castShadow material={trafficDoorSeamMat}>
-            <boxGeometry args={[0.035, 0.2, 0.06]} />
-          </mesh>
-          <mesh position={[0.272, 0.44, 0.22]} castShadow material={trafficHandleMat}>
-            <boxGeometry args={[0.04, 0.032, 0.08]} />
-          </mesh>
-          <mesh position={[-0.272, 0.44, 0.22]} castShadow material={trafficHandleMat}>
-            <boxGeometry args={[0.04, 0.032, 0.08]} />
-          </mesh>
-          <mesh position={[0, 0.48, -0.35]} castShadow material={glassRearMat}>
-            <boxGeometry args={[0.28, 0.14, 0.22]} />
-          </mesh>
-          <group position={[0, 0.19, 0.66]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
-              <cylinderGeometry args={[0.33, 0.33, 0.12, 18]} />
-            </mesh>
-            <mesh material={rimMat}>
-              <cylinderGeometry args={[0.18, 0.18, 0.14, 10]} />
-            </mesh>
-          </group>
-          <group position={[0, 0.19, -0.64]} rotation={[Math.PI / 2, 0, 0]}>
-            <mesh castShadow receiveShadow material={tireMat}>
-              <cylinderGeometry args={[0.34, 0.34, 0.12, 18]} />
-            </mesh>
-            <mesh material={rimMat}>
-              <cylinderGeometry args={[0.19, 0.19, 0.14, 10]} />
-            </mesh>
-          </group>
-          <VehicleHeadlights lx={0.14} rx={-0.14} y={0.4} z={0.95} />
-        </group>
-      )
-    case 'sedan':
-      return (
-        <group scale={[0.96, 0.98, 0.97]}>
-          <mesh position={[0, 0.36, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.68, 0.48, 3.85]} />
-            <meshStandardMaterial color="#1e3a5f" roughness={0.5} metalness={0.26} envMapIntensity={1.05} />
-          </mesh>
-          <mesh position={[0, 0.59, 0.82]} castShadow material={glassMat}>
-            <boxGeometry args={[1.5, 0.3, 0.92]} />
-          </mesh>
-          <mesh position={[0, 0.56, -0.88]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.46, 0.26, 0.68]} />
-          </mesh>
-          <mesh position={[0.86, 0.5, 0.05]} castShadow material={glassMat}>
-            <boxGeometry args={[0.092, 0.22, 1.68]} />
-          </mesh>
-          <mesh position={[-0.86, 0.5, 0.05]} castShadow material={glassMat}>
-            <boxGeometry args={[0.092, 0.22, 1.68]} />
-          </mesh>
-          <mesh position={[0, 0.4, -0.32]} castShadow>
-            <boxGeometry args={[1.7, 0.07, 1.45]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.78} envMapIntensity={0.4} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={0.82}
-            y={0.38}
-            zFrontSeam={0.36}
-            zRearSeam={-0.44}
-            zFrontHandle={0.54}
-            zRearHandle={-0.26}
-            seamH={0.28}
-          />
-          <WheelsFour
-            halfTrack={0.72}
-            wheelY={0.29}
-            frontZ={1.28}
-            rearZ={-1.28}
-            radius={0.33}
-            tireWidth={0.25}
-          />
-          <VehicleHeadlights lx={0.6} rx={-0.6} y={0.39} z={1.82} />
-        </group>
-      )
-    case 'van':
-      return (
-        <group scale={[0.82, 0.95, 0.94]}>
-          <mesh position={[0, 0.52, 0.1]} castShadow receiveShadow>
-            <boxGeometry args={[1.92, 1.05, 4.35]} />
-            <meshStandardMaterial color="#e8e4dc" roughness={0.58} metalness={0.1} envMapIntensity={0.82} />
-          </mesh>
-          <mesh position={[0, 0.64, 1.42]} castShadow material={glassMat}>
-            <boxGeometry args={[1.78, 0.44, 0.88]} />
-          </mesh>
-          <mesh position={[0, 0.62, -0.35]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.72, 0.36, 0.62]} />
-          </mesh>
-          <mesh position={[0.98, 0.58, 0.2]} castShadow material={glassMat}>
-            <boxGeometry args={[0.088, 0.4, 3.28]} />
-          </mesh>
-          <mesh position={[-0.98, 0.58, 0.2]} castShadow material={glassMat}>
-            <boxGeometry args={[0.088, 0.4, 3.28]} />
-          </mesh>
-          <mesh position={[0.97, 0.45, 0]} castShadow>
-            <boxGeometry args={[0.05, 0.55, 4.1]} />
-            <meshStandardMaterial color="#cbd5e1" roughness={0.5} metalness={0.12} envMapIntensity={0.78} />
-          </mesh>
-          <TrafficSlidingDoorSide halfW={0.94} y={0.52} zPanel={-0.35} widthZ={1.55} tall={0.62} />
-          <mesh position={[-0.99, 0.48, -0.35]} castShadow material={trafficDoorSeamMat}>
-            <boxGeometry args={[0.06, 0.5, 0.1]} />
-          </mesh>
-          <WheelsFour
-            halfTrack={0.82}
-            wheelY={0.37}
-            frontZ={1.62}
-            rearZ={-1.52}
-            radius={0.38}
-            tireWidth={0.28}
-          />
-          <VehicleHeadlights lx={0.76} rx={-0.76} y={0.5} z={2.05} />
-        </group>
-      )
-    case 'suv':
-      return (
-        <group scale={[0.82, 0.96, 0.95]}>
-          <mesh position={[0, 0.48, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.98, 0.72, 4.2]} />
-            <meshStandardMaterial color="#292524" roughness={0.55} metalness={0.22} envMapIntensity={0.92} />
-          </mesh>
-          <mesh position={[0, 0.74, 0.62]} castShadow material={glassMat}>
-            <boxGeometry args={[1.82, 0.4, 1.05]} />
-          </mesh>
-          <mesh position={[0, 0.72, -0.95]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.78, 0.32, 0.75]} />
-          </mesh>
-          <mesh position={[1, 0.62, 0.1]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.3, 1.88]} />
-          </mesh>
-          <mesh position={[-1, 0.62, 0.1]} castShadow material={glassMat}>
-            <boxGeometry args={[0.09, 0.3, 1.88]} />
-          </mesh>
-          <mesh position={[0, 0.88, -0.35]} castShadow receiveShadow>
-            <boxGeometry args={[1.88, 0.22, 1.5]} />
-            <meshStandardMaterial color="#44403c" roughness={0.62} envMapIntensity={0.55} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={0.98}
-            y={0.5}
-            zFrontSeam={0.42}
-            zRearSeam={-0.48}
-            zFrontHandle={0.58}
-            zRearHandle={-0.32}
-            seamH={0.3}
-          />
-          <WheelsFour
-            halfTrack={0.84}
-            wheelY={0.35}
-            frontZ={1.42}
-            rearZ={-1.42}
-            radius={0.39}
-            tireWidth={0.27}
-          />
-          <VehicleHeadlights lx={0.78} rx={-0.78} y={0.48} z={1.95} />
-        </group>
-      )
-    case 'matatu':
-      return (
-        <group scale={[0.74, 0.94, 0.9]}>
-          <mesh position={[0, 0.62, 0]} castShadow receiveShadow>
-            <boxGeometry args={[2.05, 1.05, 5.4]} />
-            <meshStandardMaterial color="#ca8a04" roughness={0.52} metalness={0.12} envMapIntensity={0.88} />
-          </mesh>
-          <mesh position={[0, 0.78, 0.15]} castShadow>
-            <boxGeometry args={[1.95, 0.42, 4.85]} />
-            <meshStandardMaterial color="#fef08a" roughness={0.35} metalness={0.14} envMapIntensity={0.95} />
-          </mesh>
-          <mesh position={[0, 0.8, 2.42]} castShadow material={glassMat}>
-            <boxGeometry args={[1.92, 0.38, 0.72]} />
-          </mesh>
-          <mesh position={[0, 0.78, -2.35]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.9, 0.36, 0.65]} />
-          </mesh>
-          <mesh position={[1.03, 0.42, 0]} castShadow>
-            <boxGeometry args={[0.05, 0.65, 5.2]} />
-            <meshStandardMaterial color="#94a3b8" roughness={0.45} metalness={0.15} envMapIntensity={0.72} />
-          </mesh>
-          {[-2.15, -0.85, 0.45, 1.75].map((mz, i) => (
-            <mesh key={`mt-l-${i}`} position={[-1.02, 0.72, mz]} castShadow material={glassMat}>
-              <boxGeometry args={[0.09, 0.42, 0.82]} />
-            </mesh>
-          ))}
-          <TrafficSlidingDoorSide halfW={1.01} y={0.48} zPanel={-0.55} widthZ={1.35} tall={0.58} />
-          <mesh position={[0, 0.58, 2.35]} castShadow>
-            <boxGeometry args={[1.98, 0.12, 0.85]} />
-            <meshStandardMaterial color="#15803d" roughness={0.55} envMapIntensity={0.5} />
-          </mesh>
-          <WheelsSix
-            halfTrack={0.9}
-            wheelY={0.39}
-            zPositions={[1.85, -0.35, -2.55]}
-            radius={0.42}
-            tireWidth={0.29}
-          />
-          <VehicleHeadlights lx={0.82} rx={-0.82} y={0.52} z={2.42} />
-        </group>
-      )
-    default:
-      return (
-        <group>
-          <mesh position={[0, 0.35, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.6, 0.5, 3.6]} />
-            <meshStandardMaterial color="#64748b" roughness={0.65} metalness={0.18} envMapIntensity={0.85} />
-          </mesh>
-          <mesh position={[0, 0.54, 0.65]} castShadow material={glassMat}>
-            <boxGeometry args={[1.45, 0.26, 0.85]} />
-          </mesh>
-          <mesh position={[0, 0.5, -0.7]} castShadow material={glassRearMat}>
-            <boxGeometry args={[1.4, 0.22, 0.55]} />
-          </mesh>
-          <mesh position={[0.82, 0.48, 0.02]} castShadow material={glassMat}>
-            <boxGeometry args={[0.088, 0.2, 1.55]} />
-          </mesh>
-          <mesh position={[-0.82, 0.48, 0.02]} castShadow material={glassMat}>
-            <boxGeometry args={[0.088, 0.2, 1.55]} />
-          </mesh>
-          <TrafficCarFourDoor
-            halfW={0.78}
-            y={0.36}
-            zFrontSeam={0.32}
-            zRearSeam={-0.4}
-            zFrontHandle={0.48}
-            zRearHandle={-0.24}
-            seamH={0.26}
-          />
-          <WheelsFour
-            halfTrack={0.7}
-            wheelY={0.28}
-            frontZ={1.15}
-            rearZ={-1.15}
-            radius={0.32}
-            tireWidth={0.24}
-          />
-          <VehicleHeadlights lx={0.58} rx={-0.58} y={0.37} z={1.72} />
-        </group>
-      )
+function controlledTargetSpeed(
+  a: Agent,
+  currentSpeed: number,
+  hold: { key: number; until: number },
+  t: number,
+  others: readonly (Agent | null)[],
+): number {
+  let target = a.speed
+  // Follow the vehicle ahead on the same road and heading instead of driving through it.
+  for (const o of others) {
+    if (!o || o === a || o.heading !== a.heading) continue
+    let ahead: number
+    let lateral: number
+    if (a.heading === 'N' || a.heading === 'S') {
+      ahead = (o.z - a.z) * (a.heading === 'N' ? 1 : -1)
+      lateral = Math.abs(o.x - a.x)
+    } else {
+      ahead = (o.x - a.x) * (a.heading === 'E' ? 1 : -1)
+      lateral = Math.abs(o.z - a.z)
+    }
+    if (ahead <= 0 || ahead > 18 || lateral > 1.2) continue
+    const gap = ahead - vehicleNose(a.kind) - vehicleNose(o.kind) - 1.5
+    target = Math.min(target, stopProfile(gap))
   }
+  const k = nextJunctionIndex(a)
+  if (k >= 0) {
+    const jn = a.mode === 'v' ? junctionAt(a.vi, k) : junctionAt(k, a.hj)
+    if (jn && jn.control !== 'none') {
+      const axis = axisOf(a.heading)
+      const d = distToStopLine(jn, a.heading, a.x, a.z) - vehicleNose(a.kind)
+      const key = jn.i * 100 + jn.j
+      if (d > -0.4 && d < 40) {
+        if (jn.control === 'signal') {
+          const aspect = signalAspect(jn, axis, t)
+          const canStop = d > (currentSpeed * currentSpeed) / (2 * 4.2)
+          if (aspect === 'red' || (aspect === 'amber' && canStop)) {
+            target = Math.min(target, stopProfile(d))
+          }
+        } else if (jn.control === 'roundabout') {
+          // Give way to anything already going round near our entry.
+          const ex = a.x + (a.heading === 'E' ? 1 : a.heading === 'W' ? -1 : 0) * Math.max(0, d)
+          const ez = a.z + (a.heading === 'N' ? 1 : a.heading === 'S' ? -1 : 0) * Math.max(0, d)
+          let busy = false
+          for (const o of others) {
+            if (o && o !== a && o.round && o.round.cx === jn.x && o.round.cz === jn.z && Math.hypot(o.x - ex, o.z - ez) < 8.5) {
+              busy = true
+              break
+            }
+          }
+          target = Math.min(target, busy ? stopProfile(d) : Math.max(2.4, stopProfile(d)))
+        } else if (mustYield(jn, axis)) {
+          if (jn.control === 'stop') {
+            if (hold.key !== key) {
+              target = Math.min(target, stopProfile(d))
+              if (d < 0.5 && currentSpeed < 0.3) {
+                if (hold.until === 0) hold.until = t + 1.1
+                else if (t >= hold.until) {
+                  hold.key = key
+                  hold.until = 0
+                }
+              }
+            }
+          } else {
+            target = Math.min(target, Math.max(2.6, stopProfile(d)))
+          }
+        }
+      }
+    }
+  }
+  // Never drive into the rider: stop BIKE_GAP behind her if she is ahead in this lane.
+  const bx = bikeTelemetry.x - a.x
+  const bz = bikeTelemetry.z - a.z
+  let ahead = -1
+  let lateral = 99
+  switch (a.heading) {
+    case 'N':
+      ahead = bz
+      lateral = Math.abs(bx)
+      break
+    case 'S':
+      ahead = -bz
+      lateral = Math.abs(bx)
+      break
+    case 'E':
+      ahead = bx
+      lateral = Math.abs(bz)
+      break
+    case 'W':
+      ahead = -bx
+      lateral = Math.abs(bz)
+      break
+  }
+  // Wide lateral window: the rider may sit anywhere in the lane, or be crossing in front at a junction.
+  if (ahead > -0.5 && ahead < 16 && lateral < 1.7) {
+    target = Math.min(target, stopProfile(ahead - BIKE_GAP))
+  }
+  return target
 }
 
 const NUM_STRIPS = NUM_BLOCKS + 1
@@ -1367,6 +834,8 @@ export function RoadTraffic() {
   const groupRefs = useRef<(RapierRigidBody | null)[]>([])
   const smoothYawRef = useRef<number[]>([])
   const smoothSpeedRef = useRef<number[]>([])
+  /** Per-agent STOP-sign state (see `controlledTargetSpeed`). */
+  const holdRef = useRef<{ key: number; until: number }[]>([])
   const [, setRenderTick] = useState(0)
 
   const slotKeys = useMemo(() => {
@@ -1400,7 +869,7 @@ export function RoadTraffic() {
         continue
       }
 
-      const targetYaw = headingToYaw(a.heading)
+      const targetYaw = a.round ? roundYaw(a) : headingToYaw(a.heading)
       let sy = yawBuf[i]
       if (!Number.isFinite(sy)) sy = targetYaw
       const yawDiff = Math.atan2(
@@ -1410,10 +879,12 @@ export function RoadTraffic() {
       sy += yawDiff * (1 - Math.exp(-6.2 * dt))
       yawBuf[i] = sy
 
-      const tgtSp = a.speed
       let sp = spdBuf[i]
-      if (!Number.isFinite(sp)) sp = tgtSp
-      const maxStep = 3.6 * dt
+      if (!Number.isFinite(sp)) sp = a.speed
+      let hold = holdRef.current[i]
+      if (!hold) hold = holdRef.current[i] = { key: -1, until: 0 }
+      const tgtSp = controlledTargetSpeed(a, sp, hold, worldClock.t, agents)
+      const maxStep = (tgtSp < sp ? 4.8 : 3.6) * dt
       sp += Math.sign(tgtSp - sp) * Math.min(Math.abs(tgtSp - sp), maxStep)
       spdBuf[i] = sp
 
@@ -1439,21 +910,32 @@ export function RoadTraffic() {
           agents[i] = na
         }
         a = agents[i]!
+        holdRef.current[i] = { key: -1, until: 0 }
         yawBuf[i] = headingToYaw(a.heading)
         spdBuf[i] = a.speed
         setRenderTick((t) => t + 1)
       }
 
-      if (agents[i])
-        applyAgentToRigidBody(agents[i]!, rb, world, yawBuf[i])
+      if (agents[i]) {
+        const ag = agents[i]!
+        applyAgentToRigidBody(ag, rb, world, yawBuf[i])
+        if (i < trafficTelemetry.x.length) {
+          const v = velocityWithSpeed(ag, spdBuf[i])
+          trafficTelemetry.x[i] = ag.x
+          trafficTelemetry.z[i] = ag.z
+          trafficTelemetry.vx[i] = v.vx
+          trafficTelemetry.vz[i] = v.vz
+        }
+      }
     }
+    trafficTelemetry.count = Math.min(n, trafficTelemetry.x.length)
   })
 
   return (
     <group>
       {slotKeys.map((key, i) => {
         const ag = agentsRef.current[i]
-        const col = ag ? vehicleColliderForKind(ag.kind) : null
+        const col = ag ? vehicleCollider(ag.kind) : null
         return (
           <RigidBody
             key={key}
@@ -1469,9 +951,16 @@ export function RoadTraffic() {
             canSleep={false}
           >
             {ag && col ? (
-              <CuboidCollider args={col.args} position={col.pos} />
+              <CuboidCollider args={col.args} position={[col.pos[0], col.pos[1] - 0.09, col.pos[2]]} />
             ) : null}
-            {ag ? <VehicleMesh kind={ag.kind} /> : null}
+            {ag ? (
+              <StaticBatch key={ag.kind} chunked={false}>
+                {/* Body origin sits 0.09 m up; models are built from the ground. */}
+                <group position={[0, -0.09, 0]}>
+                  <VehicleModel kind={ag.kind} seed={i} />
+                </group>
+              </StaticBatch>
+            ) : null}
           </RigidBody>
         )
       })}
