@@ -4,8 +4,8 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-10-25 (end of session 5). Nothing is committed yet (the user said not to commit): all
-work is in the working tree on `main`. Commit before starting anything big.
+**Last updated:** 2026-10-25 (end of session 5). All work through session 5 is committed on `main`
+(commit `7d448e7`, not pushed). Commit before starting anything big.
 
 **Done and verified in the browser**
 - Rules engine (`src/roadRules/engine.ts`), 29 scenarios (`src/roadRules/data/scenarios.json`), live rules
@@ -104,7 +104,6 @@ work is in the working tree on `main`. Commit before starting anything big.
    details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low.
 2. More Kampala: a flyover near the Clock Tower, Kisekka market, Nakivubo channel, hill roads.
 3. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
-4. Commit when the user asks (nothing committed yet).
 
 ## How to run and test
 
