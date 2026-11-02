@@ -149,7 +149,10 @@ are not pushed. Commit before starting anything big.
   `HowToRide` (first ride, ? button, pause menu, start screen), `KeyStrip`, `RideCoach` (live tips, setting "Riding
   tips"). Bigger touch pads on tablets.
 - Mute: settings `muted` (master), `music`, `sound`. All Web Audio goes through `setWebAudioMuted` (suspends the
-  shared context: the engine and clicks used to ignore the sound setting). HUD button, M, start screen, settings.
+  shared context: the engine and clicks used to ignore the sound setting). One button for every screen:
+  `ui/MuteButton.tsx`, mounted at the app root at z-60, top right. The HUD keeps a free slot for it, and `Modal` stops
+  short of it on phones and portrait tablets, so new dialogs get this for free. M works everywhere; settings has the
+  separate switches; muting also cuts off the instructor's voice.
 - Verified in the browser: 0 of 78 vehicles facing the wrong way; rider stopped in a live lane 22 s, no hits, nearest
   vehicle 3.2 m; riding head-on against traffic knocked her in 3 of 4 tries; brake held 2 s moved 0 m; 10 of 10
   roundabout samples clockwise; passenger pickup and drop-off work on the wider roads; mute suspends audio and pauses

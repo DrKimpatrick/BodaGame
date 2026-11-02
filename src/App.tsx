@@ -5,6 +5,7 @@ import { GameHud } from './components/ui/GameHud'
 import { GameOverlays } from './components/ui/GameOverlays'
 import { ImpactFlash } from './components/ui/ImpactFlash'
 import { StageSheet } from './components/ui/StageSheet'
+import { MuteButton } from './components/ui/MuteButton'
 import { HowToRide } from './components/ui/RideGuide'
 import { PauseMenu, StartScreen } from './components/ui/StartScreen'
 import { TouchControls } from './components/ui/TouchControls'
@@ -60,6 +61,7 @@ export default function App() {
   const [guideOpen, setGuideOpen] = useState(false)
   const musicOn = useSettingsStore((s) => s.music && !s.muted)
   const effectsOn = useSettingsStore((s) => s.sound && !s.muted)
+  const muted = useSettingsStore((s) => s.muted)
   const readyRef = useRef(false)
   const pendingMode = useRef<GameMode>('learn')
 
@@ -137,6 +139,11 @@ export default function App() {
 
   useEffect(() => setWebAudioMuted(!effectsOn), [effectsOn])
 
+  // Mute also cuts off a voice mid-sentence, not just the next one.
+  useEffect(() => {
+    if (muted) stopSpeaking()
+  }, [muted])
+
   // Keyboard / on-screen actions.
   useEffect(
     () =>
@@ -195,6 +202,7 @@ export default function App() {
 
   return (
     <div className="relative h-full w-full bg-[#0f1014]" data-game-root>
+      <MuteButton />
       {inGame ? (
         <div className={`h-full w-full ${phase === 'loading' ? 'opacity-0' : ''}`} aria-hidden={phase === 'loading'}>
           <Suspense fallback={null}>

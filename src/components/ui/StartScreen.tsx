@@ -70,8 +70,6 @@ export function SettingsPanel() {
 export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) {
   const [mode, setMode] = useState<GameMode>('learn')
   const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings' | 'guide'>(null)
-  const muted = useSettingsStore((s) => s.muted)
-  const toggleMute = useSettingsStore((s) => s.toggleMute)
   const progress = useRoadRulesStore((s) => s.progress)
   const certReady = hasCertificateRequirements(progress)
 
@@ -109,9 +107,6 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
             </button>
             <button type="button" onClick={() => setPanel('settings')} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
               ⚙️ Settings
-            </button>
-            <button type="button" onClick={toggleMute} aria-pressed={muted} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
-              {muted ? '🔇 Sound off' : '🔊 Sound on'}
             </button>
           </div>
         </header>

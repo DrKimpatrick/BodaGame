@@ -218,7 +218,6 @@ function BrokenDownNotice({ onOpenStage }: { onOpenStage: () => void }) {
 export function GameHud({ onPause, onOpenStage, onHelp }: { onPause: () => void; onOpenStage: () => void; onHelp: () => void }) {
   const headlight = useGameStore((s) => s.headlight)
   const camera = useSettingsStore((s) => s.camera)
-  const muted = useSettingsStore((s) => s.muted)
   const [compact, setCompact] = useState(() => window.innerHeight < 500)
   useEffect(() => {
     const on = () => setCompact(window.innerHeight < 500)
@@ -241,9 +240,6 @@ export function GameHud({ onPause, onOpenStage, onHelp }: { onPause: () => void;
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-1.5 sm:gap-2">
-            <RoundBtn label={muted ? 'Unmute (M)' : 'Mute (M)'} onClick={() => emitDriveAction('mute')} active={muted}>
-              {muted ? '🔇' : '🔊'}
-            </RoundBtn>
             <RoundBtn label="How to ride (?)" onClick={onHelp}>
               <span className="font-black">?</span>
             </RoundBtn>
@@ -256,6 +252,8 @@ export function GameHud({ onPause, onOpenStage, onHelp }: { onPause: () => void;
             <RoundBtn label="Pause (Esc)" onClick={onPause}>
               ⏸
             </RoundBtn>
+            {/* Slot kept free for the app-wide mute button */}
+            <span className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden />
           </div>
           <Speedo />
           {compact ? <LifeAndKids /> : null}

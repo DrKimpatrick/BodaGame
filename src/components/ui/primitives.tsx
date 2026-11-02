@@ -63,7 +63,7 @@ export function Modal({
       aria-labelledby={labelledBy}
     >
       <div
-        className={`max-h-[100dvh] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-[#17181d] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-zinc-100 shadow-2xl ring-1 sm:max-h-[92dvh] sm:rounded-3xl ${ring} ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}
+        className={`max-h-[calc(100dvh-3.75rem)] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-[#17181d] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-zinc-100 shadow-2xl ring-1 sm:max-h-[92dvh] sm:rounded-3xl sm:portrait:max-h-[calc(100dvh-9rem)] ${ring} ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}
       >
         {children}
       </div>
