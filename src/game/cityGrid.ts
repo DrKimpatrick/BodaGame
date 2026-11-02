@@ -36,7 +36,8 @@ export function blockCenter(i: number, j: number): [number, number] {
  */
 export type RoadKind = 'dual' | 'main' | 'street' | 'murram'
 
-export const ROAD_WIDTH: Record<RoadKind, number> = { dual: 16, main: 11, street: 7.5, murram: 6.5 }
+/** Wider than survey scale on purpose: from a chase camera real-width lanes read as cramped. Lanes are 3.5–4.5 m. */
+export const ROAD_WIDTH: Record<RoadKind, number> = { dual: 18, main: 14, street: 9, murram: 8 }
 export const MEDIAN_W = 2
 
 /** Roads along Z, by strip index along X (west → east): matches STREETS_NS in kampalaMap.ts. */

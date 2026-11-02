@@ -41,6 +41,8 @@ Open drains, red murram verges, faded markings and patched potholes reflect comm
 ## Scale and liberties
 
 - Real distances are compressed about 3:1 so a shift takes minutes, not hours.
+- Roads are wider than real ones (lanes 3.5–4.5 m) and vehicles a little smaller, because real proportions look
+  cramped from a chase camera.
 - Roads follow a grid (with four road types); real Kampala also has winding hill roads.
 - Hills are a backdrop (the city itself is flat), so slopes don't affect riding. Their winding roads are scenery;
   their paths and surfaces are invented, not traced from real roads.

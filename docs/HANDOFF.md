@@ -4,9 +4,8 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-11-02 (end of session 6). All work through session 6 is committed on `main`; session 6
-is not pushed (session 5, `1f4a1ad`, matched the local `origin/main` ref, so it looks pushed). Commit before
-starting anything big.
+**Last updated:** 2026-11-02 (end of session 7). All work through session 7 is committed on `main`; sessions 6 and 7
+are not pushed. Commit before starting anything big.
 
 **Done and verified in the browser**
 - Rules engine (`src/roadRules/engine.ts`), 29 scenarios (`src/roadRules/data/scenarios.json`), live rules
@@ -113,8 +112,6 @@ starting anything big.
   keep clear of them.
 - `forcedShopEdges` (`kampalaMap.ts`) keeps shop rows on the edges that don't touch a linear feature (channel
   blocks front Nakivubo Rd; flyover blocks flank the deck). `nameSign` moved to `realism/nameSign.ts`.
-- Dev-hook gotcha: `__wowTeleport` can fail silently while the bike is rolling. Stop first, then check
-  `__wow.telemetry.bikeTelemetry`. Facing: yaw 0 = −Z, π = +Z, −π/2 = +X, π/2 = −X.
 - Verified in the browser: ridden under the flyover and across the Entebbe Rd culvert with no collision; no
   runtime errors. Tests 20/20, `tsc`, `npm run build` pass; lint clean on `CityMap.tsx` and `realism/`.
 - Performance, measured on `low` against the session 5 commit at the same spots (calls / triangles, including
@@ -122,12 +119,58 @@ starting anything big.
   spawn 409 / 980 k before, 427 / 1.03 M after. Session 6 adds at most 22 calls and 116 k triangles. The older
   "worst view on low" figures above are out of date: 2.3–2.4 M was already reached before this session.
 
+**Session 7 (2026-11-02): smooth riding, traffic that sees the rider, controls, mute**
+- Biggest cause of jerkiness: `GameScene` and `GameCanvas` subscribed to `fuel`, which changes every frame while
+  riding, so React re-rendered the whole city every frame (~500 ms per change in dev; riding ran at ~2 fps here).
+  They now select a boolean. **Never subscribe a component in or above the scene to a per-frame store value.**
+- Physics: `timeStep="vary"` and `updatePriority={-50}`: one step per frame, before all other frame callbacks, so
+  bike, camera and traffic read the same instant. Traffic moves with `setNextKinematicTranslation`.
+- Bike (`Boda.tsx`): no reverse at all; the brake holds it still; steering on the spot gets it off a wall.
+  Accelerator, brake and steering ease in. Accel 8.5 m/s², coasting is gentle, and turn rate falls with speed
+  (it used to rise with speed). Top speed unchanged (~68 km/h). A vehicle strike shoves the bike clear.
+- Traffic bugs fixed: `headingToYaw` had E and W swapped, so all E–W vehicles drove in reverse (`roundYaw` too).
+  Roundabouts ran anticlockwise from above, so a rider obeying the hint got a wrong-way violation: traffic and
+  `roundaboutRule.ts` now go clockwise from above (angle increases) and its test was flipped to match. Turns follow
+  a curve through the junction (`enterJunction`, `advanceArc`) instead of snapping onto the new lane.
+- Traffic AI (`controlledTargetSpeed`, `riderAtFault`, `planPass` in `RoadTraffic.tsx`): drivers watch where the
+  rider is and is about to be, match speed behind her and brake up to 13 m/s² if she is in the right. Riding
+  against the flow or crossing against a red / STOP / give-way line gets ordinary braking only, so she can be
+  knocked. A vehicle in contact stops dead rather than driving over her. Cars change lane round slow traffic, and
+  bikes squeeze past within the lane. A vehicle stuck 22 s behind other traffic stops waiting for it (anti-gridlock).
+- Rendering: `TrafficInstances.tsx` bakes one instanced set per vehicle type and draws only vehicles near the
+  camera; slot kinds are fixed, so respawns no longer remount. Rider and bike are batched. Shadow map redraws every
+  second frame. `AdaptiveResolution` (`GameCanvas.tsx`) drops render resolution under ~42 fps. `high` DPR cap 1.5.
+  Shared batching helpers are in `batchGeometry.ts`; a failed merge now keeps its meshes visible.
+- Flicker: near plane 0.15 → 0.4 and lots / perimeter layers moved apart (they were 1–4 mm apart).
+- Proportions: roads wider (street 9, main 14, dual 18, murram 8 m; `ROUNDABOUT` disc 13), traffic scaled
+  (`vehicleScale`: cars 0.9, bus / lorry 0.8), landmark `PLOT` = `BLOCK` − 10, higher chase camera that pulls in
+  rather than sit inside a wall (ray-cast against fixed scenery only).
+- Controls: Space also brakes; M mute, ? guide. `inputGate.riding` keeps riding keys out of menus. `ui/RideGuide.tsx`:
+  `HowToRide` (first ride, ? button, pause menu, start screen), `KeyStrip`, `RideCoach` (live tips, setting "Riding
+  tips"). Bigger touch pads on tablets.
+- Mute: settings `muted` (master), `music`, `sound`. All Web Audio goes through `setWebAudioMuted` (suspends the
+  shared context: the engine and clicks used to ignore the sound setting). HUD button, M, start screen, settings.
+- Verified in the browser: 0 of 78 vehicles facing the wrong way; rider stopped in a live lane 22 s, no hits, nearest
+  vehicle 3.2 m; riding head-on against traffic knocked her in 3 of 4 tries; brake held 2 s moved 0 m; 10 of 10
+  roundabout samples clockwise; passenger pickup and drop-off work on the wider roads; mute suspends audio and pauses
+  music. Riding here: ~61 fps, median 17 ms, worst 24 ms (Apple Silicon Mac, dev build, small pane). Tests 20/20, `tsc`,
+  `npm run build` pass. Lint: only older findings remain (BikeDustTrail, BikeExhaust, Boda `speed` refs, JobRouteGuide,
+  BuildingFacadeWindows, BuildingPerimeterFence).
+- On `low` (calls / triangles, including the shadow pass where there is one): heaviest view 972 / 2.42 M → 611 / 2.16 M;
+  spawn 427 / 1.03 M → 280 / 0.99 M. `VIEW_SCALE.low` is now 0.5.
+- Not established: a road actually vanishing was never reproduced. The reported screenshot looks like a car on top
+  of the rider (bike at 68%, exactly one 32-point hit). Flicker and batching fixes address the other likely causes.
+- Dev hooks: `__wowTeleport` resets speed now. Yaw 0 = −Z, π = +Z, −π/2 = +X, π/2 = −X. Traffic faces (sin yaw, cos yaw).
+- Measuring gotcha: long `requestAnimationFrame` loops in tests can hit the tool's 45 s limit when frames are slow.
+
 **Next (in priority order)**
 1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are
-   the ones to test (~970 calls / 2.4 M triangles on `low`). If slow: lower `TREE_SHARE.low`, `DRAW_RADIUS.low`,
-   skip shop window details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low.
-2. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
-3. Optional: a rideable flyover (see session 6).
+   the ones to test (~610 calls / 2.2 M triangles on `low`). If slow: lower `TREE_SHARE.low`, skip shop window
+   details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low. Triangles are the remaining
+   concern; most are in the merged city.
+2. Confirm with the player that roads no longer vanish; if they do, get the location and weather.
+3. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
+4. Optional: a rideable flyover (see session 6).
 
 ## How to run and test
 
@@ -154,7 +197,7 @@ starting anything big.
 | Settings | `src/store/useSettingsStore.ts` | Quality (auto-detected), camera, timer, gentle mode, voice, sound. |
 | 3D scene | `src/components/GameScene.tsx` | Weather lighting, rain, monitor. |
 | UI | `src/components/ui/*` | Mobile-first, Tailwind v4. |
-| Input | `src/input/driveInput.ts` | Keyboard + touch merged; actions L / V / H / Esc. |
+| Input | `src/input/driveInput.ts` | Keyboard + touch merged; actions L / V / H / M / ? / Esc; `inputGate`. |
 
 ## Decisions and constraints
 

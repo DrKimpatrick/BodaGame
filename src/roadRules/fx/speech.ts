@@ -28,7 +28,8 @@ if (typeof speechSynthesis !== 'undefined') {
 
 export function speak(text: string, opts: { interrupt?: boolean; force?: boolean } = {}): void {
   if (typeof speechSynthesis === 'undefined') return
-  if (!opts.force && !useSettingsStore.getState().voice) return
+  const settings = useSettingsStore.getState()
+  if (settings.muted || (!opts.force && !settings.voice)) return
   if (opts.interrupt !== false) speechSynthesis.cancel()
   const u = new SpeechSynthesisUtterance(text)
   const v = pickVoice()

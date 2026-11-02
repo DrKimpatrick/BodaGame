@@ -3,7 +3,7 @@
  * Invoked from the game store (not React effects) so StrictMode does not double-play.
  */
 
-import { getSharedAudioContext } from './webAudioContext'
+import { getSharedAudioContext, isWebAudioMuted } from './webAudioContext'
 
 export type ImpactKind = 'pedestrian' | 'vehicle' | 'restricted'
 
@@ -157,7 +157,7 @@ export function playBloodImpactFeedback(kind: ImpactKind) {
   pulseHaptic(kind)
   shakeGameRoot(kind)
 
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' || isWebAudioMuted()) return
   const ctx = getSharedAudioContext()
   void ctx.resume().then(() => {
     if (kind === 'vehicle') playVehicleKnock(ctx)

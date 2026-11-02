@@ -1,14 +1,15 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { pauseAllMusic, resumeGameplayMusicIfNeeded, startGameplayMusic } from './audio/gameMusic'
-import { unlockWebAudioFromUserGesture } from './audio/webAudioContext'
+import { setWebAudioMuted, unlockWebAudioFromUserGesture } from './audio/webAudioContext'
 import { GameHud } from './components/ui/GameHud'
 import { GameOverlays } from './components/ui/GameOverlays'
 import { ImpactFlash } from './components/ui/ImpactFlash'
 import { StageSheet } from './components/ui/StageSheet'
+import { HowToRide } from './components/ui/RideGuide'
 import { PauseMenu, StartScreen } from './components/ui/StartScreen'
 import { TouchControls } from './components/ui/TouchControls'
 import { useGameRootButtonClickSound } from './hooks/useGameRootButtonClickSound'
-import { onDriveAction, releaseAll } from './input/driveInput'
+import { inputGate, installKeyboard, onDriveAction, releaseAll } from './input/driveInput'
 import { playHorn } from './roadRules/fx/sfx'
 import { stopSpeaking } from './roadRules/fx/speech'
 import { sceneStatus } from './roadRules/world/telemetry'
@@ -17,6 +18,16 @@ import { useRoadRulesStore, type GameMode } from './store/useRoadRulesStore'
 import { useSettingsStore } from './store/useSettingsStore'
 
 type Phase = 'menu' | 'loading' | 'playing'
+
+const GUIDE_SEEN_KEY = 'wow-ride-guide-seen'
+
+function guideSeen() {
+  try {
+    return localStorage.getItem(GUIDE_SEEN_KEY) === '1'
+  } catch {
+    return true
+  }
+}
 
 /** The 3D engine (three, rapier, drei) loads only when a ride starts, so the menu appears fast on phones. */
 const GameCanvas = lazy(() => import('./components/GameCanvas'))
@@ -46,7 +57,9 @@ export default function App() {
   const [stageOpen, setStageOpen] = useState(false)
   const start = useRoadRulesStore((s) => s.start)
   const overlay = useRoadRulesStore((s) => s.overlay)
-  const sound = useSettingsStore((s) => s.sound)
+  const [guideOpen, setGuideOpen] = useState(false)
+  const musicOn = useSettingsStore((s) => s.music && !s.muted)
+  const effectsOn = useSettingsStore((s) => s.sound && !s.muted)
   const readyRef = useRef(false)
   const pendingMode = useRef<GameMode>('learn')
 
@@ -85,6 +98,7 @@ export default function App() {
     useRoadRulesStore.getState().quit()
     setPaused(false)
     setStageOpen(false)
+    setGuideOpen(false)
     pauseAllMusic()
     setPhase('menu')
   }
@@ -93,16 +107,47 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'playing') return
     const g = useGameStore.getState()
-    if (paused || stageOpen) g.setHudModalFreezesWorld(true)
+    if (paused || stageOpen || guideOpen) g.setHudModalFreezesWorld(true)
     else if (!useRoadRulesStore.getState().overlay) g.setHudModalFreezesWorld(false)
-  }, [paused, stageOpen, phase])
+  }, [paused, stageOpen, guideOpen, phase])
+
+  // New riders see how the controls work before their first ride.
+  useEffect(() => {
+    if (phase !== 'playing' || overlay || guideSeen()) return
+    const id = setTimeout(() => setGuideOpen(true), 0)
+    return () => clearTimeout(id)
+  }, [phase, overlay])
+
+  const closeGuide = () => {
+    try {
+      localStorage.setItem(GUIDE_SEEN_KEY, '1')
+    } catch {
+      /* private mode: the guide simply shows again next time */
+    }
+    setGuideOpen(false)
+  }
+
+  // Riding keys act only while actually riding, so Space and the arrows still work on buttons and menus.
+  useEffect(() => {
+    installKeyboard()
+    const riding = phase === 'playing' && !paused && !stageOpen && !guideOpen && !overlay
+    inputGate.riding = riding
+    if (!riding) releaseAll()
+  }, [phase, paused, stageOpen, guideOpen, overlay])
+
+  useEffect(() => setWebAudioMuted(!effectsOn), [effectsOn])
 
   // Keyboard / on-screen actions.
   useEffect(
     () =>
       onDriveAction((a) => {
+        if (a === 'mute') {
+          useSettingsStore.getState().toggleMute()
+          return
+        }
         if (phase !== 'playing') return
-        if (a === 'pause') setPaused((p) => !p)
+        if (a === 'help') setGuideOpen((o) => !o)
+        else if (a === 'pause') setPaused((p) => !p)
         else if (a === 'headlight') useGameStore.getState().toggleHeadlight()
         else if (a === 'camera') useSettingsStore.getState().cycleCamera()
         else if (a === 'horn') playHorn()
@@ -122,9 +167,9 @@ export default function App() {
     })
   }, [phase])
 
-  // Music follows the sound setting and the tab's visibility.
+  // Music follows its setting, the mute switch and the tab's visibility.
   useEffect(() => {
-    if (phase !== 'playing' || !sound) {
+    if (phase !== 'playing' || !musicOn) {
       pauseAllMusic()
       return
     }
@@ -132,7 +177,7 @@ export default function App() {
     const onVis = () => (document.visibilityState === 'hidden' ? pauseAllMusic() : resumeGameplayMusicIfNeeded())
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
-  }, [phase, sound])
+  }, [phase, musicOn])
 
   // Auto-pause when the app goes to the background on a phone (off in the dev-only showroom, where
   // the preview pane reports "hidden" during screenshots).
@@ -162,11 +207,12 @@ export default function App() {
       {phase === 'playing' ? (
         <>
           <ImpactFlash />
-          <GameHud onPause={() => setPaused(true)} onOpenStage={() => setStageOpen(true)} />
-          {!overlay && !paused && !stageOpen ? <TouchControls /> : null}
+          <GameHud onPause={() => setPaused(true)} onOpenStage={() => setStageOpen(true)} onHelp={() => setGuideOpen(true)} />
+          {!overlay && !paused && !stageOpen && !guideOpen ? <TouchControls /> : null}
           <GameOverlays onMenu={toMenu} />
           {stageOpen && !overlay ? <StageSheet onClose={() => setStageOpen(false)} /> : null}
           {paused && !overlay ? <PauseMenu onResume={() => setPaused(false)} onMenu={toMenu} /> : null}
+          {guideOpen && !overlay && !paused ? <HowToRide onClose={closeGuide} /> : null}
         </>
       ) : null}
     </div>

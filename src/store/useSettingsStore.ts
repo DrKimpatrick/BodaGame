@@ -17,12 +17,19 @@ export type Settings = {
   gentle: boolean
   /** Read cards and instructor lines aloud. */
   voice: boolean
+  /** Engine, horn, crashes, clicks and other effects. */
   sound: boolean
+  music: boolean
+  /** Master mute: silences everything, whatever the two above say. */
+  muted: boolean
+  /** Live riding tips and the key reminder. */
+  coach: boolean
 }
 
 type SettingsStore = Settings & {
   set: (patch: Partial<Settings>) => void
   cycleCamera: () => void
+  toggleMute: () => void
 }
 
 const KEY = 'wow-settings-v1'
@@ -55,6 +62,9 @@ const defaults: Settings = {
   gentle: false,
   voice: false,
   sound: true,
+  music: true,
+  muted: false,
+  coach: true,
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
@@ -62,12 +72,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   ...load(),
   set: (patch) => set(patch),
   cycleCamera: () => set({ camera: get().camera === 'chase' ? 'helmet' : 'chase' }),
+  toggleMute: () => set({ muted: !get().muted }),
 }))
 
 useSettingsStore.subscribe((s) => {
   try {
-    const { quality, camera, timer, gentle, voice, sound } = s
-    localStorage.setItem(KEY, JSON.stringify({ quality, camera, timer, gentle, voice, sound }))
+    const { quality, camera, timer, gentle, voice, sound, music, muted, coach } = s
+    localStorage.setItem(KEY, JSON.stringify({ quality, camera, timer, gentle, voice, sound, music, muted, coach }))
   } catch {
     /* storage blocked */
   }

@@ -8,6 +8,7 @@ import { useRoadRulesStore } from '../../store/useRoadRulesStore'
 import { useSettingsStore } from '../../store/useSettingsStore'
 import { Bar, SignImg } from './primitives'
 import { fmtUgx } from './format'
+import { KeyStrip, RideCoach } from './RideGuide'
 
 /**
  * In-ride HUD. Each widget subscribes to only the values it shows, so a km/h change re-renders the
@@ -120,8 +121,9 @@ function Speedo() {
 }
 
 function BikeStatus({ onOpenStage }: { onOpenStage: () => void }) {
-  const fuel = useGameStore((s) => s.fuel)
-  const condition = useGameStore((s) => s.condition)
+  // Whole percents: fuel changes every frame while riding, the display only once per percent.
+  const fuel = useGameStore((s) => Math.round(s.fuel))
+  const condition = useGameStore((s) => Math.round(s.condition))
   const low = fuel < 20 || condition < CONDITION_WARN_AT
   return (
     <button
@@ -132,12 +134,12 @@ function BikeStatus({ onOpenStage }: { onOpenStage: () => void }) {
     >
       <div className="flex items-center justify-between text-[11px] font-bold text-zinc-300">
         <span>⛽ Fuel</span>
-        <span className="tabular-nums">{Math.round(fuel)}%</span>
+        <span className="tabular-nums">{fuel}%</span>
       </div>
       <Bar value={fuel} />
       <div className="mt-1.5 flex items-center justify-between text-[11px] font-bold text-zinc-300">
         <span>🔧 Bike</span>
-        <span className="tabular-nums">{Math.round(condition)}%</span>
+        <span className="tabular-nums">{condition}%</span>
       </div>
       <Bar value={condition} />
       <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-[#f5c518]">Fuel &amp; repairs ›</p>
@@ -152,7 +154,7 @@ function RoundBtn({ label, onClick, children, active }: { label: string; onClick
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full text-xl ring-1 backdrop-blur-md transition ${active ? 'bg-[#f5c518] text-zinc-950 ring-[#f5c518]' : 'bg-black/55 text-white ring-white/15 hover:bg-black/75'}`}
+      className={`pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full text-base ring-1 sm:h-12 sm:w-12 sm:text-xl backdrop-blur-md transition ${active ? 'bg-[#f5c518] text-zinc-950 ring-[#f5c518]' : 'bg-black/55 text-white ring-white/15 hover:bg-black/75'}`}
     >
       {children}
     </button>
@@ -200,10 +202,8 @@ function Toasts() {
 }
 
 function BrokenDownNotice({ onOpenStage }: { onOpenStage: () => void }) {
-  const condition = useGameStore((s) => s.condition)
-  const fuel = useGameStore((s) => s.fuel)
-  const broken = isBikeBrokenDown(condition)
-  const empty = fuel <= 0.0001
+  const broken = useGameStore((s) => isBikeBrokenDown(s.condition))
+  const empty = useGameStore((s) => s.fuel <= 0.0001)
   if (!broken && !empty) return null
   return (
     <div className="pointer-events-auto rounded-2xl bg-amber-950/90 px-4 py-3 text-center ring-1 ring-amber-400/60">
@@ -215,9 +215,10 @@ function BrokenDownNotice({ onOpenStage }: { onOpenStage: () => void }) {
   )
 }
 
-export function GameHud({ onPause, onOpenStage }: { onPause: () => void; onOpenStage: () => void }) {
+export function GameHud({ onPause, onOpenStage, onHelp }: { onPause: () => void; onOpenStage: () => void; onHelp: () => void }) {
   const headlight = useGameStore((s) => s.headlight)
   const camera = useSettingsStore((s) => s.camera)
+  const muted = useSettingsStore((s) => s.muted)
   const [compact, setCompact] = useState(() => window.innerHeight < 500)
   useEffect(() => {
     const on = () => setCompact(window.innerHeight < 500)
@@ -239,7 +240,13 @@ export function GameHud({ onPause, onOpenStage }: { onPause: () => void; onOpenS
           <Toasts />
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 sm:gap-2">
+            <RoundBtn label={muted ? 'Unmute (M)' : 'Mute (M)'} onClick={() => emitDriveAction('mute')} active={muted}>
+              {muted ? '🔇' : '🔊'}
+            </RoundBtn>
+            <RoundBtn label="How to ride (?)" onClick={onHelp}>
+              <span className="font-black">?</span>
+            </RoundBtn>
             <RoundBtn label="Camera view (V)" onClick={() => emitDriveAction('camera')} active={camera === 'helmet'}>
               {camera === 'helmet' ? '🪖' : '🎥'}
             </RoundBtn>
@@ -267,6 +274,8 @@ export function GameHud({ onPause, onOpenStage }: { onPause: () => void; onOpenS
       <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] [@media(pointer:coarse)]:bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+9rem)] [@media(pointer:coarse)_and_(max-height:500px)]:bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+7rem)]">
         <BikeStatus onOpenStage={onOpenStage} />
       </div>
+      <KeyStrip />
+      <RideCoach />
     </div>
   )
 }

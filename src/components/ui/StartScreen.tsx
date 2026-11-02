@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { HowToRide } from './RideGuide'
 import { BILL, DELIVERIES_PER_SHIFT, START_CASH } from '../../roadRules/constants'
 import { hasCertificateRequirements, useRoadRulesStore, type GameMode } from '../../store/useRoadRulesStore'
 import { useSettingsStore, type Quality } from '../../store/useSettingsStore'
@@ -36,7 +37,10 @@ export function SettingsPanel() {
     <div className="divide-y divide-white/5">
       <Toggle label="Decision timer" hint="12 seconds to answer road encounter cards" checked={s.timer} onChange={(v) => s.set({ timer: v })} />
       <Toggle label="Read aloud" hint="Cards and instructor tips are spoken" checked={s.voice} onChange={(v) => s.set({ voice: v })} />
-      <Toggle label="Sound" checked={s.sound} onChange={(v) => s.set({ sound: v })} />
+      <Toggle label="Mute everything" hint="Press M at any time" checked={s.muted} onChange={(v) => s.set({ muted: v })} />
+      <Toggle label="Music" checked={s.music} onChange={(v) => s.set({ music: v })} />
+      <Toggle label="Sound effects" hint="Engine, horn, crashes and clicks" checked={s.sound} onChange={(v) => s.set({ sound: v })} />
+      <Toggle label="Riding tips" hint="Live advice and the key reminder while you ride" checked={s.coach} onChange={(v) => s.set({ coach: v })} />
       <Toggle
         label="Gentle mode"
         hint="Children go to relatives instead of dying. Money and jail stakes stay."
@@ -65,7 +69,9 @@ export function SettingsPanel() {
 
 export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) {
   const [mode, setMode] = useState<GameMode>('learn')
-  const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings'>(null)
+  const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings' | 'guide'>(null)
+  const muted = useSettingsStore((s) => s.muted)
+  const toggleMute = useSettingsStore((s) => s.toggleMute)
   const progress = useRoadRulesStore((s) => s.progress)
   const certReady = hasCertificateRequirements(progress)
 
@@ -89,6 +95,9 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
             Ride a boda through Kampala and learn Uganda&apos;s road signs and rules the way they matter: every choice you make reaches your family.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <button type="button" onClick={() => setPanel('guide')} className="min-h-11 rounded-full bg-[#f5c518] px-4 font-bold text-zinc-950 hover:brightness-110">
+              🏍️ How to ride
+            </button>
             <button type="button" onClick={() => setPanel('book')} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
               📖 Rule book
             </button>
@@ -100,6 +109,9 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
             </button>
             <button type="button" onClick={() => setPanel('settings')} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
               ⚙️ Settings
+            </button>
+            <button type="button" onClick={toggleMute} aria-pressed={muted} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
+              {muted ? '🔇 Sound off' : '🔊 Sound on'}
             </button>
           </div>
         </header>
@@ -143,12 +155,13 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
             {mode === 'learn' ? 'Start lesson' : mode === 'shift' ? 'Start shift' : 'Ride'}
           </Button>
           <p className="mt-3 text-center text-xs text-zinc-500">
-            Laptop: W A S D or arrows · L headlight · V camera · Esc pause. Phone and tablet: on-screen buttons.
+            Laptop: W accelerate, S or Space brake, A D steer (or the arrow keys) · M mute · ? how to ride. Phone and tablet: on-screen buttons.
           </p>
           {progress.bestShift > 0 ? <p className="mt-1 text-center text-xs text-zinc-500">Best: reached shift {progress.bestShift}</p> : null}
         </main>
       </div>
 
+      {panel === 'guide' ? <HowToRide onClose={() => setPanel(null)} /> : null}
       {panel === 'book' ? <RuleBook onClose={() => setPanel(null)} /> : null}
       {panel === 'quiz' ? <SignQuiz onClose={() => setPanel(null)} /> : null}
       {panel === 'cert' ? <Certificate onClose={() => setPanel(null)} /> : null}
@@ -166,8 +179,9 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
 }
 
 export function PauseMenu({ onResume, onMenu }: { onResume: () => void; onMenu: () => void }) {
-  const [panel, setPanel] = useState<null | 'book'>(null)
+  const [panel, setPanel] = useState<null | 'book' | 'guide'>(null)
   if (panel === 'book') return <RuleBook onClose={() => setPanel(null)} />
+  if (panel === 'guide') return <HowToRide onClose={() => setPanel(null)} />
   return (
     <Modal labelledBy="pause-title">
       <h2 id="pause-title" className="text-2xl font-black">Paused</h2>
@@ -175,6 +189,9 @@ export function PauseMenu({ onResume, onMenu }: { onResume: () => void; onMenu: 
       <div className="mt-4 grid gap-2">
         <Button onClick={onResume} autoFocus>
           Resume
+        </Button>
+        <Button tone="ghost" onClick={() => setPanel('guide')}>
+          🏍️ How to ride
         </Button>
         <Button tone="ghost" onClick={() => setPanel('book')}>
           📖 Rule book

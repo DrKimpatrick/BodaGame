@@ -11,7 +11,7 @@ function ride(clockwise: boolean, seconds: number, kmh = 20, r = 7.6) {
   let timer = 0
   let broken = 0
   for (let t = 0; t < seconds; t += dt) {
-    const next = th + (clockwise ? -1 : 1) * omega * dt
+    const next = th + (clockwise ? 1 : -1) * omega * dt
     const res = stepWrongWay({ timer, prevTh: th, th: next, r, island: 4.4, kmh, dt })
     timer = res.timer
     if (res.broken) broken++
@@ -35,7 +35,7 @@ test('crawling or hugging the island does not count', () => {
 })
 
 test('the angle wraps across ±π without false alarms', () => {
-  const res = stepWrongWay({ timer: 0, prevTh: Math.PI - 0.01, th: -Math.PI + 0.01, r: 7, island: 4.4, kmh: 20, dt: 1 / 60 })
+  const res = stepWrongWay({ timer: 0, prevTh: -Math.PI + 0.01, th: Math.PI - 0.01, r: 7, island: 4.4, kmh: 20, dt: 1 / 60 })
   assert.equal(res.broken, false)
-  assert.ok(res.timer > 0) // +0.02 rad: a tiny anticlockwise step, correctly measured across the wrap
+  assert.ok(res.timer > 0) // −0.02 rad: a tiny anticlockwise step, correctly measured across the wrap
 })

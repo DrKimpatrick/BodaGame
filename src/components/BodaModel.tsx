@@ -69,7 +69,7 @@ const spokeGeo = new THREE.CylinderGeometry(0.004, 0.004, WHEEL_R * 1.55, 4)
 function Wheel({ z, spinRef, low }: { z: number; spinRef: React.RefObject<THREE.Group | null>; low?: boolean }) {
   return (
     <group position={[0, WHEEL_R, z]}>
-      <group ref={spinRef}>
+      <group ref={spinRef} userData={{ dynamic: !low }}>
         <mesh rotation={[0, Math.PI / 2, 0]} material={M.rubber} castShadow>
           <torusGeometry args={[WHEEL_R - 0.05, 0.052, low ? 6 : 12, low ? 14 : 32]} />
         </mesh>

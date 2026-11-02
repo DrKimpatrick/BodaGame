@@ -73,7 +73,7 @@ export const LANDMARK_BLOCKS = {
 } as const
 
 /** Nakivubo channel: open and walled, just south of Owino, passing under Luwum St and Entebbe Rd in culverts. */
-export const CHANNEL = { halfLength: 17, halfWidth: 4, depth: 3 } as const
+export const CHANNEL = { halfLength: 16, halfWidth: 4, depth: 3 } as const
 export const CHANNEL_BLOCKS: readonly { i: number; j: number }[] = [
   { i: 4, j: 3 },
   { i: 5, j: 3 },

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { useIsTouch } from './useIsTouch'
 import { setTouch, type Axis } from '../../input/driveInput'
 
 /**
@@ -6,18 +7,6 @@ import { setTouch, type Axis } from '../../input/driveInput'
  * the right. Multi-touch via pointer events with capture, so sliding a thumb off a button releases it.
  * Shown on touch screens, or on any screen when `force` is set.
  */
-
-function useIsTouch() {
-  const [touch, setTouchDevice] = useState(
-    () => typeof window !== 'undefined' && (window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0),
-  )
-  useEffect(() => {
-    const on = () => setTouchDevice(true)
-    window.addEventListener('touchstart', on, { once: true, passive: true })
-    return () => window.removeEventListener('touchstart', on)
-  }, [])
-  return touch
-}
 
 function Pad({
   axis,
@@ -73,7 +62,7 @@ function Pad({
 export function TouchControls({ force = false }: { force?: boolean }) {
   const isTouch = useIsTouch()
   if (!isTouch && !force) return null
-  const size = 'h-[clamp(64px,19vw,92px)] w-[clamp(64px,19vw,92px)] [@media(max-height:500px)]:h-[68px] [@media(max-height:500px)]:w-[68px]'
+  const size = 'h-[clamp(64px,19vw,108px)] w-[clamp(64px,19vw,108px)] [@media(max-height:500px)]:h-[68px] [@media(max-height:500px)]:w-[68px]'
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex items-end justify-between px-[max(0.75rem,env(safe-area-inset-left))] pb-[max(1rem,env(safe-area-inset-bottom))]">
       <div className="flex gap-3">
@@ -91,7 +80,7 @@ export function TouchControls({ force = false }: { force?: boolean }) {
         <Pad
           axis="forward"
           label="Accelerate"
-          className="h-[clamp(84px,25vw,120px)] w-[clamp(84px,25vw,120px)] bg-emerald-500/55 text-base uppercase tracking-wider text-white ring-emerald-200/60 [@media(max-height:500px)]:h-[84px] [@media(max-height:500px)]:w-[84px]"
+          className="h-[clamp(84px,25vw,136px)] w-[clamp(84px,25vw,136px)] bg-emerald-500/55 text-base uppercase tracking-wider text-white ring-emerald-200/60 [@media(max-height:500px)]:h-[84px] [@media(max-height:500px)]:w-[84px]"
         >
           Gas
         </Pad>

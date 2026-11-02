@@ -1,6 +1,7 @@
 /**
- * Roundabout direction rule (pure, testable). Uganda keeps left, so traffic goes round clockwise, which on
- * the game's map (x east, z north) means the angle atan2(dz, dx) around the centre DEcreases.
+ * Roundabout direction rule (pure, testable). Uganda keeps left, so traffic turns left onto the roundabout and
+ * goes round clockwise seen from above. Looking down on the 3D world, +X is to the right and +Z towards the
+ * bottom of the view, so clockwise means the angle atan2(dz, dx) around the centre INcreases.
  */
 
 /** Seconds of sustained anticlockwise riding before it counts as going the wrong way. */
@@ -25,8 +26,8 @@ export function stepWrongWay({ timer, prevTh, th, r, island, kmh, dt }: WrongWay
   let dth = th - prevTh
   dth = Math.atan2(Math.sin(dth), Math.cos(dth))
   let next = timer
-  if (dth > 0.004) next += dt
-  else if (dth < -0.004) next = Math.max(0, next - dt * 2)
+  if (dth < -0.004) next += dt
+  else if (dth > 0.004) next = Math.max(0, next - dt * 2)
   if (next > WRONG_WAY_SECONDS) return { timer: 0, broken: true }
   return { timer: next, broken: false }
 }

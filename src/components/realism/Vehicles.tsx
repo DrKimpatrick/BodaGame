@@ -10,7 +10,7 @@ import { PassengerModel, RiderModel } from '../RiderModel'
  */
 
 export type { VehicleKind } from './vehicleSpecs'
-import type { VehicleKind } from './vehicleSpecs'
+import { vehiclePaint, vehicleScale, type VehicleKind } from './vehicleSpecs'
 
 type P = [number, number]
 
@@ -191,8 +191,6 @@ function Pillars({ zs, y0, y1, halfW }: { zs: number[]; y0: number; y1: number; 
 }
 
 /* ---------- Vehicles ---------- */
-
-const COLOURS = ['#e5e7eb', '#9ca3af', '#111827', '#f8fafc', '#1e3a8a', '#7f1d1d', '#374151', '#d1d5db', '#14532d']
 
 function Saloon({ color }: { color: string }) {
   const body = cached('saloon-body', () =>
@@ -404,8 +402,7 @@ function Bicycle() {
   )
 }
 
-export function VehicleModel({ kind, seed }: { kind: VehicleKind; seed: number }) {
-  const color = COLOURS[Math.abs(seed * 7 + kind.length) % COLOURS.length]!
+function VehicleBody({ kind, seed, color }: { kind: VehicleKind; seed: number; color: string }) {
   switch (kind) {
     case 'sedan':
       return <Saloon color={color} />
@@ -429,6 +426,15 @@ export function VehicleModel({ kind, seed }: { kind: VehicleKind; seed: number }
     case 'bicycle':
       return <Bicycle />
   }
+}
+
+/** `color` overrides the seed's paint (traffic bakes white bodies, then tints each instance). */
+export function VehicleModel({ kind, seed, color }: { kind: VehicleKind; seed: number; color?: string }) {
+  return (
+    <group scale={vehicleScale(kind)}>
+      <VehicleBody kind={kind} seed={seed} color={color ?? vehiclePaint(kind, seed)} />
+    </group>
+  )
 }
 
 const SHOWROOM: VehicleKind[] = ['taxi', 'sedan', 'suv', 'van', 'pickup', 'bus', 'trailer', 'motorbike', 'bicycle']

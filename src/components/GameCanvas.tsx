@@ -8,7 +8,7 @@ import { GameScene } from './GameScene'
 import { sceneStatus } from '../roadRules/world/telemetry'
 
 /** Resolution caps: phones often report DPR 3; rendering at that size costs 9× the pixels. */
-const DPR = { low: [0.75, 1], medium: [1, 1.25], high: [1, 1.75] } as const
+const DPR = { low: [0.75, 1], medium: [0.85, 1.25], high: [1, 1.5] } as const
 
 /** After `frameloop="demand"`, nudge one frame when unfreezing so the loop reliably restarts. */
 function ThawInvalidate({ frozen }: { frozen: boolean }) {
@@ -21,12 +21,41 @@ function ThawInvalidate({ frozen }: { frozen: boolean }) {
   return null
 }
 
+/**
+ * Holds the frame rate on any screen: slower than ~42 fps lowers the render resolution a step, and steady spare
+ * time raises it again. Fill rate is the first limit on big laptop screens and phones.
+ */
+function AdaptiveResolution({ min, max }: { min: number; max: number }) {
+  const setDpr = useThree((s) => s.setDpr)
+  const dpr = useRef(max)
+  const window_ = useRef({ t: 0, n: 0, calm: 0 })
+  useFrame((_, delta) => {
+    const w = window_.current
+    // Skip stalls (tab switch, loading): they say nothing about the sustained rate.
+    if (delta > 0.25) return
+    w.t += delta
+    w.n++
+    if (w.t < 1) return
+    const ms = (w.t / w.n) * 1000
+    w.t = 0
+    w.n = 0
+    if (ms > 24 && dpr.current > min) {
+      dpr.current = Math.max(min, dpr.current - 0.15)
+      w.calm = 0
+      setDpr(dpr.current)
+    } else if (ms < 17.5 && dpr.current < max && ++w.calm >= 6) {
+      dpr.current = Math.min(max, dpr.current + 0.1)
+      w.calm = 0
+      setDpr(dpr.current)
+    }
+  })
+  return null
+}
+
 export default function GameCanvas({ onReady }: { onReady: () => void }) {
-  const condition = useGameStore((s) => s.condition)
-  const fuel = useGameStore((s) => s.fuel)
-  const modalFreeze = useGameStore((s) => s.hudModalFreezesWorld)
+  // A boolean, not the raw values: fuel changes every frame while riding.
+  const frozen = useGameStore((s) => isBikeBrokenDown(s.condition) || s.hudModalFreezesWorld || isTankEmpty(s.fuel))
   const quality = useSettingsStore((s) => s.quality)
-  const frozen = isBikeBrokenDown(condition) || modalFreeze || isTankEmpty(fuel)
   // Bumped after a lost WebGL context (GPU memory pressure on phones): remounts a fresh canvas.
   const [contextNonce, setContextNonce] = useState(0)
 
@@ -35,7 +64,8 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
       key={`${quality}-${contextNonce}`}
       shadows={quality !== 'low'}
       className="h-full w-full"
-      camera={{ fov: 62, near: 0.15, far: 1600, position: [0, 3, 6] }}
+      // Near plane not too close: depth precision falls with it, and far-off road layers then flicker through each other.
+      camera={{ fov: 62, near: 0.4, far: 1600, position: [0, 3, 6] }}
       dpr={[...DPR[quality]]}
       frameloop={frozen ? 'demand' : 'always'}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance', stencil: false }}
@@ -58,6 +88,7 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
       }}
     >
       <ThawInvalidate frozen={frozen} />
+      <AdaptiveResolution min={DPR[quality][0]} max={Math.min(DPR[quality][1], window.devicePixelRatio || 1)} />
       <ReadyWhenLoaded onReady={onReady} />
       {/* Local light-former environment: no HDR download (works offline), cheap on phones. */}
       <Environment resolution={quality === 'low' ? 32 : 128} frames={1} environmentIntensity={0.55}>

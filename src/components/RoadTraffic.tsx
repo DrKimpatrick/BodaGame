@@ -5,21 +5,22 @@ import {
   RigidBody,
   useRapier,
 } from '@react-three/rapier'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import {
   CITY_START,
   CITY_TOTAL,
   NUM_BLOCKS,
+  ewHalf,
   ewKind,
   laneCentres,
+  nsHalf,
   nsKind,
   roadStripCenterX,
   roadStripCenterZ,
 } from '@game/cityGrid'
 import { segmentRandom } from '@game/roadDecorPlacements'
-import { StaticBatch } from './StaticBatch'
-import { VehicleModel } from './realism/Vehicles'
+import { TrafficInstances } from './TrafficInstances'
 import { vehicleCollider, vehicleNose, type VehicleKind } from './realism/vehicleSpecs'
 import {
   axisOf,
@@ -38,7 +39,6 @@ const Z1 = CITY_START + CITY_TOTAL
 const EDGE = 3.5
 /** Extra meters past city edge so respawns are off-screen / in fog before they drive in. */
 const SPAWN_BEYOND = 64
-const IZ_EPS = 0.2
 /**
  * Uganda keep-left routing: vehicles use the lanes on the left of their heading. Lane centres come from the
  * road type (one lane each way on streets / murram, two on main roads, beside the median on dual
@@ -94,21 +94,39 @@ type Agent = {
   z: number
   /** Occupancy slot: flat index into occV / occH (strip × lane). */
   slot: { t: 'v' | 'h'; idx: number }
+  /** Current speed (m/s) and unit direction of travel (follows the curve through turns and roundabouts). */
+  cur: number
+  dx: number
+  dz: number
+  /** Braking allowed this frame (m/s²): comfortable normally, hard in an emergency. */
+  brake: number
+  /** Sideways offset from the lane (m along the cross axis): easing round something in the way. */
+  dodge: number
+  dodgeTarget: number
+  /** Seconds until this vehicle may change lane again. */
+  laneCd: number
+  /** Something slower is close ahead, and `passAway` says which way to ease round it (cross-axis sign, 0 = none). */
+  blocked: boolean
+  passAway: number
+  /** Seconds at a standstill behind another vehicle; a last resort against gridlock. */
+  stuck: number
+  /** Turning through a junction on a curve instead of snapping onto the new lane. */
+  arc?: { x0: number; z0: number; x1: number; z1: number; x2: number; z2: number; t: number; len: number }
   /**
-   * Going round a roundabout: clockwise arc (angle decreasing) from the entry to the exit point, radius
+   * Going round a roundabout: clockwise arc from above (angle increasing) from the entry to the exit point, radius
    * easing from the entry distance to the ring and back out.
    */
   round?: { cx: number; cz: number; th: number; th0: number; th1: number; r0: number; r1: number; ex: number; ez: number }
 }
 
-/** Clockwise travel around a roundabout. Returns true while still on the arc. */
+/** Clockwise travel around a roundabout, seen from above. Returns true while still on the arc. */
 function advanceRound(a: Agent, d: number, speedNow: number): boolean {
   const r = a.round!
-  const span = r.th0 - r.th1
-  const t0 = (r.th0 - r.th) / span
+  const span = r.th1 - r.th0
+  const t0 = (r.th - r.th0) / span
   const rad = t0 < 0.25 ? THREE.MathUtils.lerp(r.r0, ROUNDABOUT.ring, t0 / 0.25) : t0 > 0.75 ? THREE.MathUtils.lerp(ROUNDABOUT.ring, r.r1, (t0 - 0.75) / 0.25) : ROUNDABOUT.ring
-  r.th -= (Math.max(1.5, speedNow) * d) / rad
-  if (r.th <= r.th1) {
+  r.th += (Math.max(1.5, speedNow) * d) / rad
+  if (r.th >= r.th1) {
     a.x = r.ex
     a.z = r.ez
     a.round = undefined
@@ -149,7 +167,7 @@ function startRound(a: Agent, i: number, j: number, occV: boolean[], occH: boole
   }
   const th0 = Math.atan2(entryZ - cz, entryX - cx)
   let th1 = Math.atan2(ez - cz, ex - cx)
-  while (th1 >= th0 - 0.3) th1 -= Math.PI * 2
+  while (th1 <= th0 + 0.3) th1 += Math.PI * 2
   a.x = entryX
   a.z = entryZ
   a.round = {
@@ -168,7 +186,7 @@ function startRound(a: Agent, i: number, j: number, occV: boolean[], occH: boole
 /** Yaw of the clockwise tangent at the agent's arc angle. */
 function roundYaw(a: Agent): number {
   const th = a.round!.th
-  return Math.atan2(-Math.sin(th), -Math.cos(th))
+  return Math.atan2(-Math.sin(th), Math.cos(th))
 }
 
 function pickKind(salt: number): VehicleKind {
@@ -187,31 +205,23 @@ function pickKind(salt: number): VehicleKind {
   return 'sedan'
 }
 
+/** Cruising speed (m/s): all traffic keeps to the city's 50 km/h (13.9 m/s); nothing crawls enough to clog a road. */
 function pickSpeed(kind: VehicleKind, salt: number): number {
   const r = segmentRandom(salt, salt >> 5, 702)
   switch (kind) {
     case 'bus':
-      return 4.2 + r * 2.8
+      return 7 + r * 2.5
     case 'trailer':
-      return 3.6 + r * 2.4
-    case 'pickup':
-      return 7.5 + r * 4.2
-    case 'taxi':
-      return 10.5 + r * 6
+      return 6.5 + r * 2.5
     case 'bicycle':
-      return 3 + r * 3.2
+      return 3.5 + r * 2.5
     case 'motorbike':
-      return 12 + r * 7
-    case 'sedan':
-      return 9.5 + r * 5.5
+      return 9.5 + r * 4
     case 'van':
-      return 5.8 + r * 3.4
-    case 'suv':
-      return 8 + r * 4.5
     case 'matatu':
-      return 5.5 + r * 3.2
+      return 8 + r * 3.5
     default:
-      return 9 + r * 4
+      return 9.5 + r * 4
   }
 }
 
@@ -221,10 +231,11 @@ function headingToYaw(h: Heading): number {
       return 0
     case 'S':
       return Math.PI
+    // +Z rotated by θ about Y points along (sin θ, cos θ).
     case 'E':
-      return -Math.PI / 2
-    case 'W':
       return Math.PI / 2
+    case 'W':
+      return -Math.PI / 2
     default:
       return 0
   }
@@ -477,12 +488,18 @@ function pickNextAtIntersection(
 
 const LANE_SPAWN_STAGGER = 14
 
-function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
+function newAgentState(heading: Heading) {
+  const dx = heading === 'E' ? 1 : heading === 'W' ? -1 : 0
+  const dz = heading === 'N' ? 1 : heading === 'S' ? -1 : 0
+  return { cur: 0, dx, dz, brake: COMFORT_BRAKE, dodge: 0, dodgeTarget: 0, laneCd: 0, blocked: false, passAway: 0, stuck: 0 }
+}
+
+function spawnVertical(vi: number, laneSlot: number, salt: number, keepKind?: VehicleKind): Agent {
   const north = segmentRandom(vi, salt, 801) < 0.5
   const heading: Heading = north ? 'N' : 'S'
   const loff = laneOffsetForHeading('v', heading, laneSlot, vi)
   const cx = roadStripCenterX(vi)
-  const k = pickKind(vi * 97 + salt + laneSlot * 13)
+  const k = keepKind ?? pickKind(vi * 97 + salt + laneSlot * 13)
   const zOff = laneSlot * LANE_SPAWN_STAGGER
   return {
     kind: k,
@@ -499,15 +516,16 @@ function spawnVertical(vi: number, laneSlot: number, salt: number): Agent {
       ? Z0 - SPAWN_BEYOND + EDGE + zOff
       : Z1 + SPAWN_BEYOND - EDGE - zOff,
     slot: { t: 'v', idx: flatOccV(vi, laneSlot) },
+    ...newAgentState(heading),
   }
 }
 
-function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
+function spawnHorizontal(hj: number, laneSlot: number, salt: number, keepKind?: VehicleKind): Agent {
   const east = segmentRandom(hj, salt, 811) < 0.5
   const heading: Heading = east ? 'E' : 'W'
   const loff = laneOffsetForHeading('h', heading, laneSlot, hj)
   const cz = roadStripCenterZ(hj)
-  const k = pickKind(hj * 89 + salt + laneSlot * 11)
+  const k = keepKind ?? pickKind(hj * 89 + salt + laneSlot * 11)
   const xOff = laneSlot * LANE_SPAWN_STAGGER
   return {
     kind: k,
@@ -524,6 +542,7 @@ function spawnHorizontal(hj: number, laneSlot: number, salt: number): Agent {
       : X1 + SPAWN_BEYOND - EDGE - xOff,
     z: cz + loff,
     slot: { t: 'h', idx: flatOccH(hj, laneSlot) },
+    ...newAgentState(heading),
   }
 }
 
@@ -540,6 +559,75 @@ function velocityWithSpeed(a: Agent, speedNow: number): { vx: number; vz: number
   }
 }
 
+/** Distance before and after the junction box at which a turn starts and ends. */
+const TURN_MARGIN = 1.5
+const TURN_SPEED = 7.5
+
+/**
+ * The vehicle reached the edge of the junction box: choose where to go, and if that is a turn, plan a curve from
+ * here, through the point where the old and new lanes meet, to the new lane on the far side of the box.
+ */
+function enterJunction(a: Agent, i: number, j: number, occV: boolean[], occH: boolean[], rng: () => number) {
+  const x0 = a.x
+  const z0 = a.z
+  const h0 = a.heading
+  pickNextAtIntersection(a, i, j, occV, occH, rng)
+  a.x = x0
+  a.z = z0
+  if (a.heading === h0) return
+  const cx = roadStripCenterX(i)
+  const cz = roadStripCenterZ(j)
+  let x2: number
+  let z2: number
+  switch (a.heading) {
+    case 'N':
+      x2 = cx + a.laneV
+      z2 = cz + ewHalf(j) + TURN_MARGIN
+      break
+    case 'S':
+      x2 = cx + a.laneV
+      z2 = cz - ewHalf(j) - TURN_MARGIN
+      break
+    case 'E':
+      x2 = cx + nsHalf(i) + TURN_MARGIN
+      z2 = cz + a.laneH
+      break
+    case 'W':
+      x2 = cx - nsHalf(i) - TURN_MARGIN
+      z2 = cz + a.laneH
+      break
+  }
+  const fromNs = h0 === 'N' || h0 === 'S'
+  const toNs = a.heading === 'N' || a.heading === 'S'
+  // Perpendicular turns aim for where the lanes cross; a U-turn at the map edge swings round the junction centre.
+  const x1 = fromNs === toNs ? cx : fromNs ? x0 : x2
+  const z1 = fromNs === toNs ? cz : fromNs ? z2 : z0
+  a.dodge = 0
+  a.dodgeTarget = 0
+  a.arc = { x0, z0, x1, z1, x2, z2, t: 0, len: Math.max(1, (Math.hypot(x1 - x0, z1 - z0) + Math.hypot(x2 - x1, z2 - z1)) * 0.9) }
+}
+
+function advanceArc(a: Agent, d: number, speedNow: number) {
+  const r = a.arc!
+  r.t += (speedNow * d) / r.len
+  if (r.t >= 1) {
+    a.x = r.x2
+    a.z = r.z2
+    a.arc = undefined
+    return
+  }
+  const u = 1 - r.t
+  a.x = u * u * r.x0 + 2 * u * r.t * r.x1 + r.t * r.t * r.x2
+  a.z = u * u * r.z0 + 2 * u * r.t * r.z1 + r.t * r.t * r.z2
+  const tx = u * (r.x1 - r.x0) + r.t * (r.x2 - r.x1)
+  const tz = u * (r.z1 - r.z0) + r.t * (r.z2 - r.z1)
+  const l = Math.hypot(tx, tz)
+  if (l > 1e-4) {
+    a.dx = tx / l
+    a.dz = tz / l
+  }
+}
+
 function integrateAgent(
   a: Agent,
   dt: number,
@@ -551,6 +639,15 @@ function integrateAgent(
   const d = Math.min(dt, 0.055)
   if (a.round) {
     advanceRound(a, d, speedNow)
+    if (a.round) {
+      const th = a.round.th
+      a.dx = -Math.sin(th)
+      a.dz = Math.cos(th)
+    }
+    return true
+  }
+  if (a.arc) {
+    advanceArc(a, d, speedNow)
     return true
   }
   // Reached a roundabout's give-way line: go round instead of straight through the island.
@@ -563,55 +660,54 @@ function integrateAgent(
     }
   }
   const { vx, vz } = velocityWithSpeed(a, speedNow)
+  a.dx = a.heading === 'E' ? 1 : a.heading === 'W' ? -1 : 0
+  a.dz = a.heading === 'N' ? 1 : a.heading === 'S' ? -1 : 0
   const px = a.x
   const pz = a.z
   a.x += vx * d
   a.z += vz * d
+  a.dodge += (a.dodgeTarget - a.dodge) * Math.min(1, d * 2.2)
 
   if (a.mode === 'v') {
     const vi = a.vi
-    const tx = roadStripCenterX(vi) + a.laneV
+    const tx = roadStripCenterX(vi) + a.laneV + a.dodge
     a.x += (tx - a.x) * Math.min(1, d * 2.35)
 
     if (vz > 0) {
       for (let j = 0; j <= NUM_BLOCKS; j++) {
-        const iz = roadStripCenterZ(j)
-        if (pz < iz - IZ_EPS && a.z >= iz - IZ_EPS) {
-          a.z = iz
-          pickNextAtIntersection(a, vi, j, occV, occH, rng)
+        const edge = roadStripCenterZ(j) - ewHalf(j) - TURN_MARGIN
+        if (pz < edge && a.z >= edge) {
+          enterJunction(a, vi, j, occV, occH, rng)
           break
         }
       }
     } else if (vz < 0) {
       for (let j = NUM_BLOCKS; j >= 0; j--) {
-        const iz = roadStripCenterZ(j)
-        if (pz > iz + IZ_EPS && a.z <= iz + IZ_EPS) {
-          a.z = iz
-          pickNextAtIntersection(a, vi, j, occV, occH, rng)
+        const edge = roadStripCenterZ(j) + ewHalf(j) + TURN_MARGIN
+        if (pz > edge && a.z <= edge) {
+          enterJunction(a, vi, j, occV, occH, rng)
           break
         }
       }
     }
   } else {
     const hj = a.hj
-    const tz = roadStripCenterZ(hj) + a.laneH
+    const tz = roadStripCenterZ(hj) + a.laneH + a.dodge
     a.z += (tz - a.z) * Math.min(1, d * 2.35)
 
     if (vx > 0) {
       for (let i = 0; i <= NUM_BLOCKS; i++) {
-        const ix = roadStripCenterX(i)
-        if (px < ix - IZ_EPS && a.x >= ix - IZ_EPS) {
-          a.x = ix
-          pickNextAtIntersection(a, i, hj, occV, occH, rng)
+        const edge = roadStripCenterX(i) - nsHalf(i) - TURN_MARGIN
+        if (px < edge && a.x >= edge) {
+          enterJunction(a, i, hj, occV, occH, rng)
           break
         }
       }
     } else if (vx < 0) {
       for (let i = NUM_BLOCKS; i >= 0; i--) {
-        const ix = roadStripCenterX(i)
-        if (px > ix + IZ_EPS && a.x <= ix + IZ_EPS) {
-          a.x = ix
-          pickNextAtIntersection(a, i, hj, occV, occH, rng)
+        const edge = roadStripCenterX(i) + nsHalf(i) + TURN_MARGIN
+        if (px > edge && a.x <= edge) {
+          enterJunction(a, i, hj, occV, occH, rng)
           break
         }
       }
@@ -646,26 +742,48 @@ function integrateAgent(
   return true
 }
 
-function applyAgentToRigidBody(
-  a: Agent,
-  rb: RapierRigidBody,
-  world: { getRigidBody(handle: number): unknown },
-  yawRad: number,
-) {
-  if (world.getRigidBody(rb.handle) == null) return
-  rb.setTranslation({ x: a.x, y: 0.09, z: a.z }, true)
-  const q = tmpAgentQuat.setFromAxisAngle(Y_UP, yawRad)
-  rb.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true)
-}
-
 const Y_UP = new THREE.Vector3(0, 1, 0)
 const tmpAgentQuat = new THREE.Quaternion()
+const tmpNext = { x: 0, y: 0.09, z: 0 }
+
+/** Moves the collider. Kinematic "next" moves give contacts a real velocity; `teleport` is for respawns only. */
+function applyAgentToRigidBody(a: Agent, rb: RapierRigidBody, world: { getRigidBody(handle: number): unknown }, yawRad: number, teleport: boolean) {
+  if (world.getRigidBody(rb.handle) == null) return
+  tmpNext.x = a.x
+  tmpNext.z = a.z
+  const q = tmpAgentQuat.setFromAxisAngle(Y_UP, yawRad)
+  if (teleport) {
+    rb.setTranslation(tmpNext, true)
+    rb.setRotation(q, true)
+  } else {
+    rb.setNextKinematicTranslation(tmpNext)
+    rb.setNextKinematicRotation(q)
+  }
+}
 
 /** Comfortable braking (m/s²) the speed profile is planned with; the smoother allows a bit more. */
 const PLAN_DECEL = 3.0
-/** Gap kept behind the rider's bike. */
-// Far enough that a car queuing behind the rider stays behind the chase camera (~5 m back).
+/** Everyday braking limit, and the hardest a driver will stand on the brakes for someone in the right. */
+const COMFORT_BRAKE = 4.8
+const EMERGENCY_BRAKE = 13
+/** Gap from the rider's bike to the nose of a car waiting behind her: far enough to stay behind the chase camera. */
 const BIKE_GAP = 6.5
+/** Gap to a rider crossing in front. */
+const CROSSING_GAP = 2.5
+const BIKE_HALF_W = 0.32
+
+function halfWidth(kind: VehicleKind): number {
+  return vehicleCollider(kind).args[0]
+}
+
+function isTwoWheeler(kind: VehicleKind): boolean {
+  return kind === 'motorbike' || kind === 'bicycle'
+}
+
+/** Speed that still allows a stop `gap` metres behind something moving at `v`. */
+function followProfile(gap: number, v: number): number {
+  return gap <= 0.2 ? Math.min(v, 0.5 + Math.max(0, gap)) : Math.sqrt(v * v + 2 * PLAN_DECEL * gap)
+}
 
 function stopProfile(d: number): number {
   return d <= 0.2 ? 0 : Math.sqrt(2 * PLAN_DECEL * d)
@@ -690,106 +808,228 @@ function nextJunctionIndex(a: Agent): number {
 }
 
 /**
- * Target speed honouring signals, STOP / give-way lines and the rider's bike ahead.
- * `hold` keeps per-agent STOP state: [junction key already stopped at, release time].
+ * Is the rider in the wrong here, so that this driver can't be expected to save her? Riding at them against the
+ * flow, or crossing their path against the lights or a STOP / give-way line. In those cases the driver only reacts
+ * with ordinary braking, so she can really be knocked; otherwise they brake as hard as it takes.
  */
+function riderAtFault(a: Agent, vAlong: number, vLat: number, jn: ReturnType<typeof junctionAt> | null, t: number): boolean {
+  if (vAlong < -1.5) return true
+  if (!jn || Math.abs(vLat) < 2 || Math.abs(vLat) < Math.abs(vAlong)) return false
+  const myAxis = axisOf(a.heading)
+  const herAxis = myAxis === 'ns' ? 'ew' : 'ns'
+  if (jn.control === 'signal') return signalAspect(jn, herAxis, t) === 'red'
+  if (jn.control === 'stop' || jn.control === 'giveway') return mustYield(jn, herAxis) && !mustYield(jn, myAxis)
+  return false
+}
+
+/** Reads the road ahead and returns the speed to aim for; also sets `a.brake`, `a.blocked` and `a.passAway`. */
 function controlledTargetSpeed(
   a: Agent,
+  index: number,
   currentSpeed: number,
   hold: { key: number; until: number },
   t: number,
+  dt: number,
   others: readonly (Agent | null)[],
 ): number {
   let target = a.speed
-  // Follow the vehicle ahead on the same road and heading instead of driving through it.
-  for (const o of others) {
-    if (!o || o === a || o.heading !== a.heading) continue
-    let ahead: number
-    let lateral: number
-    if (a.heading === 'N' || a.heading === 'S') {
-      ahead = (o.z - a.z) * (a.heading === 'N' ? 1 : -1)
-      lateral = Math.abs(o.x - a.x)
-    } else {
-      ahead = (o.x - a.x) * (a.heading === 'E' ? 1 : -1)
-      lateral = Math.abs(o.z - a.z)
+  a.brake = COMFORT_BRAKE
+  a.blocked = false
+  a.passAway = 0
+  const w = halfWidth(a.kind)
+  const nose = vehicleNose(a.kind)
+  const ns = a.heading === 'N' || a.heading === 'S'
+  let vehicleBlock = false
+
+  // Other vehicles: match the speed of what is ahead; yield to anything crossing just in front.
+  if (a.stuck < 22) {
+    const look = Math.max(18, currentSpeed * 2.4)
+    for (let n = 0; n < others.length; n++) {
+      const o = others[n]
+      if (!o || o === a) continue
+      const rx = o.x - a.x
+      const rz = o.z - a.z
+      if (Math.abs(rx) > look + 6 || Math.abs(rz) > look + 6) continue
+      const ahead = rx * a.dx + rz * a.dz
+      if (ahead <= 0 || ahead > look) continue
+      const lateral = Math.abs(rx * a.dz - rz * a.dx)
+      const clear = w + halfWidth(o.kind) + 0.3
+      if (lateral > clear) continue
+      const along = o.dx * a.dx + o.dz * a.dz
+      const gap = ahead - nose - vehicleNose(o.kind) - 1.5
+      if (along > 0.5) {
+        target = Math.min(target, followProfile(gap, o.cur))
+        if (gap < 12 && o.cur < a.speed * 0.7) {
+          a.blocked = true
+          vehicleBlock = true
+        }
+      } else if (ahead < nose + 7) {
+        // Crossing or turning across us. If we are also in its path, the lower-numbered vehicle goes first so
+        // two drivers can't wait for each other for ever.
+        const backRx = -rx
+        const backRz = -rz
+        const itSeesUs = backRx * o.dx + backRz * o.dz > 0 && Math.abs(backRx * o.dz - backRz * o.dx) < clear
+        if (itSeesUs && index < n) continue
+        target = Math.min(target, stopProfile(gap))
+        vehicleBlock = true
+      }
     }
-    if (ahead <= 0 || ahead > 18 || lateral > 1.2) continue
-    const gap = ahead - vehicleNose(a.kind) - vehicleNose(o.kind) - 1.5
-    target = Math.min(target, stopProfile(gap))
   }
+  // After this long at a standstill behind other traffic (longer than any red light) a vehicle stops waiting for them.
+  a.stuck = vehicleBlock && currentSpeed < 0.2 ? a.stuck + dt : Math.max(0, a.stuck - dt * 2)
+  if (a.stuck >= 26) a.stuck = 0
+
   const k = nextJunctionIndex(a)
-  if (k >= 0) {
-    const jn = a.mode === 'v' ? junctionAt(a.vi, k) : junctionAt(k, a.hj)
-    if (jn && jn.control !== 'none') {
-      const axis = axisOf(a.heading)
-      const d = distToStopLine(jn, a.heading, a.x, a.z) - vehicleNose(a.kind)
-      const key = jn.i * 100 + jn.j
-      if (d > -0.4 && d < 40) {
-        if (jn.control === 'signal') {
-          const aspect = signalAspect(jn, axis, t)
-          const canStop = d > (currentSpeed * currentSpeed) / (2 * 4.2)
-          if (aspect === 'red' || (aspect === 'amber' && canStop)) {
+  const jn = k >= 0 && !a.arc && !a.round ? (a.mode === 'v' ? junctionAt(a.vi, k) : junctionAt(k, a.hj)) : null
+  if (a.arc) target = Math.min(target, TURN_SPEED)
+  if (jn) {
+    const axis = axisOf(a.heading)
+    const d = distToStopLine(jn, a.heading, a.x, a.z) - nose
+    const key = jn.i * 100 + jn.j
+    // Everyone eases off approaching a junction, so turning in doesn't need a sudden stab of the brakes.
+    if (d > -0.4 && d < 22) target = Math.min(target, Math.max(TURN_SPEED, TURN_SPEED + (d / 22) * 7))
+    if (jn.control !== 'none' && d > -0.4 && d < 40) {
+      if (jn.control === 'signal') {
+        const aspect = signalAspect(jn, axis, t)
+        const canStop = d > (currentSpeed * currentSpeed) / (2 * 4.2)
+        if (aspect === 'red' || (aspect === 'amber' && canStop)) {
+          target = Math.min(target, stopProfile(d))
+        }
+      } else if (jn.control === 'roundabout') {
+        // Give way to anything already going round near our entry.
+        const ex = a.x + a.dx * Math.max(0, d)
+        const ez = a.z + a.dz * Math.max(0, d)
+        let busy = false
+        for (const o of others) {
+          if (o && o !== a && o.round && o.round.cx === jn.x && o.round.cz === jn.z && Math.hypot(o.x - ex, o.z - ez) < 8.5) {
+            busy = true
+            break
+          }
+        }
+        target = Math.min(target, busy ? stopProfile(d) : Math.max(2.4, stopProfile(d)))
+      } else if (mustYield(jn, axis)) {
+        if (jn.control === 'stop') {
+          if (hold.key !== key) {
             target = Math.min(target, stopProfile(d))
-          }
-        } else if (jn.control === 'roundabout') {
-          // Give way to anything already going round near our entry.
-          const ex = a.x + (a.heading === 'E' ? 1 : a.heading === 'W' ? -1 : 0) * Math.max(0, d)
-          const ez = a.z + (a.heading === 'N' ? 1 : a.heading === 'S' ? -1 : 0) * Math.max(0, d)
-          let busy = false
-          for (const o of others) {
-            if (o && o !== a && o.round && o.round.cx === jn.x && o.round.cz === jn.z && Math.hypot(o.x - ex, o.z - ez) < 8.5) {
-              busy = true
-              break
-            }
-          }
-          target = Math.min(target, busy ? stopProfile(d) : Math.max(2.4, stopProfile(d)))
-        } else if (mustYield(jn, axis)) {
-          if (jn.control === 'stop') {
-            if (hold.key !== key) {
-              target = Math.min(target, stopProfile(d))
-              if (d < 0.5 && currentSpeed < 0.3) {
-                if (hold.until === 0) hold.until = t + 1.1
-                else if (t >= hold.until) {
-                  hold.key = key
-                  hold.until = 0
-                }
+            if (d < 0.5 && currentSpeed < 0.3) {
+              if (hold.until === 0) hold.until = t + 1.1
+              else if (t >= hold.until) {
+                hold.key = key
+                hold.until = 0
               }
             }
-          } else {
-            target = Math.min(target, Math.max(2.6, stopProfile(d)))
           }
+        } else {
+          target = Math.min(target, Math.max(2.6, stopProfile(d)))
         }
       }
     }
   }
-  // Never drive into the rider: stop BIKE_GAP behind her if she is ahead in this lane.
-  const bx = bikeTelemetry.x - a.x
-  const bz = bikeTelemetry.z - a.z
-  let ahead = -1
-  let lateral = 99
-  switch (a.heading) {
-    case 'N':
-      ahead = bz
-      lateral = Math.abs(bx)
-      break
-    case 'S':
-      ahead = -bz
-      lateral = Math.abs(bx)
-      break
-    case 'E':
-      ahead = bx
-      lateral = Math.abs(bz)
-      break
-    case 'W':
-      ahead = -bx
-      lateral = Math.abs(bz)
-      break
-  }
-  // Wide lateral window: the rider may sit anywhere in the lane, or be crossing in front at a junction.
-  if (ahead > -0.5 && ahead < 16 && lateral < 1.7) {
-    target = Math.min(target, stopProfile(ahead - BIKE_GAP))
+
+  // The rider: drivers watch where she is and where she is about to be, not only their own lane.
+  const b = bikeTelemetry
+  const rx = b.x - a.x
+  const rz = b.z - a.z
+  if (Math.abs(rx) < 60 && Math.abs(rz) < 60) {
+    const bvx = -Math.sin(b.yaw) * b.speed
+    const bvz = -Math.cos(b.yaw) * b.speed
+    const ahead = rx * a.dx + rz * a.dz
+    const lat = rx * a.dz - rz * a.dx
+    const vAlong = bvx * a.dx + bvz * a.dz
+    const vLat = bvx * a.dz - bvz * a.dx
+    const touching = w + BIKE_HALF_W + 0.15
+    if (ahead > -0.5 && ahead < nose + 1.3 && Math.abs(lat) < touching) {
+      // Contact, or about to be: stop dead. A vehicle never drives through or over her, whoever is to blame.
+      a.brake = 1000
+      return 0
+    }
+    const horizon = Math.max(20, (currentSpeed * currentSpeed) / 6 + 12)
+    if (ahead > 0 && ahead < horizon) {
+      const fault = riderAtFault(a, vAlong, vLat, jn, t)
+      const corridor = w + BIKE_HALF_W + 0.7
+      const closing = Math.max(0.5, currentSpeed - vAlong)
+      const tReach = Math.min(2, (ahead - nose) / closing)
+      // Someone riding in the wrong isn't anticipated; someone in the right is.
+      const latSoon = fault ? lat : lat + vLat * Math.max(0, tReach)
+      const crossesPath = lat * latSoon < 0
+      if (Math.abs(lat) < corridor || Math.abs(latSoon) < corridor || crossesPath) {
+        const crossing = Math.abs(vLat) >= 2 && Math.abs(vLat) > Math.abs(vAlong)
+        const gap = ahead - nose - (crossing || fault ? CROSSING_GAP : BIKE_GAP)
+        const herSpeed = Math.max(0, vAlong)
+        target = Math.min(target, followProfile(gap, herSpeed))
+        const need = Math.max(0, currentSpeed * currentSpeed - herSpeed * herSpeed) / (2 * Math.max(gap, 0.5))
+        a.brake = fault ? COMFORT_BRAKE : THREE.MathUtils.clamp(need * 1.2, COMFORT_BRAKE, EMERGENCY_BRAKE)
+        // Slow or stopped ahead: look for a way round on the side away from her.
+        if (!crossing && !fault && herSpeed < a.speed * 0.6 && ahead - nose < 14) {
+          a.blocked = true
+          const crossAxis = ns ? rx : rz
+          a.passAway = crossAxis > 0.05 ? -1 : crossAxis < -0.05 ? 1 : 0
+        }
+      }
+    }
   }
   return target
+}
+
+/** Easing round whatever is in the way: a lane change on two-lane roads; two-wheelers squeeze past within the lane. */
+function planPass(a: Agent, others: readonly (Agent | null)[], dt: number) {
+  a.laneCd = Math.max(0, a.laneCd - dt)
+  if (a.arc || a.round) return
+  const ns = a.mode === 'v'
+  const kind = ns ? nsKind(a.vi) : ewKind(a.hj)
+  const half = ns ? nsHalf(a.vi) : ewHalf(a.hj)
+  const laneOff = ns ? a.laneV : a.laneH
+  if (!a.blocked) {
+    if (a.laneCd <= 0) a.dodgeTarget = 0
+    return
+  }
+  const clearOf = (targetCross: number) => {
+    for (const o of others) {
+      if (!o || o === a) continue
+      const along = Math.abs(ns ? o.z - a.z : o.x - a.x)
+      const cross = Math.abs((ns ? o.x - roadStripCenterX(a.vi) : o.z - roadStripCenterZ(a.hj)) - targetCross)
+      if (along < 11 && cross < 1.6) return false
+    }
+    const riderAlong = Math.abs(ns ? bikeTelemetry.z - a.z : bikeTelemetry.x - a.x)
+    const riderCross = Math.abs((ns ? bikeTelemetry.x - roadStripCenterX(a.vi) : bikeTelemetry.z - roadStripCenterZ(a.hj)) - targetCross)
+    return !(riderAlong < 9 && riderCross < 1.8)
+  }
+  if (isTwoWheeler(a.kind)) {
+    if (a.laneCd > 0) return
+    const away = a.passAway || Math.sign(laneOff) || 1
+    for (const side of [away, -away]) {
+      const target = laneOff + side * 1.7
+      if (Math.abs(target) < half - 0.5 && Math.sign(target) === Math.sign(laneOff) && clearOf(target)) {
+        a.dodgeTarget = side * 1.7
+        a.laneCd = 3
+        return
+      }
+    }
+    return
+  }
+  if (a.laneCd > 0) return
+  if (kind === 'dual' || kind === 'main') {
+    const other = a.laneSlot % 2 === 0 ? a.laneSlot + 1 : a.laneSlot - 1
+    const next = laneOffsetForHeading(ns ? 'v' : 'h', a.heading, other, ns ? a.vi : a.hj)
+    if (clearOf(next)) {
+      a.laneSlot = other
+      if (ns) a.laneV = next
+      else a.laneH = next
+      a.laneCd = 5
+    }
+  } else if (a.passAway !== 0) {
+    // One lane each way: ease past a stopped rider within the road, if nothing is coming the other way.
+    const target = laneOff + a.passAway * 1.5
+    const coming = others.some((o) => {
+      if (!o || o === a || o.mode !== a.mode || o.heading === a.heading) return false
+      if ((ns ? o.vi : o.hj) !== (ns ? a.vi : a.hj)) return false
+      return Math.abs(ns ? o.z - a.z : o.x - a.x) < 28
+    })
+    if (Math.abs(target) + halfWidth(a.kind) < half - 0.1 && !coming) {
+      a.dodgeTarget = a.passAway * 1.5
+      a.laneCd = 3
+    }
+  }
 }
 
 const NUM_STRIPS = NUM_BLOCKS + 1
@@ -836,7 +1076,8 @@ export function RoadTraffic() {
   const smoothSpeedRef = useRef<number[]>([])
   /** Per-agent STOP-sign state (see `controlledTargetSpeed`). */
   const holdRef = useRef<{ key: number; until: number }[]>([])
-  const [, setRenderTick] = useState(0)
+  /** Each slot keeps its vehicle type for the whole session: respawning re-uses the same body and instance. */
+  const kinds = useMemo(() => initial.agents.map((ag) => ag!.kind), [initial])
 
   const slotKeys = useMemo(() => {
     const k: string[] = []
@@ -869,25 +1110,28 @@ export function RoadTraffic() {
         continue
       }
 
-      const targetYaw = a.round ? roundYaw(a) : headingToYaw(a.heading)
+      const targetYaw = a.round ? roundYaw(a) : a.arc ? Math.atan2(a.dx, a.dz) : headingToYaw(a.heading)
       let sy = yawBuf[i]
       if (!Number.isFinite(sy)) sy = targetYaw
       const yawDiff = Math.atan2(
         Math.sin(targetYaw - sy),
         Math.cos(targetYaw - sy),
       )
-      sy += yawDiff * (1 - Math.exp(-6.2 * dt))
+      sy += yawDiff * (1 - Math.exp(-9 * dt))
       yawBuf[i] = sy
 
       let sp = spdBuf[i]
       if (!Number.isFinite(sp)) sp = a.speed
       let hold = holdRef.current[i]
       if (!hold) hold = holdRef.current[i] = { key: -1, until: 0 }
-      const tgtSp = controlledTargetSpeed(a, sp, hold, worldClock.t, agents)
-      const maxStep = (tgtSp < sp ? 4.8 : 3.6) * dt
+      const tgtSp = controlledTargetSpeed(a, i, sp, hold, worldClock.t, dt, agents)
+      const maxStep = (tgtSp < sp ? a.brake : 3.2) * dt
       sp += Math.sign(tgtSp - sp) * Math.min(Math.abs(tgtSp - sp), maxStep)
       spdBuf[i] = sp
+      a.cur = sp
+      planPass(a, agents, dt)
 
+      let teleport = false
       const alive = integrateAgent(a, dt, ov, oh, rng, sp)
       if (!alive) {
         const wasV = i < NUM_V_SLOTS
@@ -897,7 +1141,7 @@ export function RoadTraffic() {
           ov[idx] = false
           const vi = Math.floor(idx / LANES_PER_STRIP)
           const laneSlot = idx % LANES_PER_STRIP
-          const na = spawnVertical(vi, laneSlot, salt)
+          const na = spawnVertical(vi, laneSlot, salt, a.kind)
           ov[idx] = true
           agents[i] = na
         } else {
@@ -905,7 +1149,7 @@ export function RoadTraffic() {
           oh[hi] = false
           const hj = Math.floor(hi / LANES_PER_STRIP)
           const laneSlot = hi % LANES_PER_STRIP
-          const na = spawnHorizontal(hj, laneSlot, salt)
+          const na = spawnHorizontal(hj, laneSlot, salt, a.kind)
           oh[hi] = true
           agents[i] = na
         }
@@ -913,18 +1157,19 @@ export function RoadTraffic() {
         holdRef.current[i] = { key: -1, until: 0 }
         yawBuf[i] = headingToYaw(a.heading)
         spdBuf[i] = a.speed
-        setRenderTick((t) => t + 1)
+        a.cur = a.speed
+        teleport = true
       }
 
       if (agents[i]) {
         const ag = agents[i]!
-        applyAgentToRigidBody(ag, rb, world, yawBuf[i])
+        applyAgentToRigidBody(ag, rb, world, yawBuf[i], teleport)
         if (i < trafficTelemetry.x.length) {
-          const v = velocityWithSpeed(ag, spdBuf[i])
           trafficTelemetry.x[i] = ag.x
           trafficTelemetry.z[i] = ag.z
-          trafficTelemetry.vx[i] = v.vx
-          trafficTelemetry.vz[i] = v.vz
+          trafficTelemetry.vx[i] = ag.dx * spdBuf[i]
+          trafficTelemetry.vz[i] = ag.dz * spdBuf[i]
+          trafficTelemetry.yaw[i] = yawBuf[i]
         }
       }
     }
@@ -933,8 +1178,10 @@ export function RoadTraffic() {
 
   return (
     <group>
+      <TrafficInstances kinds={kinds} />
       {slotKeys.map((key, i) => {
-        const ag = agentsRef.current[i]
+        // Kind and start position are fixed per slot, so these come from the initial plan, not the live agents.
+        const ag = initial.agents[i]
         const col = ag ? vehicleCollider(ag.kind) : null
         return (
           <RigidBody
@@ -952,14 +1199,6 @@ export function RoadTraffic() {
           >
             {ag && col ? (
               <CuboidCollider args={col.args} position={[col.pos[0], col.pos[1] - 0.09, col.pos[2]]} />
-            ) : null}
-            {ag ? (
-              <StaticBatch key={ag.kind} chunked={false}>
-                {/* Body origin sits 0.09 m up; models are built from the ground. */}
-                <group position={[0, -0.09, 0]}>
-                  <VehicleModel kind={ag.kind} seed={i} />
-                </group>
-              </StaticBatch>
             ) : null}
           </RigidBody>
         )

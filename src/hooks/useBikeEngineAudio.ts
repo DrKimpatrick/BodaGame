@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import { getSharedAudioContext } from '../audio/webAudioContext'
 
 /** Matches `MAX_FORWARD` in Boda (m/s). */
-const MAX_SPEED_MS = 14
+const MAX_SPEED_MS = 19
 /** Above this speed, volume and pitch ramp up (“overspeed” / high revs). */
 const OVERSPEED_START_MS = 8
 

@@ -36,7 +36,7 @@ export function releaseAll(): void {
   touchSteer.value = 0
 }
 
-type Action = 'headlight' | 'camera' | 'horn' | 'pause'
+type Action = 'headlight' | 'camera' | 'horn' | 'pause' | 'mute' | 'help'
 type ActionListener = (a: Action) => void
 const actionListeners = new Set<ActionListener>()
 
@@ -54,6 +54,7 @@ const KEYMAP: Record<string, keyof Axis> = {
   ArrowUp: 'forward',
   KeyS: 'back',
   ArrowDown: 'back',
+  Space: 'back',
   KeyA: 'left',
   ArrowLeft: 'left',
   KeyD: 'right',
@@ -66,7 +67,13 @@ const ACTIONMAP: Record<string, Action> = {
   KeyH: 'horn',
   Escape: 'pause',
   KeyP: 'pause',
+  KeyM: 'mute',
+  Slash: 'help',
+  F1: 'help',
 }
+
+/** Riding keys only act while the bike is being ridden, so Space and the arrows still work in menus. */
+export const inputGate = { riding: false }
 
 let installed = false
 
@@ -82,18 +89,22 @@ export function installKeyboard(): void {
     if (isTyping(e)) return
     const k = KEYMAP[e.code]
     if (k) {
+      if (!inputGate.riding) return
       keyboard[k] = true
       e.preventDefault()
       return
     }
     const a = ACTIONMAP[e.code]
-    if (a && !e.repeat) emitDriveAction(a)
+    if (a) {
+      if (e.code === 'F1') e.preventDefault()
+      if (!e.repeat) emitDriveAction(a)
+    }
   })
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code]
     if (k) {
       keyboard[k] = false
-      e.preventDefault()
+      if (inputGate.riding) e.preventDefault()
     }
   })
   // Keys stuck "down" after alt-tab or a dialog: release everything when focus leaves.

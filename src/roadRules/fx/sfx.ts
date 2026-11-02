@@ -4,7 +4,8 @@ import { useSettingsStore } from '../../store/useSettingsStore'
 /** Small synthesized cues (no audio files): police whistle, good-move chime, horn, siren. */
 
 function ctx(): AudioContext | null {
-  if (!useSettingsStore.getState().sound) return null
+  const s = useSettingsStore.getState()
+  if (!s.sound || s.muted) return null
   try {
     const c = getSharedAudioContext()
     if (c.state === 'suspended') void c.resume()

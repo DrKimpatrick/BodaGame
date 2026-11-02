@@ -14,7 +14,7 @@ export const bikeTelemetry = {
   z: 0,
   /** Yaw in radians; forward is (−sin yaw, −cos yaw). */
   yaw: 0,
-  /** Signed forward speed (m/s); negative when reversing. */
+  /** Forward speed (m/s). A boda has no reverse, so it is never negative. */
   speed: 0,
   /** Headlight switched on. */
   headlight: false,
@@ -33,6 +33,8 @@ export const trafficTelemetry = {
   z: new Float32Array(128),
   vx: new Float32Array(128),
   vz: new Float32Array(128),
+  /** Heading; +Z rotated by this about Y, so forward is (sin yaw, cos yaw). */
+  yaw: new Float32Array(128),
 }
 
 export type CollisionKind = 'pedestrian' | 'vehicle' | 'building'

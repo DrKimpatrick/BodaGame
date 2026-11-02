@@ -882,7 +882,7 @@ function CityMapContent() {
         <mesh
           key={`concrete-${idx}`}
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[lot.cx, -0.009, lot.cz]}
+          position={[lot.cx, 0.006, lot.cz]}
           receiveShadow
           material={concreteMat}
         >
@@ -892,7 +892,7 @@ function CityMapContent() {
 
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.006, HALF_GROUND - FENCE_STRIP_DEPTH / 2]}
+        position={[0, 0.003, HALF_GROUND - FENCE_STRIP_DEPTH / 2]}
         receiveShadow
         material={perimeterMatNS}
       >
@@ -900,7 +900,7 @@ function CityMapContent() {
       </mesh>
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.006, -HALF_GROUND + FENCE_STRIP_DEPTH / 2]}
+        position={[0, 0.003, -HALF_GROUND + FENCE_STRIP_DEPTH / 2]}
         receiveShadow
         material={perimeterMatNS}
       >
@@ -908,7 +908,7 @@ function CityMapContent() {
       </mesh>
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[HALF_GROUND - FENCE_STRIP_DEPTH / 2, -0.006, 0]}
+        position={[HALF_GROUND - FENCE_STRIP_DEPTH / 2, 0.003, 0]}
         receiveShadow
         material={perimeterMatEW}
       >
@@ -916,7 +916,7 @@ function CityMapContent() {
       </mesh>
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[-HALF_GROUND + FENCE_STRIP_DEPTH / 2, -0.006, 0]}
+        position={[-HALF_GROUND + FENCE_STRIP_DEPTH / 2, 0.003, 0]}
         receiveShadow
         material={perimeterMatEW}
       >

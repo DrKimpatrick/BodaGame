@@ -21,8 +21,8 @@ const W = 5
 const H = 6.4
 const GIRDER = 0.9
 /** Flat over this distance each side of Queensway; ramps reach the ground at RUN (the side street's pavement). */
-const FLAT = 10
-const RUN = 46.5
+const FLAT = 11
+const RUN = 46
 /** Beyond this the ramp is a solid fill between retaining walls; before it the deck stands on piers. */
 const FILL_FROM = 31
 const PARAPET = 0.95

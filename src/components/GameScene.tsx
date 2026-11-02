@@ -53,9 +53,13 @@ function SunLight({
 }) {
   const light = useRef<THREE.DirectionalLight>(null)
   const target = useMemo(() => new THREE.Object3D(), [])
+  const frame = useRef(0)
   useFrame(() => {
     const l = light.current
     if (!l) return
+    // Redrawing every caster is the largest single render cost; every second frame looks the same in motion.
+    l.shadow.autoUpdate = false
+    l.shadow.needsUpdate = ++frame.current % 2 === 0
     const x = Math.round(bikeTelemetry.x)
     const z = Math.round(bikeTelemetry.z)
     target.position.set(x, 0, z)
@@ -88,15 +92,10 @@ function SunLight({
 export function GameScene() {
   const bodaRef = useRef<RapierRigidBody>(null)
   const setSpeedKmh = useGameStore((s) => s.setSpeedKmh)
-  const condition = useGameStore((s) => s.condition)
-  const fuel = useGameStore((s) => s.fuel)
-  const hudModalFreezesWorld = useGameStore((s) => s.hudModalFreezesWorld)
+  // Booleans, not the raw values: fuel changes every frame while riding, and re-rendering here reconciles the whole city.
+  const physicsPaused = useGameStore((s) => isBikeBrokenDown(s.condition) || s.hudModalFreezesWorld || isTankEmpty(s.fuel))
   const weather = useGameStore((s) => s.weather)
   const quality = useSettingsStore((s) => s.quality)
-  const physicsPaused =
-    isBikeBrokenDown(condition) ||
-    hudModalFreezesWorld ||
-    isTankEmpty(fuel)
   const [offroad, setOffroad] = useState(false)
   // Phones see less far: fog (and with it the city culling distance) closes in on lower settings.
   const atm0 = ATMOSPHERE[weather]
@@ -117,9 +116,14 @@ export function GameScene() {
       <SunLight key={shadowSize} shadowSize={shadowSize} intensity={atm.sun} color={atm.sunColor} direction={sunDir} />
       {weather === 'rain' ? <Rain count={quality === 'low' ? 450 : 1100} /> : null}
 
+      {/*
+        One physics step per rendered frame, before every other frame callback: the bike, the camera and the
+        traffic then all read positions from the same instant, so nothing judders against anything else.
+      */}
       <Physics
         gravity={[0, -16, 0]}
-        interpolate={false}
+        timeStep="vary"
+        updatePriority={-50}
         paused={physicsPaused}
       >
         <CityMapErrorBoundary>

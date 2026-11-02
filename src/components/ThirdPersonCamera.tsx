@@ -23,7 +23,8 @@ const lagQuat = new THREE.Quaternion()
  * helmet-cam first-person view. Toggle with V or the on-screen camera button.
  */
 export function ThirdPersonCamera({ rigidBodyRef, roughRide = false }: Props) {
-  const { world } = useRapier()
+  const { world, rapier } = useRapier()
+  const rayRef = useRef<InstanceType<typeof rapier.Ray> | null>(null)
   const elapsed = useRef(0)
   const yawLag = useRef<number | null>(null)
   const fovRef = useRef(62)
@@ -61,9 +62,26 @@ export function ThirdPersonCamera({ rigidBodyRef, roughRide = false }: Props) {
     } else {
       // Portrait phones see less road sideways: sit a little further back and higher.
       const portrait = camera.aspect < 0.9 ? 1 : 0
-      const back = 4.6 + sp01 * 1.4 + portrait * 1.6
-      const up = 1.85 + sp01 * 0.25 + portrait * 0.55
+      const back = 5.2 + sp01 * 1.4 + portrait * 1.6
+      const up = 2.3 + sp01 * 0.25 + portrait * 0.55
       desired.set(0, up, back).applyQuaternion(lagQuat).add(tmpPos)
+      // Pull in rather than sit inside a wall behind the bike. Only fixed scenery counts: traffic passes behind.
+      const ray = (rayRef.current ??= new rapier.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }))
+      ray.origin.x = tmpPos.x
+      ray.origin.y = tmpPos.y + 1.2
+      ray.origin.z = tmpPos.z
+      const rx = desired.x - tmpPos.x
+      const ry = desired.y - ray.origin.y
+      const rz = desired.z - tmpPos.z
+      const rayLen = Math.hypot(rx, ry, rz)
+      ray.dir.x = rx / rayLen
+      ray.dir.y = ry / rayLen
+      ray.dir.z = rz / rayLen
+      const hit = world.castRay(ray, rayLen, true, rapier.QueryFilterFlags.EXCLUDE_KINEMATIC | rapier.QueryFilterFlags.EXCLUDE_DYNAMIC)
+      if (hit) {
+        const d = Math.max(1.6, hit.timeOfImpact - 0.3)
+        desired.set(ray.origin.x + ray.dir.x * d, ray.origin.y + ray.dir.y * d, ray.origin.z + ray.dir.z * d)
+      }
       if (roughRide) {
         desired.x += Math.sin(elapsed.current * 35) * 0.06
         desired.y += Math.sin(elapsed.current * 53) * 0.05

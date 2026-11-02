@@ -40,7 +40,8 @@ const lawn = (() => {
   return new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })
 })()
 
-const PLOT = BLOCK - 6
+/** Landmark plots stop short of the pavement and open drain of even the widest road beside them. */
+const PLOT = BLOCK - 10
 
 /** Independence Monument: a figure raising a child to the sky on a tall plinth, in a paved park. */
 function IndependencePark() {
@@ -513,11 +514,11 @@ function Kisekka() {
         <planeGeometry args={[PLOT, PLOT]} />
       </mesh>
       {/* U of arcades, open to Nakivubo Rd on the south */}
-      <ArcadeWing x={0} z={half - 2.5} yaw={Math.PI} bays={11} />
+      <ArcadeWing x={0} z={half - 2.5} yaw={Math.PI} bays={10} />
       <ArcadeWing x={-half + 2.5} z={-2.5} yaw={Math.PI / 2} bays={8} />
       <ArcadeWing x={half - 2.5} z={-2.5} yaw={-Math.PI / 2} bays={8} />
       <RigidBody type="fixed" colliders={false} userData={{ kind: 'building' }}>
-        <CuboidCollider args={[18.7, 3.5, 2.5]} position={[0, 3.5, half - 2.5]} />
+        <CuboidCollider args={[17, 3.5, 2.5]} position={[0, 3.5, half - 2.5]} />
         <CuboidCollider args={[2.5, 3.5, 13.6]} position={[-half + 2.5, 3.5, -2.5]} />
         <CuboidCollider args={[2.5, 3.5, 13.6]} position={[half - 2.5, 3.5, -2.5]} />
       </RigidBody>

@@ -33,7 +33,7 @@ export type Junction = {
 }
 
 /** Roundabout geometry (m): central island, the ring traffic follows, and the paved disc. */
-export const ROUNDABOUT = { island: 4.4, ring: 7.6, disc: 11, entry: 8.5 } as const
+export const ROUNDABOUT = { island: 5.2, ring: 9, disc: 13, entry: 10.5 } as const
 
 /** Stop line distance before the junction box edge. */
 export const STOP_LINE_GAP = 0.55

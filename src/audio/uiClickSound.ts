@@ -1,7 +1,8 @@
-import { getSharedAudioContext, unlockWebAudioFromUserGesture } from './webAudioContext'
+import { getSharedAudioContext, isWebAudioMuted, unlockWebAudioFromUserGesture } from './webAudioContext'
 
 /** Short UI tick for buttons (shared AudioContext; unlocks on first use). */
 export function playUiClickSound(): void {
+  if (isWebAudioMuted()) return
   try {
     unlockWebAudioFromUserGesture()
     const ctx = getSharedAudioContext()
