@@ -17,6 +17,7 @@ import {
   type ForwardedRef,
 } from 'react'
 import * as THREE from 'three'
+import { ACCEL, BRAKE_DECEL, BRAKE_RESPONSE, coastLoss, drive, MAX_FORWARD, STEER_IN, STEER_OUT, THROTTLE_RESPONSE, TURN_GRIP, turnRate } from '@game/bikeHandling'
 import { useBikeEngineAudio } from '../hooks/useBikeEngineAudio'
 import { useKeyboard } from '../hooks/useKeyboard'
 import {
@@ -33,9 +34,10 @@ import {
 } from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
-import { bikeTelemetry, emitBikeCollision, lessonGate, onPedestrianStrike } from '../roadRules/world/telemetry'
+import { bikeCommand, bikeTelemetry, emitBikeCollision, lessonGate, onPedestrianStrike } from '../roadRules/world/telemetry'
 import { useSettingsStore } from '../store/useSettingsStore'
 import { BodaModel } from './BodaModel'
+import { contactShadowMaterial } from './realism/contactShadow'
 import { StaticBatch } from './StaticBatch'
 import { PassengerModel, RiderModel } from './RiderModel'
 import {
@@ -44,29 +46,11 @@ import {
 } from '@game/roadSurfaceFeatures'
 import { isDeepOffRoad, isDrivableSurface, roadKindAt } from '@game/roadSpatial'
 
-/** ~68 km/h: a boda can break the 50 limit, so the speed rule means something. */
-const MAX_FORWARD = 19
 /** Murram shoulder / pavement edge: drivable but slow (~32 km/h). */
 const SHOULDER_SPEED_CAP = 9
 /** Unpaved murram: rutted and dusty, ~43 km/h at most. */
 const MURRAM_SPEED_CAP = 12
-/** Pulling power at low speed (m/s²); it fades towards top speed. */
-const ACCEL = 8.5
-/** Rolling and engine drag when the accelerator is released: a gentle slow-down, not a stop. */
-const COAST_DRAG = 0.8
-const COAST_PER_S = 0.12
-/** How quickly the accelerator and brake come in and out (1/s): a key press is a squeeze, not a jolt. */
-const THROTTLE_RESPONSE = 7
-const BRAKE_RESPONSE = 11
 const FRICTION = 6.5
-/** Steering: tightest turn rate (rad/s) at low speed, then limited by grip, so fast means wide. */
-const TURN_RATE_MAX = 1.9
-const TURN_GRIP = 15
-/** Turning on the spot, walking the bike round, when stopped. */
-const PIVOT_RATE = 0.9
-const STEER_IN = 6
-const STEER_OUT = 10
-const BRAKE_DECEL = 15
 /** Grass / dirt off the network: slow and draggy, like a real bike on rough ground. */
 const OFFROAD_DRAG_PER_S = 1.25
 const OFFROAD_ACCEL_SCALE = 0.55
@@ -96,6 +80,9 @@ const CONDITION_LOSS_RESTRICTED_TICK = 1.1
 const RESTRICTED_ZONE_DAMAGE_INTERVAL_MS = 1020
 const RESTRICTED_ZONE_MIN_SPEED = 0.24
 
+/** Fuel is written to the store once this much (percent of the tank) has been burned. */
+const FUEL_COMMIT_STEP = 0.1
+
 const JOB_ARRIVE_DIST = 4.3
 const JOB_ARRIVE_SPEED = 1.45
 /** Min speed (m/s) before distance counts toward safe-riding score. */
@@ -109,21 +96,22 @@ function stepGasBrakeCoastSpeed(params: {
   /** Accelerator and brake, 0…1, already eased. */
   throttle: number
   brake: number
+  /** The brake is actually being held (the eased value lingers a moment after letting go). */
+  braking: boolean
   accel: number
   brakeDecel: number
 }) {
-  const { dt, speedRef, throttle, brake, accel, brakeDecel } = params
+  const { dt, speedRef, throttle, brake, braking, accel, brakeDecel } = params
   let s = speedRef.current
   // A boda has no reverse gear: the brake stops it and holds it, and it never rolls backwards.
   if (brake > 0.02 && s > 0.04) {
     s = Math.max(0, s - brakeDecel * brake * dt)
-  } else if (brake > 0.02) {
+  } else if (braking) {
     s = 0
   } else if (throttle > 0.02) {
-    const r = Math.max(0, s) / MAX_FORWARD
-    s += accel * throttle * (1 - 0.8 * r * r) * dt
+    s += drive(s, accel) * throttle * dt
   } else if (s > 0.04) {
-    s -= (COAST_DRAG + s * COAST_PER_S) * dt
+    s -= coastLoss(s) * dt
     if (s < 0.06) s = 0
   } else {
     s = 0
@@ -134,8 +122,7 @@ function stepGasBrakeCoastSpeed(params: {
 /** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
 
 /** Left lane just short of the centre junction, facing −Z (heading S keeps left at −X). */
-/** Entebbe Rd left lane (heading S, keep left), in the middle of a block: a clear road, away from cross traffic. */
-const SPAWN: [number, number, number] = [-5.1, 0.32, -24]
+const SPAWN: [number, number, number] = [BIKE_SPAWN_XZ.x, 0.32, BIKE_SPAWN_XZ.z]
 
 function assignForwardedRef<T>(
   ref: ForwardedRef<T> | undefined,
@@ -266,6 +253,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   const throttle = useRef(0)
   const brakeAmount = useRef(0)
   const steerSmoothed = useRef(0)
+  const fuelOwed = useRef(0)
   /** Shove from being struck by a vehicle (m/s); fades within a moment. */
   const knock = useRef({ x: 0, z: 0 })
   const lastReportedKmh = useRef(-1)
@@ -370,15 +358,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   // Dev-only: teleport the bike (for testing rules at a given spot), e.g. __wowTeleport(0, -205, Math.PI).
   useEffect(() => {
     if (!import.meta.env.DEV) return
-    const fn = (x: number, z: number, yawRad: number) => {
-      const body = rb.current
-      if (!body) return
-      body.setTranslation({ x, y: SPAWN[1], z }, true)
-      yaw.current = yawRad
-      speed.current = 0
-      knock.current.x = knock.current.z = 0
-    }
-    Object.assign(window, { __wowTeleport: fn })
+    Object.assign(window, { __wowTeleport: (x: number, z: number, yawRad: number) => (bikeCommand.teleport = { x, z, yaw: yawRad }) })
   }, [])
 
   useAfterPhysicsStep(() => {
@@ -397,6 +377,20 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     if (!body || world.getRigidBody(body.handle) == null) return
 
     const dt = Math.min(delta, 0.05)
+
+    // Only once the world is running: while it's frozen, un-freezing would put the body back where it last synced.
+    const tp = useGameStore.getState().hudModalFreezesWorld ? null : bikeCommand.teleport
+    if (tp) {
+      bikeCommand.teleport = null
+      body.setTranslation({ x: tp.x, y: SPAWN[1], z: tp.z }, true)
+      yaw.current = tp.yaw
+      speed.current = 0
+      throttle.current = 0
+      brakeAmount.current = 0
+      steerSmoothed.current = 0
+      knock.current.x = knock.current.z = 0
+      lastFuelPos.current = null
+    }
 
     const t = body.translation()
     const nowEmit = performance.now()
@@ -447,8 +441,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const wet = useGameStore.getState().weather === 'rain'
     const grip = wet ? 0.58 : 1
     const speedAbsEarly = Math.abs(speed.current)
-    const turnRate = speedAbsEarly < 0.25 ? PIVOT_RATE : Math.min(TURN_RATE_MAX, (TURN_GRIP * (wet ? 0.75 : 1)) / speedAbsEarly)
-    yaw.current += steerSmoothed.current * turnRate * dt
+    yaw.current += steerSmoothed.current * turnRate(speedAbsEarly, TURN_GRIP * (wet ? 0.75 : 1)) * dt
 
     const canRide = fuelLeft > 0 && !brokenDown
     throttle.current += ((gas && canRide ? 1 : 0) - throttle.current) * (1 - Math.exp(-THROTTLE_RESPONSE * dt))
@@ -460,6 +453,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         speedRef: speed,
         throttle: throttle.current,
         brake: brakeAmount.current,
+        braking: brake && canRide,
         accel: drivable ? ACCEL * (wet ? 0.85 : 1) : ACCEL * OFFROAD_ACCEL_SCALE,
         brakeDecel: drivable ? BRAKE_DECEL * grip : BRAKE_DECEL * 0.92,
       })
@@ -555,6 +549,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const nowJob = performance.now()
     if (
       rideJob &&
+      !lessonGate.demo &&
       !brokenDown &&
       nowJob >= rideJobGateUntilMs.current &&
       nowJob >= useGameStore.getState().collisionPenaltiesAfterMs
@@ -641,8 +636,11 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           const stRide = useGameStore.getState()
           const burn = dist * FUEL_PER_WORLD_METER * stRide.fuelBurnScale
           const f = stRide.fuel
-          if (f > 0) {
-            stRide.setFuel(Math.max(0, f - burn))
+          // Added up and committed in small steps: the store has many listeners, so not every frame.
+          if (!lessonGate.demo) fuelOwed.current += burn
+          if (f > 0 && (fuelOwed.current >= FUEL_COMMIT_STEP || fuelOwed.current >= f)) {
+            stRide.setFuel(Math.max(0, f - fuelOwed.current))
+            fuelOwed.current = 0
           }
           const canGainRideScore =
             speedAbs >= RIDE_SCORE_MIN_SPEED_MS &&
@@ -697,9 +695,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         </group>
         <BikeHeadlight />
         {noShadows ? (
-          <mesh position={[0, -0.27, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
-            <planeGeometry args={[1, 2.5]} />
-            <meshBasicMaterial color="#000000" transparent opacity={0.3} depthWrite={false} />
+          <mesh position={[0, -0.235, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1} material={contactShadowMaterial}>
+            <planeGeometry args={[1.3, 2.9]} />
           </mesh>
         ) : null}
         {isOffroad ? (

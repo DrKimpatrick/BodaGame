@@ -10,19 +10,22 @@ const touch: Axis = { forward: false, back: false, left: false, right: false }
 /** Analogue steer from touch (−1 right … +1 left); overrides left/right when non-zero. */
 export const touchSteer = { value: 0 }
 
+/** The demonstration rider's hands, when she's riding; everything else is ignored meanwhile. */
+export const pilot = { on: false, forward: false, back: false, left: false, right: false }
+
 /** Combined view the bike reads. */
 export const driveInput: Axis = {
   get forward() {
-    return keyboard.forward || touch.forward
+    return pilot.on ? pilot.forward : keyboard.forward || touch.forward
   },
   get back() {
-    return keyboard.back || touch.back
+    return pilot.on ? pilot.back : keyboard.back || touch.back
   },
   get left() {
-    return keyboard.left || touch.left
+    return pilot.on ? pilot.left : keyboard.left || touch.left
   },
   get right() {
-    return keyboard.right || touch.right
+    return pilot.on ? pilot.right : keyboard.right || touch.right
   },
 }
 

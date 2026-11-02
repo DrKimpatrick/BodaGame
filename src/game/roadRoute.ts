@@ -6,52 +6,31 @@
  */
 import { ewHalf, ewKind, laneCentres, NUM_BLOCKS, nsHalf, nsKind, roadStripCenterX, roadStripCenterZ } from './cityGrid.ts'
 import { roundaboutAt, STREETS_EW, STREETS_NS } from './kampalaMap.ts'
+import { headingVec, leftVec, nearestHeading, ROUNDABOUT, type Heading } from '../roadRules/world/junctions.ts'
 
-export type Heading = 'N' | 'S' | 'E' | 'W'
 export type RouteAction = 'left' | 'right' | 'roundabout' | 'arrive' | 'turnaround'
 export type RouteStep = { action: RouteAction; distance: number; road: string }
 export type Route = { points: [number, number][]; length: number; next: RouteStep }
 export type RouteStop = { x: number; z: number; roadAxis: 'vertical' | 'horizontal'; sideSign: 1 | -1 }
 
 const HEADINGS: Heading[] = ['N', 'E', 'S', 'W']
-const DIR: Record<Heading, { x: number; z: number }> = {
-  N: { x: 0, z: 1 },
-  E: { x: 1, z: 0 },
-  S: { x: 0, z: -1 },
-  W: { x: -1, z: 0 },
-}
 const OPPOSITE: Record<Heading, Heading> = { N: 'S', S: 'N', E: 'W', W: 'E' }
-/** A rider's left (up × forward). */
+/** The heading on a rider's left. */
 const LEFT_OF: Record<Heading, Heading> = { N: 'E', E: 'S', S: 'W', W: 'N' }
-
-export function leftOf(h: Heading): { x: number; z: number } {
-  return DIR[LEFT_OF[h]]
-}
 
 const isNs = (h: Heading) => h === 'N' || h === 'S'
 const stripPitch = roadStripCenterX(1) - roadStripCenterX(0)
-/** Roundabout circulating radius and paved edge. Kept here so this file has no rules dependency. */
-const RING_R = 9
-const DISC_R = 13
-/** Extra distance a U-turn is treated as costing, so going forward is preferred when it's close. */
+/** Extra distance a U-turn is treated as costing, so going round the block is preferred. */
 const TURNAROUND_COST = 500
 
-/** The compass heading closest to a bike yaw (forward is (−sin yaw, −cos yaw)). */
-export function headingFromYaw(yaw: number): Heading {
-  const fx = -Math.sin(yaw)
-  const fz = -Math.cos(yaw)
-  if (Math.abs(fz) >= Math.abs(fx)) return fz > 0 ? 'N' : 'S'
-  return fx > 0 ? 'E' : 'W'
-}
-
-/** Sideways position in the rider's own road: positive is on the left of the centre line (where she belongs). */
+/** Sideways position on the rider's own road: positive is on the left of the centre line (where she belongs). */
 export function leftOfCentre(x: number, z: number, h: Heading): number {
   if (isNs(h)) {
     const i = nearestStrip(x, roadStripCenterX)
-    return (x - roadStripCenterX(i)) * leftOf(h).x
+    return (x - roadStripCenterX(i)) * leftVec(h).x
   }
   const j = nearestStrip(z, roadStripCenterZ)
-  return (z - roadStripCenterZ(j)) * leftOf(h).z
+  return (z - roadStripCenterZ(j)) * leftVec(h).z
 }
 
 function nearestStrip(v: number, center: (k: number) => number): number {
@@ -74,21 +53,43 @@ const nodeId = (i: number, j: number) => i * (NUM_BLOCKS + 1) + j
 const stateId = (node: number, h: Heading) => node * 4 + HEADINGS.indexOf(h)
 
 function step(i: number, j: number, h: Heading): [number, number] | null {
-  const ni = i + DIR[h].x
-  const nj = j + DIR[h].z
+  const ni = i + headingVec(h).x
+  const nj = j + headingVec(h).z
   if (ni < 0 || nj < 0 || ni > NUM_BLOCKS || nj > NUM_BLOCKS) return null
   return [ni, nj]
 }
 
 /** Coordinate of the rider's lane on the strip she rides along, heading `h`. */
-function laneCoord(i: number, j: number, h: Heading): number {
-  if (isNs(h)) return roadStripCenterX(i) + leftOf(h).x * kerbLane(true, i)
-  return roadStripCenterZ(j) + leftOf(h).z * kerbLane(false, j)
+export function laneCoord(i: number, j: number, h: Heading): number {
+  if (isNs(h)) return roadStripCenterX(i) + leftVec(h).x * kerbLane(true, i)
+  return roadStripCenterZ(j) + leftVec(h).z * kerbLane(false, j)
+}
+
+/**
+ * Which way along a road the rider counts as going. Usually just her heading, but stopped on one road and turned to
+ * face across it, she's still on that road, not on the nearest road running the way she faces.
+ */
+function headingOnRoad(x: number, z: number, yaw: number): Heading {
+  const h = nearestHeading(yaw)
+  const i = nearestStrip(x, roadStripCenterX)
+  const j = nearestStrip(z, roadStripCenterZ)
+  const onNs = Math.abs(x - roadStripCenterX(i)) <= nsHalf(i) + 4
+  const onEw = Math.abs(z - roadStripCenterZ(j)) <= ewHalf(j) + 4
+  if (isNs(h) ? onNs || !onEw : onEw || !onNs) return h
+  if (isNs(h)) return -Math.sin(yaw) >= 0 ? 'E' : 'W'
+  return -Math.cos(yaw) >= 0 ? 'N' : 'S'
 }
 
 function roadName(i: number, j: number, h: Heading): string {
   return isNs(h) ? (STREETS_NS[i] ?? '') : (STREETS_EW[j] ?? '')
 }
+
+// Shared search buffers: routes are refreshed several times a second.
+const STATES = (NUM_BLOCKS + 1) * (NUM_BLOCKS + 1) * 4
+const dist = new Float64Array(STATES)
+const prev = new Int32Array(STATES)
+const done = new Uint8Array(STATES)
+const frontier: number[] = []
 
 type Search = { path: { i: number; j: number; h: Heading }[]; turnaround: boolean; startHeading: Heading }
 
@@ -104,11 +105,10 @@ function search(bx: number, bz: number, h: Heading, endI: number, endJ: number, 
   const behind = Math.max(0, Math.min(NUM_BLOCKS, forward > 0 ? base : base + 1))
   const toNode = (k: number): [number, number] => (ns ? [strip, k] : [k, strip])
 
-  const n = (NUM_BLOCKS + 1) * (NUM_BLOCKS + 1) * 4
-  const dist = new Float64Array(n).fill(Infinity)
-  const prev = new Int32Array(n).fill(-1)
-  const done = new Uint8Array(n)
-  const frontier: number[] = []
+  dist.fill(Infinity)
+  prev.fill(-1)
+  done.fill(0)
+  frontier.length = 0
   const seed = (i: number, j: number, arrive: Heading, cost: number) => {
     const s = stateId(nodeId(i, j), arrive)
     dist[s] = cost
@@ -160,19 +160,19 @@ function search(bx: number, bz: number, h: Heading, endI: number, endJ: number, 
 }
 
 /** Clockwise (from above) arc round a roundabout, from the road coming in to the road going out. */
-function roundaboutArc(cx: number, cz: number, inX: number, inZ: number, outX: number, outZ: number, pts: [number, number][]) {
+export function roundaboutArc(cx: number, cz: number, inX: number, inZ: number, outX: number, outZ: number, pts: [number, number][]) {
   const th0 = Math.atan2(inZ - cz, inX - cx)
   let th1 = Math.atan2(outZ - cz, outX - cx)
   while (th1 <= th0 + 0.2) th1 += Math.PI * 2
   const steps = Math.max(4, Math.ceil((th1 - th0) / 0.35))
   for (let k = 1; k < steps; k++) {
     const th = th0 + ((th1 - th0) * k) / steps
-    pts.push([cx + Math.cos(th) * RING_R, cz + Math.sin(th) * RING_R])
+    pts.push([cx + Math.cos(th) * ROUNDABOUT.ring, cz + Math.sin(th) * ROUNDABOUT.ring])
   }
 }
 
 export function computeRoute(bx: number, bz: number, yaw: number, stop: RouteStop): Route {
-  const h = headingFromYaw(yaw)
+  const h = headingOnRoad(bx, bz, yaw)
   const endH = headingForStop(stop)
   const stopNs = stop.roadAxis === 'vertical'
   const stopStrip = stopNs ? nearestStrip(stop.x, roadStripCenterX) : nearestStrip(stop.z, roadStripCenterZ)
@@ -215,7 +215,7 @@ export function computeRoute(bx: number, bz: number, yaw: number, stop: RouteSto
   }
   const startLane = laneCoord(path[0]!.i, path[0]!.j, path[0]!.h)
   // Ease over to the left lane a few metres ahead, instead of drawing the line sideways across the road.
-  const startDir = DIR[path[0]!.h]
+  const startDir = headingVec(path[0]!.h)
   const merge = isNs(path[0]!.h)
     ? ([startLane, bz + startDir.z * Math.min(8, Math.abs(roadStripCenterZ(path[0]!.j) - bz) * 0.5)] as const)
     : ([bx + startDir.x * Math.min(8, Math.abs(roadStripCenterX(path[0]!.i) - bx) * 0.5), startLane] as const)
@@ -229,8 +229,8 @@ export function computeRoute(bx: number, bz: number, yaw: number, stop: RouteSto
     const inLane = laneCoord(i, j, inH)
     const outLane = laneCoord(i, j, outH)
     if (roundaboutAt(i, j)) {
-      const inPt: [number, number] = isNs(inH) ? [inLane, cz - DIR[inH].z * DISC_R] : [cx - DIR[inH].x * DISC_R, inLane]
-      const outPt: [number, number] = isNs(outH) ? [outLane, cz + DIR[outH].z * DISC_R] : [cx + DIR[outH].x * DISC_R, outLane]
+      const inPt: [number, number] = isNs(inH) ? [inLane, cz - headingVec(inH).z * ROUNDABOUT.disc] : [cx - headingVec(inH).x * ROUNDABOUT.disc, inLane]
+      const outPt: [number, number] = isNs(outH) ? [outLane, cz + headingVec(outH).z * ROUNDABOUT.disc] : [cx + headingVec(outH).x * ROUNDABOUT.disc, outLane]
       leg(inPt[0], inPt[1])
       if (!next) next = { action: 'roundabout', distance: travelled, road: roadName(i, j, outH) }
       const arc: [number, number][] = []

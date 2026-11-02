@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { headingFromYaw, leftOfCentre } from '../../game/roadRoute'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { leftOfCentre } from '../../game/roadRoute'
 import { driveInput } from '../../input/driveInput'
+import { demoRun, startDemo, stopDemo } from '../../roadRules/demoRun'
 import { speak, stopSpeaking } from '../../roadRules/fx/speech'
-import { bikeTelemetry, lessonGate, routeTelemetry } from '../../roadRules/world/telemetry'
+import { buildDemo, type DemoId } from '../../roadRules/lessonDemos'
+import { nearestHeading } from '../../roadRules/world/junctions'
+import { bikeTelemetry, lessonGate, routeTelemetry, worldClock } from '../../roadRules/world/telemetry'
 import { useGameStore } from '../../store/useGameStore'
 import { useRoadRulesStore } from '../../store/useRoadRulesStore'
 import { BrakeTurnDiagram, KeepLeftDiagram, RoundaboutDiagram, SignalDiagram } from './lessonDiagrams'
@@ -50,6 +53,8 @@ type Step = {
   /** The sign shown beside the title. */
   sign?: string
   task?: () => Task
+  /** Mama Sarah rides this herself first. */
+  demo?: DemoId
   /** The route line is only shown once it has been explained. */
   showsRoute?: boolean
   /** From here on, rules are watched and mistakes explained. */
@@ -72,25 +77,27 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'keepleft',
+      demo: 'keepleft',
       title: 'First rule: in Uganda we keep left',
       diagram: <KeepLeftDiagram />,
       body: (
         <>
           <p>Ride on the <b>left side</b> of the road. The line in the middle of the road should be on your <b>right</b>.</p>
           <p>Traffic coming towards you passes on your right. If you are on the other side, you are facing them head-on, and that is how people get killed.</p>
-          <p>Everything else I teach you builds on this one rule.</p>
+          <p>Everything else I teach you builds on this one rule. Let me show you.</p>
         </>
       ),
       speech: 'First rule. In Uganda we keep left. Ride on the left side of the road. The line in the middle of the road should be on your right. Traffic coming towards you passes on your right. Everything else I teach you builds on this one rule.',
     },
     {
       id: 'gas',
+      demo: 'gas',
       title: 'The accelerator makes you go',
       body: (
         <>
           <p>Press and hold <b>{n.gas}</b>. The bike pulls away gently and speed builds up the longer you hold it.</p>
           <p>Watch the dial at the top of the screen: it shows your speed in km/h.</p>
-          <p>Your turn: hold it until you reach <b>20 km/h</b>. Go straight, don't steer yet.</p>
+          <p>First watch me do it. Then it's your turn: hold it until you reach <b>20 km/h</b>, going straight.</p>
         </>
       ),
       speech: 'The accelerator makes you go. Press and hold it. Speed builds up the longer you hold it. Watch the dial, it shows your speed. Hold it until you reach 20 kilometres an hour.',
@@ -105,12 +112,13 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'coast',
+      demo: 'coast',
       title: 'Letting go slows you down',
       body: (
         <>
           <p>Now let go of <b>{n.gas}</b> completely. You won't stop suddenly. The bike rolls on and slowly loses speed.</p>
           <p>This is called coasting. Good riders do it all the time: it is the gentlest way to slow a little, and it saves fuel.</p>
-          <p>Your turn: let go, and watch your speed fall to <b>10 km/h</b>.</p>
+          <p>Watch me first. Then it's your turn: let go, and watch your speed fall to <b>10 km/h</b>.</p>
         </>
       ),
       speech: 'Letting go slows you down. Let go of the accelerator completely. The bike rolls on and slowly loses speed. This is called coasting. It is the gentlest way to slow a little, and it saves fuel.',
@@ -132,13 +140,14 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'brake',
+      demo: 'brake',
       title: 'The brake stops you',
       body: (
         <>
           <p>Press <b>{n.brake}</b> to slow down firmly. Keep holding it and the bike comes to a full stop, then stays still.</p>
           <p>Brake early, with the bike going straight. Braking hard while turning is how bikes fall over.</p>
           <p>A boda has no reverse, so the bike never rolls backwards.</p>
-          <p>Your turn: get moving, then brake to a <b>complete stop</b>.</p>
+          <p>Watch me first. Then it's your turn: get moving, then brake to a <b>complete stop</b>.</p>
         </>
       ),
       speech: 'The brake stops you. Press it to slow down firmly. Keep holding and the bike comes to a full stop. Brake early, with the bike going straight. Braking hard while turning is how bikes fall over. A boda has no reverse. Get moving, then brake to a complete stop.',
@@ -162,13 +171,14 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'stayleft',
+      demo: 'stayleft',
       title: 'Now stay on the left',
       diagram: <KeepLeftDiagram />,
       body: (
         <>
           <p>Steer with <b>{n.steer}</b>. Use short, gentle presses: a small press makes a small change. Holding it down swings you across the road.</p>
           <p>Keep the middle line on your right and stay in your lane.</p>
-          <p>Your turn: ride <b>80 metres</b> on the left. I only count the metres you ride on the correct side.</p>
+          <p>Watch me first. Then it's your turn: ride <b>80 metres</b> on the left. I only count the metres you ride on the correct side.</p>
         </>
       ),
       speech: 'Now stay on the left. Steer with short, gentle presses. A small press makes a small change. Keep the middle line on your right. Ride 80 metres on the left. I only count the metres you ride on the correct side.',
@@ -189,6 +199,7 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'turn',
+      demo: 'turn',
       title: 'How to take a corner smoothly',
       diagram: <BrakeTurnDiagram />,
       showsRoute: true,
@@ -196,15 +207,15 @@ function buildSteps(n: Names): Step[] {
         <>
           <p>A coloured line now shows you the way, and the top of the screen tells you what is coming next.</p>
           <ol className="list-inside list-decimal space-y-1">
-            <li><b>Before the corner:</b> let go of {n.gas} and brake with {n.brake}, down to about <b>20 km/h</b>.</li>
+            <li><b>Before the corner:</b> let go of {n.gas}, then brake with {n.brake}, down to about <b>20 km/h</b>.</li>
             <li><b>Turn in:</b> release the brake and steer steadily.</li>
             <li><b>Keep left:</b> end up on the left of the new road. When turning right, cross the other lane only when it is clear.</li>
             <li><b>Coming out:</b> straighten up, then accelerate gently.</li>
           </ol>
-          <p>Your turn: follow the line round the next corner. I will tell you how fast you took it.</p>
+          <p>Watch me take a corner first. Then it's your turn: follow the line round the next corner, and I will tell you how fast you took it.</p>
         </>
       ),
-      speech: 'How to take a corner smoothly. Before the corner, let go of the accelerator and brake, down to about 20 kilometres an hour. Then release the brake and steer steadily. End up on the left of the new road. When turning right, cross the other lane only when it is clear. As you come out, straighten up, then accelerate gently.',
+      speech: 'How to take a corner smoothly. Before the corner, let go of the accelerator, then brake, down to about 20 kilometres an hour. Then release the brake and steer steadily. End up on the left of the new road. When turning right, cross the other lane only when it is clear. As you come out, straighten up, then accelerate gently.',
       task: () => {
         let heading: string | null = null
         let lastTurn: number | null = null
@@ -215,7 +226,7 @@ function buildSteps(n: Names): Step[] {
         return {
           goal: 'Follow the line round the next corner, at about 20 km/h',
           step: (s) => {
-            const h = headingFromYaw(s.yaw)
+            const h = nearestHeading(s.yaw)
             heading ??= h
             turnInKmh = s.steer ? Math.max(turnInKmh, s.kmh) : 0
             if (h !== heading) {
@@ -234,7 +245,7 @@ function buildSteps(n: Names): Step[] {
               if (attempts >= 2) return { progress: 1, done: `${speed} km/h is still quick for a corner, so keep practising: slow down earlier, before you steer. We'll move on.` }
               return { progress: 0.5, say: `That was ${speed} km/h: too fast, and it pushed you wide. Slow to about 20 km/h before the next one.` }
             }
-            if (s.steer && s.kmh > 30) return { progress: attempts ? 0.5 : 0.25, say: 'Too fast to turn. Let go and brake first, then steer.' }
+            if (s.steer && s.kmh > 30) return { progress: attempts ? 0.5 : 0.25, say: 'Too fast to turn. Let go of the accelerator and brake first, then steer.' }
             return { progress: attempts ? 0.5 : 0.25, say: s.kmh < 1 ? `Press ${n.gas} and follow the line.` : undefined }
           },
         }
@@ -242,6 +253,7 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'junctions',
+      demo: 'junctions',
       title: 'Lights and lines tell you when to go',
       diagram: <SignalDiagram />,
       sign: 'stop',
@@ -252,7 +264,7 @@ function buildSteps(n: Names): Step[] {
           <p><b>STOP sign:</b> stop completely at the line, look both ways, then go. <b>Give way:</b> slow down, and only go if nothing is coming.</p>
           <p><b>Zebra crossing:</b> slow down and let people cross.</p>
           <p>From now on I am watching for these. If you make a mistake the road will wait, and I will explain what happened.</p>
-          <p>Your turn: keep following the line, and <b>stop correctly</b> at a junction.</p>
+          <p>Watch me stop at a red light first. Then it's your turn: keep following the line, and <b>stop correctly</b> at a junction.</p>
         </>
       ),
       speech: 'Lights and lines tell you when to go. Red: stop behind the white line and wait. Amber: stop if you safely can. Green: go, if the way is clear. Stop sign: stop completely at the line, look both ways, then go. Give way: slow down, and only go if nothing is coming. Zebra crossing: slow down and let people cross.',
@@ -273,6 +285,7 @@ function buildSteps(n: Names): Step[] {
     },
     {
       id: 'roundabout',
+      demo: 'roundabout',
       title: 'Roundabouts go clockwise',
       diagram: <RoundaboutDiagram />,
       sign: 'giveway',
@@ -280,20 +293,21 @@ function buildSteps(n: Names): Step[] {
         <>
           <p>Because we keep left, you <b>turn left</b> to join a roundabout and go round <b>clockwise</b>.</p>
           <p>Give way to traffic already on it, coming from your <b>right</b>. Join when there is a gap, then leave at your road, turning left again.</p>
-          <p>The line will show you the way when you reach one. There is nothing to try right now.</p>
+          <p>Watch me go round one. The line will show you the way when you reach one yourself.</p>
         </>
       ),
       speech: 'Roundabouts go clockwise. Because we keep left, you turn left to join a roundabout. Give way to traffic already on it, coming from your right. Join when there is a gap, then leave at your road, turning left again.',
     },
     {
       id: 'passenger',
+      demo: 'passenger',
       title: 'Your first passenger',
       showsRoute: true,
       body: (
         <>
           <p>Now we put it all together. The line takes you to a passenger waiting at the roadside, always on your <b>left</b>.</p>
           <p>Slow down, pull in to the left kerb beside them and <b>stop</b>. They climb on. Then the line changes colour and leads to where they are going. Stop at the kerb again to drop them off and get paid.</p>
-          <p>Remember: a smooth ride is a safe ride, and happy passengers come back.</p>
+          <p>Watch me pull in first. Remember: a smooth ride is a safe ride, and happy passengers come back.</p>
         </>
       ),
       speech: 'Your first passenger. The line takes you to a passenger waiting at the roadside, always on your left. Slow down, pull in to the left kerb beside them and stop. They climb on. Then follow the line to where they are going. Stop at the kerb again to drop them off and get paid.',
@@ -336,25 +350,51 @@ function buildSteps(n: Names): Step[] {
   ]
 }
 
-type Phase = { kind: 'explain' } | { kind: 'practice' } | { kind: 'result'; text: string; skipped?: boolean }
+type Phase = { kind: 'explain' } | { kind: 'demo' } | { kind: 'watched' } | { kind: 'practice' } | { kind: 'result'; text: string } | { kind: 'tutorialDone' }
 
-export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean) => void }) {
+/** A control lighting up while Mama Sarah uses it, so the learner sees what she pressed and when. */
+function ControlChip({ on, children }: { on?: boolean; children: ReactNode }) {
+  return <span className={`rounded-lg px-2.5 py-1 text-[12px] font-extrabold transition-colors ${on ? 'bg-[#f5c518] text-zinc-950' : 'bg-white/10 text-zinc-400'}`}>{children}</span>
+}
+
+type Props = {
+  /** Paused: the lesson keeps its place and waits, showing nothing. */
+  paused: boolean
+  /** A single tutorial from the menu, rather than the whole lesson. */
+  tutorial: string | null
+  onModalChange: (open: boolean) => void
+  onDemoChange: (running: boolean) => void
+  onMoreTutorials: () => void
+}
+
+export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, onMoreTutorials }: Props) {
   const isTouch = useIsTouch()
   const overlay = useRoadRulesStore((s) => s.overlay)
-  const names: Names = isTouch ? { gas: 'GAS', brake: 'BRAKE', steer: 'the ◀ ▶ buttons' } : { gas: 'W or ↑', brake: 'S, ↓ or Space', steer: 'A and D, or ← and →' }
-  const steps = useRef(buildSteps(names)).current
-  const [index, setIndex] = useState(0)
+  const steps = useMemo(
+    () => buildSteps(isTouch ? { gas: 'GAS', brake: 'BRAKE', steer: 'the ◀ ▶ buttons' } : { gas: 'W or ↑', brake: 'S, ↓ or Space', steer: 'A and D, or ← and →' }),
+    [isTouch],
+  )
+  const [index, setIndex] = useState(() => (tutorial ? Math.max(0, steps.findIndex((st) => st.id === tutorial)) : 0))
   const [phase, setPhase] = useState<Phase>({ kind: 'explain' })
   const [finished, setFinished] = useState(false)
-  const [live, setLive] = useState<{ progress: number; say?: string }>({ progress: 0 })
+  const [live, setLive] = useState<{ progress: number; say?: string; caption?: string; keys?: { gas: boolean; brake: boolean; left: boolean; right: boolean } }>({ progress: 0 })
   const step = steps[index]!
   const task = useRef<Task | null>(null)
 
-  const modalOpen = !finished && !overlay && (phase.kind === 'explain' || phase.kind === 'result')
+  const showing = !finished && !overlay && !paused
+  const modalOpen = showing && phase.kind !== 'practice' && phase.kind !== 'demo'
+  const demoRunning = !finished && phase.kind === 'demo'
   useEffect(() => onModalChange(modalOpen), [modalOpen, onModalChange])
-  useEffect(() => () => onModalChange(false), [onModalChange])
+  useEffect(() => onDemoChange(demoRunning), [demoRunning, onDemoChange])
+  useEffect(
+    () => () => {
+      onModalChange(false)
+      onDemoChange(false)
+    },
+    [onModalChange, onDemoChange],
+  )
 
-  // Rules, cards and the route stay off until each has been taught.
+  // Rules, cards and the route stay off until each has been taught, and during every demonstration.
   useEffect(() => {
     let rules = false
     let route = false
@@ -363,28 +403,30 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
       route ||= !!steps[k]!.showsRoute
     }
     lessonGate.active = !finished
-    lessonGate.rulesOff = !finished && !rules
-    routeTelemetry.hidden = !finished && !route
+    lessonGate.rulesOff = !finished && (!rules || demoRunning)
+    routeTelemetry.hidden = !finished && (!route || demoRunning)
     return () => {
       lessonGate.active = false
       lessonGate.rulesOff = false
       routeTelemetry.hidden = false
     }
-  }, [index, finished, steps])
+  }, [index, finished, steps, demoRunning])
 
-  const next = useCallback(() => {
+  const next = () => {
     stopSpeaking()
     task.current = null
     setLive({ progress: 0 })
+    if (tutorial) {
+      setPhase({ kind: 'tutorialDone' })
+      return
+    }
+    if (index + 1 >= steps.length) {
+      setFinished(true)
+      return
+    }
+    setIndex(index + 1)
     setPhase({ kind: 'explain' })
-    setIndex((i) => {
-      if (i + 1 >= steps.length) {
-        setFinished(true)
-        return i
-      }
-      return i + 1
-    })
-  }, [steps.length])
+  }
 
   const startPractice = () => {
     stopSpeaking()
@@ -397,20 +439,45 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
     setPhase({ kind: 'practice' })
   }
 
+  const watch = () => {
+    stopSpeaking()
+    const job = useGameStore.getState().rideJob
+    const demo = step.demo ? buildDemo(step.demo, { t: worldClock.t, stop: job ? (job.phase === 'pickup' ? job.pickup : job.dropoff) : null }) : null
+    if (!demo) {
+      startPractice()
+      return
+    }
+    setLive({ progress: 0 })
+    startDemo(demo)
+    setPhase({ kind: 'demo' })
+  }
+
   const skipLesson = () => {
     stopSpeaking()
     setFinished(true)
   }
 
+  // Follow the demonstration: its caption, and which controls she's using, ten times a second.
+  useEffect(() => {
+    if (phase.kind !== 'demo') return
+    const id = setInterval(() => {
+      if (!demoRun.demo) {
+        setPhase({ kind: 'watched' })
+        return
+      }
+      setLive({
+        progress: demoRun.progress,
+        caption: demoRun.caption,
+        keys: { gas: driveInput.forward, brake: driveInput.back, left: driveInput.left, right: driveInput.right },
+      })
+    }, 100)
+    return () => clearInterval(id)
+  }, [phase.kind])
+
   // Practice: a light poll of the bike, ten times a second. It stops while a card or explanation is up.
   const last = useRef({ x: 0, z: 0, t: 0, valid: false })
-  const goodMoves = useRoadRulesStore((s) => s.rr?.stats.goodMoves ?? 0)
-  const goodRef = useRef(goodMoves)
   useEffect(() => {
-    goodRef.current = goodMoves
-  }, [goodMoves])
-  useEffect(() => {
-    if (phase.kind !== 'practice' || overlay) return
+    if (phase.kind !== 'practice' || overlay || paused) return
     last.current.valid = false
     const id = setInterval(() => {
       const t = task.current
@@ -429,9 +496,9 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
         brake: driveInput.back,
         steer: driveInput.left || driveInput.right,
         moved: moved < 6 ? moved : 0,
-        left: leftOfCentre(b.x, b.z, headingFromYaw(b.yaw)),
+        left: leftOfCentre(b.x, b.z, nearestHeading(b.yaw)),
         yaw: b.yaw,
-        goodMoves: goodRef.current,
+        goodMoves: useRoadRulesStore.getState().rr?.stats.goodMoves ?? 0,
         deliveries: g.rideCompletedDeliveries,
         phase: g.rideJob?.phase,
       })
@@ -445,9 +512,9 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
       }
     }, 100)
     return () => clearInterval(id)
-  }, [phase.kind, overlay])
+  }, [phase.kind, overlay, paused])
 
-  if (finished || overlay) return null
+  if (finished || overlay || paused) return null
 
   const readAloud = (text: string) => speak(text, { force: true })
 
@@ -455,7 +522,7 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
     return (
       <Modal labelledBy="lesson-title" wide>
         <p className="text-[12px] font-extrabold uppercase tracking-widest text-[#f5c518]">
-          Lesson · Step {index + 1} of {steps.length}
+          {tutorial ? 'Tutorial' : `Lesson · Step ${index + 1} of ${steps.length}`}
         </p>
         <div className="mt-1 flex items-start justify-between gap-3">
           <h2 id="lesson-title" className="text-2xl font-black leading-tight">
@@ -463,19 +530,32 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
           </h2>
           {step.sign ? <SignImg sign={step.sign} className="h-14 w-14" label="" /> : null}
         </div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-[#f5c518]" style={{ width: `${((index + 1) / steps.length) * 100}%` }} />
-        </div>
+        {tutorial ? null : (
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-[#f5c518]" style={{ width: `${((index + 1) / steps.length) * 100}%` }} />
+          </div>
+        )}
         {step.diagram ? <div className="mt-3 flex justify-center rounded-2xl bg-[#101114] p-2">{step.diagram}</div> : null}
         <div className="mt-3 space-y-2 text-[16px] leading-relaxed text-zinc-200">{step.body}</div>
-        <Button className="mt-4 w-full text-lg" onClick={startPractice} autoFocus>
-          {step.task ? 'I understand, let me try' : index === steps.length - 1 ? 'Keep riding' : 'I understand, next'}
-        </Button>
+        {step.demo ? (
+          <Button className="mt-4 w-full text-lg" onClick={watch} autoFocus>
+            🎬 Show me first
+          </Button>
+        ) : (
+          <Button className="mt-4 w-full text-lg" onClick={startPractice} autoFocus>
+            {step.task ? 'I understand, let me try' : index === steps.length - 1 ? 'Keep riding' : 'I understand, next'}
+          </Button>
+        )}
+        {step.demo && step.task ? (
+          <Button tone="ghost" className="mt-2 w-full" onClick={startPractice}>
+            I already know this, let me try
+          </Button>
+        ) : null}
         <div className="mt-2 flex items-center justify-between text-sm font-bold">
           <button type="button" onClick={() => readAloud(step.speech)} className="min-h-11 text-zinc-300 hover:underline">
             🔈 Read this to me
           </button>
-          {index < steps.length - 1 ? (
+          {index < steps.length - 1 && !tutorial ? (
             <button type="button" onClick={skipLesson} className="min-h-11 text-zinc-500 hover:underline">
               Skip the lesson
             </button>
@@ -485,16 +565,79 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
     )
   }
 
+  if (phase.kind === 'demo') {
+    const keys = live.keys
+    return (
+      <div className="pointer-events-none fixed inset-x-0 top-[calc(max(0.75rem,env(safe-area-inset-top))+8.5rem)] z-20 flex justify-center px-3 md:top-[calc(max(0.75rem,env(safe-area-inset-top))+6.5rem)] [@media(max-height:500px)]:top-16" aria-live="polite">
+        <div className="pointer-events-auto w-[min(94vw,460px)] rounded-2xl bg-[#17181d]/92 p-3 shadow-xl ring-1 ring-sky-300/50 backdrop-blur-md">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-extrabold uppercase tracking-widest text-sky-300">🎬 Watch Mama Sarah</p>
+            <button type="button" onClick={() => stopDemo()} className="text-[12px] font-bold text-zinc-400 hover:underline">
+              Skip
+            </button>
+          </div>
+          <p className="mt-1 min-h-[2.6em] text-[15px] font-extrabold leading-snug text-white">{live.caption ?? ' '}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <ControlChip on={keys?.gas}>Accelerator</ControlChip>
+            <ControlChip on={keys?.brake}>Brake</ControlChip>
+            <ControlChip on={keys?.left}>◀ Steer</ControlChip>
+            <ControlChip on={keys?.right}>Steer ▶</ControlChip>
+          </div>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-sky-400 transition-[width] duration-150" style={{ width: `${live.progress * 100}%` }} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (phase.kind === 'watched') {
+    return (
+      <Modal labelledBy="lesson-watched">
+        <p className="text-[12px] font-extrabold uppercase tracking-widest text-sky-300">That's how it's done</p>
+        <h2 id="lesson-watched" className="mt-1 text-2xl font-black">
+          {step.task ? 'Now you try' : 'Did you see that?'}
+        </h2>
+        <p className="mt-2 text-[16px] leading-relaxed text-zinc-200">
+          {step.task ? `${step.task().goal}. Take your time: nothing is timed, and you can watch again whenever you like.` : 'Watch it again as many times as you like, or carry on when you are ready.'}
+        </p>
+        <Button className="mt-4 w-full text-lg" onClick={startPractice} autoFocus>
+          {step.task ? "I'm ready, let me try" : 'I understand, next'}
+        </Button>
+        <Button tone="ghost" className="mt-2 w-full" onClick={watch}>
+          🎬 Watch again
+        </Button>
+      </Modal>
+    )
+  }
+
+  if (phase.kind === 'tutorialDone') {
+    return (
+      <Modal labelledBy="lesson-tutorial-done" tone="good">
+        <h2 id="lesson-tutorial-done" className="text-2xl font-black">
+          Tutorial done
+        </h2>
+        <p className="mt-2 text-[16px] leading-relaxed text-zinc-200">Pick another tutorial, or keep riding and use what you have just learned.</p>
+        <Button className="mt-4 w-full text-lg" onClick={onMoreTutorials} autoFocus>
+          🎬 More tutorials
+        </Button>
+        <Button tone="ghost" className="mt-2 w-full" onClick={skipLesson}>
+          Keep riding
+        </Button>
+      </Modal>
+    )
+  }
+
   if (phase.kind === 'result') {
     return (
       <Modal labelledBy="lesson-result" tone="good">
-        <p className="text-[12px] font-extrabold uppercase tracking-widest text-emerald-300">Step {index + 1} done</p>
+        <p className="text-[12px] font-extrabold uppercase tracking-widest text-emerald-300">{tutorial ? 'Done' : `Step ${index + 1} done`}</p>
         <h2 id="lesson-result" className="mt-1 text-2xl font-black">
           Mama Sarah says
         </h2>
         <p className="mt-2 text-[17px] leading-relaxed text-zinc-100">{phase.text}</p>
         <Button className="mt-4 w-full text-lg" onClick={next} autoFocus>
-          Next step
+          {tutorial ? 'Continue' : 'Next step'}
         </Button>
         <Button tone="ghost" className="mt-2 w-full" onClick={() => setPhase({ kind: 'explain' })}>
           Explain this again
@@ -507,11 +650,16 @@ export function RidingLesson({ onModalChange }: { onModalChange: (open: boolean)
     <div className="pointer-events-none fixed inset-x-0 top-[calc(max(0.75rem,env(safe-area-inset-top))+8.5rem)] z-20 flex justify-center px-3 md:top-[calc(max(0.75rem,env(safe-area-inset-top))+6.5rem)] [@media(max-height:500px)]:top-16" aria-live="polite">
       <div className="pointer-events-auto w-[min(94vw,440px)] rounded-2xl bg-[#17181d]/92 p-3 shadow-xl ring-1 ring-[#f5c518]/50 backdrop-blur-md">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#f5c518]">Your turn · Step {index + 1}</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#f5c518]">{tutorial ? 'Your turn' : `Your turn · Step ${index + 1}`}</p>
           <div className="flex gap-3 text-[12px] font-bold text-zinc-400">
             <button type="button" onClick={() => setPhase({ kind: 'explain' })} className="hover:underline">
               Explain again
             </button>
+            {step.demo ? (
+              <button type="button" onClick={watch} className="hover:underline">
+                Watch again
+              </button>
+            ) : null}
             <button type="button" onClick={next} className="hover:underline">
               Skip
             </button>

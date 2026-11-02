@@ -1,6 +1,6 @@
 import { Environment, Lightformer, useProgress } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { memo, useLayoutEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { isBikeBrokenDown, isTankEmpty, useGameStore } from '../store/useGameStore'
 import { useSettingsStore } from '../store/useSettingsStore'
@@ -10,14 +10,18 @@ import { sceneStatus } from '../roadRules/world/telemetry'
 /** Resolution caps: phones often report DPR 3; rendering at that size costs 9× the pixels. */
 const DPR = { low: [0.75, 1], medium: [0.85, 1.25], high: [1, 1.5] } as const
 
-/** After `frameloop="demand"`, nudge one frame when unfreezing so the loop reliably restarts. */
-function ThawInvalidate({ frozen }: { frozen: boolean }) {
+/**
+ * Stops the frame loop while the world is frozen. It lives in a child so that freezing doesn't re-render <Canvas>,
+ * which would re-apply its props and undo what AdaptiveResolution has chosen.
+ */
+function FreezeFrames() {
+  const frozen = useGameStore((s) => isBikeBrokenDown(s.condition) || s.hudModalFreezesWorld || isTankEmpty(s.fuel))
+  const setFrameloop = useThree((s) => s.setFrameloop)
   const invalidate = useThree((s) => s.invalidate)
-  const prevFrozen = useRef(frozen)
   useLayoutEffect(() => {
-    if (prevFrozen.current && !frozen) invalidate()
-    prevFrozen.current = frozen
-  }, [frozen, invalidate])
+    setFrameloop(frozen ? 'demand' : 'always')
+    invalidate()
+  }, [frozen, setFrameloop, invalidate])
   return null
 }
 
@@ -27,34 +31,33 @@ function ThawInvalidate({ frozen }: { frozen: boolean }) {
  */
 function AdaptiveResolution({ min, max }: { min: number; max: number }) {
   const setDpr = useThree((s) => s.setDpr)
-  const dpr = useRef(max)
-  const window_ = useRef({ t: 0, n: 0, calm: 0 })
+  const state = useRef({ dpr: max, time: 0, frames: 0, calmSeconds: 0, calmNeeded: 6 })
   useFrame((_, delta) => {
-    const w = window_.current
+    const a = state.current
     // Skip stalls (tab switch, loading): they say nothing about the sustained rate.
     if (delta > 0.25) return
-    w.t += delta
-    w.n++
-    if (w.t < 1) return
-    const ms = (w.t / w.n) * 1000
-    w.t = 0
-    w.n = 0
-    if (ms > 24 && dpr.current > min) {
-      dpr.current = Math.max(min, dpr.current - 0.15)
-      w.calm = 0
-      setDpr(dpr.current)
-    } else if (ms < 17.5 && dpr.current < max && ++w.calm >= 6) {
-      dpr.current = Math.min(max, dpr.current + 0.1)
-      w.calm = 0
-      setDpr(dpr.current)
+    a.time += delta
+    a.frames++
+    if (a.time < 1) return
+    const ms = (a.time / a.frames) * 1000
+    a.time = 0
+    a.frames = 0
+    if (ms > 24 && a.dpr > min) {
+      a.dpr = Math.max(min, a.dpr - 0.15)
+      a.calmSeconds = 0
+      // A device that keeps dipping waits longer each time before trying again: changing resolution is itself a hitch.
+      a.calmNeeded = Math.min(120, a.calmNeeded * 2)
+      setDpr(a.dpr)
+    } else if (ms < 17.5 && a.dpr < max && ++a.calmSeconds >= a.calmNeeded) {
+      a.dpr = Math.min(max, a.dpr + 0.1)
+      a.calmSeconds = 0
+      setDpr(a.dpr)
     }
   })
   return null
 }
 
-export default function GameCanvas({ onReady }: { onReady: () => void }) {
-  // A boolean, not the raw values: fuel changes every frame while riding.
-  const frozen = useGameStore((s) => isBikeBrokenDown(s.condition) || s.hudModalFreezesWorld || isTankEmpty(s.fuel))
+const GameCanvas = memo(function GameCanvas({ onReady }: { onReady: () => void }) {
   const quality = useSettingsStore((s) => s.quality)
   // Bumped after a lost WebGL context (GPU memory pressure on phones): remounts a fresh canvas.
   const [contextNonce, setContextNonce] = useState(0)
@@ -67,7 +70,6 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
       // Near plane not too close: depth precision falls with it, and far-off road layers then flicker through each other.
       camera={{ fov: 62, near: 0.4, far: 1600, position: [0, 3, 6] }}
       dpr={[...DPR[quality]]}
-      frameloop={frozen ? 'demand' : 'always'}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance', stencil: false }}
       onCreated={({ gl, scene, camera, raycaster }) => {
         gl.shadowMap.type = THREE.PCFShadowMap
@@ -87,7 +89,7 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
         })
       }}
     >
-      <ThawInvalidate frozen={frozen} />
+      <FreezeFrames />
       <AdaptiveResolution min={DPR[quality][0]} max={Math.min(DPR[quality][1], window.devicePixelRatio || 1)} />
       <ReadyWhenLoaded onReady={onReady} />
       {/* Local light-former environment: no HDR download (works offline), cheap on phones. */}
@@ -100,7 +102,9 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
       <GameScene />
     </Canvas>
   )
-}
+})
+
+export default GameCanvas
 
 
 /** Calls `onReady` once the city is built and batched and a couple of frames have rendered. */

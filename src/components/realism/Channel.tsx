@@ -17,10 +17,13 @@ import { StandingHuman } from './Nature'
 const { halfLength: L, halfWidth: W, depth: D } = CHANNEL
 const WATER_Y = -D + 0.7
 
+const KIOSK_X = [-13, 13]
+const KIOSK_Z = -13.5
+
 for (const { i, j } of CHANNEL_BLOCKS) {
   const [x, z] = blockCenter(i, j)
   excludeGrass(x, z, 2 * L + 1, 2 * W + 6)
-  for (const kx of [-13, 13]) excludeGrass(x + kx, z - 13.5, 4, 3.5)
+  for (const kx of KIOSK_X) excludeGrass(x + kx, z + KIOSK_Z, 4, 3.5)
 }
 
 function canvasTexture(size: number, draw: (g: CanvasRenderingContext2D) => void, repeat: [number, number]) {
@@ -244,12 +247,12 @@ export function NakivuboChannel() {
             <RigidBody type="fixed" colliders={false} userData={{ kind: 'building' }}>
               <CuboidCollider args={[L, 1, 0.3]} position={[0, 1, W + 0.2]} />
               <CuboidCollider args={[L, 1, 0.3]} position={[0, 1, -W - 0.2]} />
-              {[-13, 13].map((x) => (
-                <CuboidCollider key={x} args={[1.5, 1.2, 1.1]} position={[x, 1.2, -13.5]} />
+              {KIOSK_X.map((x) => (
+                <CuboidCollider key={x} args={[1.5, 1.2, 1.1]} position={[x, 1.2, KIOSK_Z]} />
               ))}
             </RigidBody>
-            {[-13, 13].map((x, k) => (
-              <Kiosk key={x} x={x} z={-13.5} k={n * 2 + k} />
+            {KIOSK_X.map((x, k) => (
+              <Kiosk key={x} x={x} z={KIOSK_Z} k={n * 2 + k} />
             ))}
             {n === 1 ? (
               <>

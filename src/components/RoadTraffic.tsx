@@ -108,8 +108,9 @@ type Agent = {
   /** Something slower is close ahead, and `passAway` says which way to ease round it (cross-axis sign, 0 = none). */
   blocked: boolean
   passAway: number
-  /** Seconds at a standstill behind another vehicle; a last resort against gridlock. */
+  /** Seconds at a standstill behind another vehicle, and seconds left ignoring them: a last resort against gridlock. */
   stuck: number
+  ignoreTraffic: number
   /** Turning through a junction on a curve instead of snapping onto the new lane. */
   arc?: { x0: number; z0: number; x1: number; z1: number; x2: number; z2: number; t: number; len: number }
   /**
@@ -491,7 +492,7 @@ const LANE_SPAWN_STAGGER = 14
 function newAgentState(heading: Heading) {
   const dx = heading === 'E' ? 1 : heading === 'W' ? -1 : 0
   const dz = heading === 'N' ? 1 : heading === 'S' ? -1 : 0
-  return { cur: 0, dx, dz, brake: COMFORT_BRAKE, dodge: 0, dodgeTarget: 0, laneCd: 0, blocked: false, passAway: 0, stuck: 0 }
+  return { cur: 0, dx, dz, brake: COMFORT_BRAKE, dodge: 0, dodgeTarget: 0, laneCd: 0, blocked: false, passAway: 0, stuck: 0, ignoreTraffic: 0 }
 }
 
 function spawnVertical(vi: number, laneSlot: number, salt: number, keepKind?: VehicleKind): Agent {
@@ -543,19 +544,6 @@ function spawnHorizontal(hj: number, laneSlot: number, salt: number, keepKind?: 
     z: cz + loff,
     slot: { t: 'h', idx: flatOccH(hj, laneSlot) },
     ...newAgentState(heading),
-  }
-}
-
-function velocityWithSpeed(a: Agent, speedNow: number): { vx: number; vz: number } {
-  switch (a.heading) {
-    case 'N':
-      return { vx: 0, vz: speedNow }
-    case 'S':
-      return { vx: 0, vz: -speedNow }
-    case 'E':
-      return { vx: speedNow, vz: 0 }
-    case 'W':
-      return { vx: -speedNow, vz: 0 }
   }
 }
 
@@ -659,9 +647,10 @@ function integrateAgent(
       return true
     }
   }
-  const { vx, vz } = velocityWithSpeed(a, speedNow)
   a.dx = a.heading === 'E' ? 1 : a.heading === 'W' ? -1 : 0
   a.dz = a.heading === 'N' ? 1 : a.heading === 'S' ? -1 : 0
+  const vx = a.dx * speedNow
+  const vz = a.dz * speedNow
   const px = a.x
   const pz = a.z
   a.x += vx * d
@@ -772,8 +761,15 @@ const BIKE_GAP = 6.5
 const CROSSING_GAP = 2.5
 const BIKE_HALF_W = 0.32
 
+const GRIDLOCK_S = 22
+const GRIDLOCK_RELEASE_S = 4
+
+const halfWidths = new Map<VehicleKind, number>()
+/** Looked up, not computed: this runs for every nearby pair of vehicles, every frame. */
 function halfWidth(kind: VehicleKind): number {
-  return vehicleCollider(kind).args[0]
+  let w = halfWidths.get(kind)
+  if (w === undefined) halfWidths.set(kind, (w = vehicleCollider(kind).args[0]))
+  return w
 }
 
 function isTwoWheeler(kind: VehicleKind): boolean {
@@ -844,7 +840,8 @@ function controlledTargetSpeed(
   let vehicleBlock = false
 
   // Other vehicles: match the speed of what is ahead; yield to anything crossing just in front.
-  if (a.stuck < 22) {
+  a.ignoreTraffic = Math.max(0, a.ignoreTraffic - dt)
+  if (a.ignoreTraffic === 0) {
     const look = Math.max(18, currentSpeed * 2.4)
     for (let n = 0; n < others.length; n++) {
       const o = others[n]
@@ -877,9 +874,12 @@ function controlledTargetSpeed(
       }
     }
   }
-  // After this long at a standstill behind other traffic (longer than any red light) a vehicle stops waiting for them.
+  // After this long at a standstill behind other traffic (longer than any red light), stop waiting for it.
   a.stuck = vehicleBlock && currentSpeed < 0.2 ? a.stuck + dt : Math.max(0, a.stuck - dt * 2)
-  if (a.stuck >= 26) a.stuck = 0
+  if (a.stuck >= GRIDLOCK_S) {
+    a.stuck = 0
+    a.ignoreTraffic = GRIDLOCK_RELEASE_S
+  }
 
   const k = nextJunctionIndex(a)
   const jn = k >= 0 && !a.arc && !a.round ? (a.mode === 'v' ? junctionAt(a.vi, k) : junctionAt(k, a.hj)) : null

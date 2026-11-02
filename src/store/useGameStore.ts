@@ -7,14 +7,14 @@ import {
   manhattanTravelMeters,
   rideRecordTimeLimitMs,
   type RideJob,
-  type RideManhattanOrder,
 } from '../game/passengerJobs'
 
 /** Ignore bike↔ped / bike↔car collision penalties until this `performance.now()` (spawn overlap). */
 export const COLLISION_GRACE_MS = 2200
 
 /** Bike spawn XZ (matches `Boda`); used to defer ped knock / condition until you leave the intersection. */
-export const BIKE_SPAWN_XZ = { x: -5.1, z: -24 } as const
+/** Entebbe Rd, left lane heading south, on a block with no crossing, hump or junction close ahead. */
+export const BIKE_SPAWN_XZ = { x: -5.1, z: 150 } as const
 /** Min horizontal distance from spawn before bike↔pedestrian knock & condition loss can apply. */
 export const BIKE_SPAWN_PED_CLEAR_M = 2.85
 
@@ -321,10 +321,6 @@ export type GameState = {
   /** Passenger job (pick up → drop off → pay). */
   rideJob: RideJob | null
   rideJobSerial: number
-  /**
-   * Current L-route elbow axis (synced from {@link JobRouteGuide}) so HUD minimap matches the 3D line.
-   */
-  rideJobRouteOrder: RideManhattanOrder
   /** Throttled bike XZ for HUD minimap / navigation. */
   bikeMapX: number
   bikeMapZ: number
@@ -463,7 +459,6 @@ const initialSession = (): Pick<
   | 'bloodImpactKind'
   | 'rideJob'
   | 'rideJobSerial'
-  | 'rideJobRouteOrder'
   | 'bikeMapX'
   | 'bikeMapZ'
   | 'ridePickupToastNonce'
@@ -505,7 +500,6 @@ const initialSession = (): Pick<
   bloodImpactKind: null,
   rideJob: null,
   rideJobSerial: 0,
-  rideJobRouteOrder: 'xFirst',
   bikeMapX: 0,
   bikeMapZ: 0,
   ridePickupToastNonce: 0,
@@ -676,8 +670,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       rideJob: job,
       rideJobSerial: serial,
-      rideJobRouteOrder: 'xFirst',
-      rideLegStartedAtMs: now,
+          rideLegStartedAtMs: now,
       rideLegRecordTimeMs: rideRecordTimeLimitMs(path),
       rideLegPathMeters: path,
       rideRecordBonusKind: null,
@@ -707,8 +700,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       rideJob: { ...j, phase: 'carrying' },
       ridePickupToastNonce: s.ridePickupToastNonce + 1,
       ridePickupToastDestination: j.dropoff.name,
-      rideJobRouteOrder: 'xFirst',
-      rideLegStartedAtMs: now,
+          rideLegStartedAtMs: now,
       rideLegRecordTimeMs: rideRecordTimeLimitMs(pathDrop),
       rideLegPathMeters: pathDrop,
       rideRecordBonusNonce: beat ? s.rideRecordBonusNonce + 1 : s.rideRecordBonusNonce,
@@ -760,8 +752,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       rideJob: nextJob,
       rideJobSerial: serial,
-      rideJobRouteOrder: 'xFirst',
-      rideCompletedDeliveries: deliveries,
+          rideCompletedDeliveries: deliveries,
       lastFareUgx: j.payoutUgx,
       riderLevelUpToastNonce,
       riderLevelUpToastLevel,

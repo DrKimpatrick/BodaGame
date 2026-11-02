@@ -37,8 +37,14 @@ export const trafficTelemetry = {
   yaw: new Float32Array(128),
 }
 
-/** The learner's lesson: while it runs, cards stay away, and rules stay off until they have been taught. */
-export const lessonGate = { active: false, rulesOff: false }
+/**
+ * The learner's lesson: while it runs, cards stay away, and rules stay off until they have been taught. During a
+ * demonstration the bike is riding itself: no fuel, no jobs, nothing counts.
+ */
+export const lessonGate = { active: false, rulesOff: false, demo: false }
+
+/** One-off orders to the bike, carried out on its next frame. */
+export const bikeCommand = { teleport: null as null | { x: number; z: number; yaw: number } }
 
 /** What the on-road route says next (written by JobRouteGuide, read by the HUD a few times a second). */
 export const routeTelemetry = {

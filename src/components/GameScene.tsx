@@ -18,6 +18,7 @@ import { JobTargetPin } from './JobTargetPin'
 import { JobWaitingPassenger } from './JobWaitingPassenger'
 import { JobParkingBays } from './JobParkingBays'
 import { Rain } from './roadRules/Rain'
+import { DemoPilot } from './roadRules/DemoPilot'
 import { RoadRulesMonitor } from './roadRules/RoadRulesMonitor'
 import { VIEW_SCALE } from './viewScale'
 import { bikeTelemetry } from '../roadRules/world/telemetry'
@@ -142,6 +143,7 @@ export function GameScene() {
         <ThirdPersonCamera rigidBodyRef={bodaRef} roughRide={offroad} />
       </Physics>
       <RoadRulesMonitor />
+      <DemoPilot />
       <KampalaHills weather={weather} />
       <GrassField />
       <StreetLights />

@@ -38,6 +38,14 @@ export const ROUNDABOUT = { island: 5.2, ring: 9, disc: 13, entry: 10.5 } as con
 /** Stop line distance before the junction box edge. */
 export const STOP_LINE_GAP = 0.55
 
+/** The compass heading closest to a bike yaw (forward is (−sin yaw, −cos yaw)). */
+export function nearestHeading(yaw: number): Heading {
+  const fx = -Math.sin(yaw)
+  const fz = -Math.cos(yaw)
+  if (Math.abs(fz) >= Math.abs(fx)) return fz > 0 ? 'N' : 'S'
+  return fx > 0 ? 'E' : 'W'
+}
+
 export function axisOf(h: Heading): Axis {
   return h === 'N' || h === 'S' ? 'ns' : 'ew'
 }

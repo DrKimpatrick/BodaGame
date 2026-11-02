@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { buildGrassMask, GRASS_MASK_SPAN } from '../../game/grassMask'
-import { bikeTelemetry, sceneStatus } from '../../roadRules/world/telemetry'
+import { sceneStatus } from '../../roadRules/world/telemetry'
 import { useSettingsStore } from '../../store/useSettingsStore'
 
 /**
@@ -138,7 +138,7 @@ export function GrassField() {
     const u = uniforms.current
     u.uCam.value.set(camera.position.x, camera.position.z)
     u.uR.value = radius
-    if (Math.abs(bikeTelemetry.speed) < 25) u.uTime.value += Math.min(delta, 0.1)
+    u.uTime.value += Math.min(delta, 0.1)
   })
 
   return <instancedMesh key={tufts} ref={ref} args={[geometry, material, tufts]} frustumCulled={false} visible={ready} />

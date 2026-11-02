@@ -70,11 +70,18 @@ function ShiftChip() {
 
 const ROUTE_ICON = { left: '↰', right: '↱', roundabout: '🔃', arrive: '🅿️', turnaround: '↩️' } as const
 
+/** The route text lives outside React (it comes from the frame loop), so re-read it a few times a second. */
+function useRouteTextRefresh() {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 300)
+    return () => clearInterval(id)
+  }, [])
+}
+
 function JobBanner() {
   const job = useGameStore((s) => s.rideJob)
-  // Re-rendered about ten times a second by the bike's map position, which refreshes the route text too.
-  useGameStore((s) => s.bikeMapX)
-  useGameStore((s) => s.bikeMapZ)
+  useRouteTextRefresh()
   if (!job) return null
   const step = routeTelemetry.step
   if (!step) return null

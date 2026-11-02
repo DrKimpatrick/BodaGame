@@ -140,19 +140,28 @@ function buildCrowd(density: number): Walker[] {
 }
 
 /** Position along the path (0 = A, 1 = B), whether walking, and direction (+1 towards B). */
-function pathState(w: Walker, t: number): { u: number; moving: boolean; dir: number } {
+const pathResult = { u: 0, moving: false, dir: 1 }
+function pathAt(u: number, moving: boolean, dir: number) {
+  pathResult.u = u
+  pathResult.moving = moving
+  pathResult.dir = dir
+  return pathResult
+}
+
+/** Reuses one result object: this runs for every walker, every frame. */
+function pathState(w: Walker, t: number): typeof pathResult {
   const len = Math.hypot(w.bx - w.ax, w.bz - w.az)
   const travel = len / w.speed
   const wait = w.kind === 'cross' ? w.wait : 0.6
   const cycle = 2 * (travel + wait)
   let c = (t + w.phase) % cycle
-  if (c < wait) return { u: 0, moving: false, dir: 1 }
+  if (c < wait) return pathAt(0, false, 1)
   c -= wait
-  if (c < travel) return { u: c / travel, moving: true, dir: 1 }
+  if (c < travel) return pathAt(c / travel, true, 1)
   c -= travel
-  if (c < wait) return { u: 1, moving: false, dir: -1 }
+  if (c < wait) return pathAt(1, false, -1)
   c -= wait
-  return { u: 1 - c / travel, moving: true, dir: -1 }
+  return pathAt(1 - c / travel, true, -1)
 }
 
 /* ---------- Geometry (parts with real proportions, positioned per instance) ---------- */

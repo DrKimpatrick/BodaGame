@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { trafficTelemetry } from '../roadRules/world/telemetry'
 import { useSettingsStore } from '../store/useSettingsStore'
 import { collapsedMaterial, collapseKey, materialKey, normalise, withColor, type ColoredMaterial } from './batchGeometry'
+import { contactShadowMaterial } from './realism/contactShadow'
 import { VehicleModel } from './realism/Vehicles'
 import { vehicleCollider, vehiclePaint, type VehicleKind } from './realism/vehicleSpecs'
 
@@ -20,21 +21,6 @@ const ROAD_Y = 0.06
 /** How far traffic is drawn (m), and how far behind the camera (its shadow can still fall into view). */
 const DRAW_RADIUS = { low: 150, medium: 200, high: 260 } as const
 const DRAW_BEHIND = 25
-
-/** Soft dark patch under a vehicle, on the setting with no real shadows, so traffic doesn't look like it floats. */
-const blobTexture = (() => {
-  const c = document.createElement('canvas')
-  c.width = c.height = 64
-  const g = c.getContext('2d')!
-  const r = g.createRadialGradient(32, 32, 6, 32, 32, 32)
-  r.addColorStop(0, 'rgba(0,0,0,0.62)')
-  r.addColorStop(0.6, 'rgba(0,0,0,0.42)')
-  r.addColorStop(1, 'rgba(0,0,0,0)')
-  g.fillStyle = r
-  g.fillRect(0, 0, 64, 64)
-  return new THREE.CanvasTexture(c)
-})()
-const blobMaterial = new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false })
 
 type KindSet = {
   meshes: THREE.InstancedMesh[]
@@ -75,7 +61,8 @@ function bake(proto: THREE.Object3D, kind: VehicleKind, capacity: number, contac
     m.instanceMatrix = matrices
     // Paint tints matt-and-satin surfaces only; chrome, lights and glass keep their colour.
     const std = material as THREE.MeshStandardMaterial
-    if (!std.transparent && !std.map && (std.metalness ?? 0) < 0.5 && (std.emissiveIntensity ?? 0) === 0) m.instanceColor = colours
+    const glows = !!std.emissive && std.emissive.getHex() !== 0
+    if (!std.transparent && !std.map && (std.metalness ?? 0) < 0.5 && !glows) m.instanceColor = colours
     m.frustumCulled = false
     m.castShadow = b.cast
     m.count = 0
@@ -84,7 +71,7 @@ function bake(proto: THREE.Object3D, kind: VehicleKind, capacity: number, contac
   if (contactShadow) {
     const col = vehicleCollider(kind)
     const blob = new THREE.PlaneGeometry(col.args[0] * 2.7, col.args[2] * 2.4).rotateX(-Math.PI / 2).translate(0, 0.02, 0)
-    const m = new THREE.InstancedMesh(blob, blobMaterial, capacity)
+    const m = new THREE.InstancedMesh(blob, contactShadowMaterial, capacity)
     m.instanceMatrix = matrices
     m.frustumCulled = false
     m.count = 0

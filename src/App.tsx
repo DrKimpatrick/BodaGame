@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { pauseAllMusic, resumeGameplayMusicIfNeeded, startGameplayMusic } from './audio/gameMusic'
 import { setWebAudioMuted, unlockWebAudioFromUserGesture } from './audio/webAudioContext'
 import { GameHud } from './components/ui/GameHud'
@@ -12,6 +12,7 @@ import { PauseMenu, StartScreen } from './components/ui/StartScreen'
 import { TouchControls } from './components/ui/TouchControls'
 import { useGameRootButtonClickSound } from './hooks/useGameRootButtonClickSound'
 import { inputGate, installKeyboard, onDriveAction, releaseAll } from './input/driveInput'
+import { stopDemo } from './roadRules/demoRun'
 import { playHorn } from './roadRules/fx/sfx'
 import { stopSpeaking } from './roadRules/fx/speech'
 import { sceneStatus } from './roadRules/world/telemetry'
@@ -61,12 +62,20 @@ export default function App() {
   const overlay = useRoadRulesStore((s) => s.overlay)
   const [guideOpen, setGuideOpen] = useState(false)
   const [lessonModal, setLessonModal] = useState(false)
+  const [lessonDemo, setLessonDemo] = useState(false)
+  /** A single tutorial from the menu, rather than the whole lesson. */
+  const [tutorial, setTutorial] = useState<string | null>(null)
+  const [openTutorials, setOpenTutorials] = useState(false)
+  const sessionId = useRoadRulesStore((s) => s.sessionId)
   const mode = useRoadRulesStore((s) => s.mode)
   const musicOn = useSettingsStore((s) => s.music && !s.muted)
   const effectsOn = useSettingsStore((s) => s.sound && !s.muted)
   const muted = useSettingsStore((s) => s.muted)
   const readyRef = useRef(false)
   const pendingMode = useRef<GameMode>('learn')
+  const markReady = useCallback(() => {
+    readyRef.current = true
+  }, [])
 
   // Fetch the 3D engine in the background while the player reads the menu.
   useEffect(() => {
@@ -74,8 +83,10 @@ export default function App() {
     return () => clearTimeout(id)
   }, [])
 
-  const begin = (mode: GameMode) => {
+  const begin = (mode: GameMode, tutorialId: string | null = null) => {
     unlockWebAudioFromUserGesture()
+    setTutorial(tutorialId)
+    setOpenTutorials(false)
     pendingMode.current = mode
     readyRef.current = false
     sceneStatus.cityBuilt = false
@@ -104,6 +115,7 @@ export default function App() {
     setPaused(false)
     setStageOpen(false)
     setGuideOpen(false)
+    stopDemo()
     pauseAllMusic()
     setPhase('menu')
   }
@@ -136,10 +148,10 @@ export default function App() {
   // Riding keys act only while actually riding, so Space and the arrows still work on buttons and menus.
   useEffect(() => {
     installKeyboard()
-    const riding = phase === 'playing' && !paused && !stageOpen && !guideOpen && !lessonModal && !overlay
+    const riding = phase === 'playing' && !paused && !stageOpen && !guideOpen && !lessonModal && !lessonDemo && !overlay
     inputGate.riding = riding
     if (!riding) releaseAll()
-  }, [phase, paused, stageOpen, guideOpen, lessonModal, overlay])
+  }, [phase, paused, stageOpen, guideOpen, lessonModal, lessonDemo, overlay])
 
   useEffect(() => setWebAudioMuted(!effectsOn), [effectsOn])
 
@@ -210,22 +222,34 @@ export default function App() {
       {inGame ? (
         <div className={`h-full w-full ${phase === 'loading' ? 'opacity-0' : ''}`} aria-hidden={phase === 'loading'}>
           <Suspense fallback={null}>
-            <GameCanvas onReady={() => (readyRef.current = true)} />
+            <GameCanvas onReady={markReady} />
           </Suspense>
         </div>
       ) : null}
-      {phase === 'menu' ? <StartScreen onStart={begin} /> : null}
+      {phase === 'menu' ? <StartScreen onStart={begin} onTutorial={(id) => begin('learn', id)} startOnTutorials={openTutorials} /> : null}
       {phase === 'loading' ? <LoadingScreen /> : null}
       {phase === 'playing' ? (
         <>
           <ImpactFlash />
           <GameHud onPause={() => setPaused(true)} onOpenStage={() => setStageOpen(true)} onHelp={() => setGuideOpen(true)} />
-          {!overlay && !paused && !stageOpen && !guideOpen && !lessonModal ? <TouchControls /> : null}
+          {!overlay && !paused && !stageOpen && !guideOpen && !lessonModal && !lessonDemo ? <TouchControls /> : null}
           <GameOverlays onMenu={toMenu} />
           {stageOpen && !overlay ? <StageSheet onClose={() => setStageOpen(false)} /> : null}
           {paused && !overlay ? <PauseMenu onResume={() => setPaused(false)} onMenu={toMenu} /> : null}
           {guideOpen && !overlay && !paused ? <HowToRide onClose={closeGuide} /> : null}
-          {mode === 'learn' && !paused ? <RidingLesson onModalChange={setLessonModal} /> : null}
+          {mode === 'learn' ? (
+            <RidingLesson
+              key={sessionId}
+              paused={paused || stageOpen || guideOpen}
+              tutorial={tutorial}
+              onModalChange={setLessonModal}
+              onDemoChange={setLessonDemo}
+              onMoreTutorials={() => {
+                toMenu()
+                setOpenTutorials(true)
+              }}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

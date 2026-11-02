@@ -13,6 +13,7 @@ import {
   junctionAt,
   leftVec,
   mustYield,
+  nearestHeading,
   secondsUntilGreen,
   signalAspect,
   stripFor,
@@ -50,11 +51,9 @@ const ZEBRAS_BY_STRIP = (() => {
 })()
 
 function headingFromYaw(yaw: number): Heading | null {
-  const fx = -Math.sin(yaw)
-  const fz = -Math.cos(yaw)
-  if (Math.max(Math.abs(fx), Math.abs(fz)) < 0.86) return null
-  if (Math.abs(fz) >= Math.abs(fx)) return fz > 0 ? 'N' : 'S'
-  return fx > 0 ? 'E' : 'W'
+  // Diagonal: mid-turn, so not clearly on either road yet.
+  if (Math.max(Math.abs(Math.sin(yaw)), Math.abs(Math.cos(yaw))) < 0.86) return null
+  return nearestHeading(yaw)
 }
 
 /** Next interior junction ahead on this strip, or null. */

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { HowToRide } from './RideGuide'
+import { TUTORIALS } from '../../roadRules/tutorials'
 import { BILL, DELIVERIES_PER_SHIFT, START_CASH } from '../../roadRules/constants'
 import { hasCertificateRequirements, useRoadRulesStore, type GameMode } from '../../store/useRoadRulesStore'
 import { useSettingsStore, type Quality } from '../../store/useSettingsStore'
@@ -67,9 +68,34 @@ export function SettingsPanel() {
   )
 }
 
-export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) {
+function TutorialsPanel({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
+  return (
+    <Modal labelledBy="tutorials-title" wide>
+      <h2 id="tutorials-title" className="text-2xl font-black">Tutorials</h2>
+      <p className="mt-1 text-[15px] leading-relaxed text-zinc-300">
+        Pick a skill. Mama Sarah rides it first so you can see exactly what to do, then you try it yourself. Nothing is timed, and nothing costs you anything.
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {TUTORIALS.map((t) => (
+          <button key={t.id} type="button" onClick={() => onPick(t.id)} className="flex min-h-16 items-center gap-3 rounded-2xl bg-white/6 p-3 text-left ring-1 ring-white/10 hover:bg-white/12">
+            <span className="text-2xl" aria-hidden>{t.icon}</span>
+            <span className="min-w-0">
+              <span className="block font-extrabold text-white">{t.title}</span>
+              <span className="block text-[13px] leading-snug text-zinc-400">{t.blurb}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <Button tone="ghost" className="mt-3 w-full" onClick={onClose}>
+        Back
+      </Button>
+    </Modal>
+  )
+}
+
+export function StartScreen({ onStart, onTutorial, startOnTutorials = false }: { onStart: (mode: GameMode) => void; onTutorial: (id: string) => void; startOnTutorials?: boolean }) {
   const [mode, setMode] = useState<GameMode>('learn')
-  const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings' | 'guide'>(null)
+  const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings' | 'guide' | 'tutorials'>(startOnTutorials ? 'tutorials' : null)
   const progress = useRoadRulesStore((s) => s.progress)
   const certReady = hasCertificateRequirements(progress)
 
@@ -93,7 +119,10 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
             Ride a boda through Kampala and learn Uganda&apos;s road signs and rules the way they matter: every choice you make reaches your family.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-sm">
-            <button type="button" onClick={() => setPanel('guide')} className="min-h-11 rounded-full bg-[#f5c518] px-4 font-bold text-zinc-950 hover:brightness-110">
+            <button type="button" onClick={() => setPanel('tutorials')} className="min-h-11 rounded-full bg-[#f5c518] px-4 font-bold text-zinc-950 hover:brightness-110">
+              🎬 Tutorials
+            </button>
+            <button type="button" onClick={() => setPanel('guide')} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
               🏍️ How to ride
             </button>
             <button type="button" onClick={() => setPanel('book')} className="min-h-11 rounded-full bg-white/8 px-4 font-bold ring-1 ring-white/10 hover:bg-white/12">
@@ -156,6 +185,7 @@ export function StartScreen({ onStart }: { onStart: (mode: GameMode) => void }) 
         </main>
       </div>
 
+      {panel === 'tutorials' ? <TutorialsPanel onPick={onTutorial} onClose={() => setPanel(null)} /> : null}
       {panel === 'guide' ? <HowToRide onClose={() => setPanel(null)} /> : null}
       {panel === 'book' ? <RuleBook onClose={() => setPanel(null)} /> : null}
       {panel === 'quiz' ? <SignQuiz onClose={() => setPanel(null)} /> : null}

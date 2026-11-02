@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { CITY_TOTAL, ewHalf, NUM_BLOCKS, nsHalf, roadStripCenterX, roadStripCenterZ } from './cityGrid'
 import { SIDEWALK_WIDTH } from './roadSpatial'
 import { ROUNDABOUTS } from './kampalaMap'
+import { ROUNDABOUT } from '../roadRules/world/junctions'
 
 /**
  * Where grass may grow: a top-down map of the city. White is open ground; roads, pavements, buildings and paved
@@ -12,11 +13,12 @@ export const GRASS_MASK_SPAN = CITY_TOTAL + 120
 const PX = 1024
 
 type Rect = { x: number; z: number; w: number; d: number }
-const rects: Rect[] = []
+/** Keyed by rectangle, so a rebuilt city (a lost GPU context, strict mode) doesn't add them again. */
+const rects = new Map<string, Rect>()
 
 /** Keep grass off a rectangle (centre x, z; full width and depth). */
 export function excludeGrass(x: number, z: number, w: number, d: number): void {
-  rects.push({ x, z, w, d })
+  rects.set(`${x},${z},${w},${d}`, { x, z, w, d })
 }
 
 export function buildGrassMask(): THREE.Texture {
@@ -42,10 +44,10 @@ export function buildGrassMask(): THREE.Texture {
     const cx = roadStripCenterX(r.i)
     const cz = roadStripCenterZ(r.j)
     g.beginPath()
-    g.arc((cx + half) * k, (cz + half) * k, 15 * k, 0, Math.PI * 2)
+    g.arc((cx + half) * k, (cz + half) * k, (ROUNDABOUT.disc + 2) * k, 0, Math.PI * 2)
     g.fill()
   }
-  for (const r of rects) rect(r.x, r.z, r.w, r.d)
+  for (const r of rects.values()) rect(r.x, r.z, r.w, r.d)
   const t = new THREE.CanvasTexture(c)
   t.flipY = false
   t.generateMipmaps = false

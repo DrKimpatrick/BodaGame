@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { laneCentres, NUM_BLOCKS, ROAD_KIND_NS, roadStripCenterX, roadStripCenterZ, nsHalf, ewHalf, ROAD_KIND_EW } from './cityGrid.ts'
-import { computeRoute, headingForStop, headingFromYaw, leftOf, leftOfCentre, routeInstruction, type Heading, type RouteStop } from './roadRoute.ts'
-import { leftVec } from '../roadRules/world/junctions.ts'
+import { computeRoute, headingForStop, leftOfCentre, routeInstruction, type RouteStop } from './roadRoute.ts'
+import { leftVec, nearestHeading, type Heading } from '../roadRules/world/junctions.ts'
 
 const YAW: Record<Heading, number> = { S: 0, N: Math.PI, E: -Math.PI / 2, W: Math.PI / 2 }
 
@@ -16,10 +16,8 @@ test('left means the rider’s physical left, on every heading', () => {
   const forward: Record<Heading, [number, number]> = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] }
   for (const h of ['N', 'S', 'E', 'W'] as Heading[]) {
     const [fx, fz] = forward[h]
-    assert.deepEqual(leftOf(h), physicalLeft(fx, fz))
-    // The rules engine must agree with the navigation about which side is left.
     assert.deepEqual(leftVec(h), physicalLeft(fx, fz))
-    assert.equal(headingFromYaw(YAW[h]), h)
+    assert.equal(nearestHeading(YAW[h]), h)
   }
 })
 
@@ -78,11 +76,11 @@ function legOnLeft(ax: number, az: number, bx: number, bz: number): boolean | nu
   if (ns) {
     const i = Math.round((mx - roadStripCenterX(0)) / 53)
     const h: Heading = dz > 0 ? 'N' : 'S'
-    return (mx - roadStripCenterX(i)) * leftOf(h).x > 0
+    return (mx - roadStripCenterX(i)) * leftVec(h).x > 0
   }
   const j = Math.round((mz - roadStripCenterZ(0)) / 53)
   const h: Heading = dx > 0 ? 'E' : 'W'
-  return (mz - roadStripCenterZ(j)) * leftOf(h).z > 0
+  return (mz - roadStripCenterZ(j)) * leftVec(h).z > 0
 }
 
 test('routes stay in the left lane the whole way', () => {
@@ -122,6 +120,17 @@ test('routes follow roads and do not cut across city blocks', () => {
       for (let t = 0; t <= 1; t += 0.1) assert.ok(onRoad(ax + (bx - ax) * t, az + (bz - az) * t), 'route left the road')
     }
   }
+})
+
+test('facing across a road, the route still starts from the road she is on', () => {
+  const stop = stops[0]!
+  // On Kampala Rd, between junctions, turned on the spot to face along the cross streets.
+  const z = roadStripCenterZ(6) - 5
+  const x = roadStripCenterX(4) + 26
+  const r = computeRoute(x, z, YAW.N, stop)
+  // It leads along Kampala Rd, whose half width is 9 m, not off to a road through the buildings.
+  const [ax, az] = r.points[1]!
+  assert.ok(Math.abs(az - roadStripCenterZ(6)) <= ewHalf(6) && Math.abs(ax - x) < 12, `first leg went to ${ax},${az}`)
 })
 
 test('the banner says what to do, in plain words', () => {

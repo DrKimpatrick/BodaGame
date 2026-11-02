@@ -44,7 +44,7 @@ export function HowToRide({ onClose }: { onClose: () => void }) {
       <div className="mt-3 rounded-2xl border-l-4 border-[#f5c518] bg-[#f5c518]/10 p-3">
         <h3 className="font-extrabold text-white">A smooth turn, in four steps</h3>
         <ol className="mt-1 list-inside list-decimal space-y-0.5 text-sm leading-snug text-zinc-200">
-          <li><b>Before the corner:</b> let go of the accelerator and brake, down to about 20 km/h.</li>
+          <li><b>Before the corner:</b> let go of the accelerator, then brake, down to about 20 km/h.</li>
           <li><b>Turn in:</b> release the brake, then hold the steering steadily.</li>
           <li><b>Through it:</b> look at your exit and keep left of the road you are joining.</li>
           <li><b>Coming out:</b> straighten up, then accelerate gently.</li>

@@ -191,7 +191,7 @@ export function headGeometry(radial = 12, rings = 9): THREE.BufferGeometry {
     const nz = pos.getZ(i)
     // Narrow the jaw, round the chin forward, flatten the cheeks slightly.
     const jaw = ny < 0 ? 1 - 0.34 * ny * ny : 1
-    let x = nx * W * jaw
+    const x = nx * W * jaw
     const y = ny * H
     let z = nz * D * (ny < 0 ? 1 - 0.12 * ny * ny : 1)
     // Nose and brow, only on the face
@@ -201,7 +201,6 @@ export function headGeometry(radial = 12, rings = 9): THREE.BufferGeometry {
       const brow = Math.exp(-((ny - 0.2) * (ny - 0.2) * 60)) * (1 - nx * nx)
       z += brow * 0.006
     }
-    x *= 1
     pos.setXYZ(i, x, y, z)
     if (nz >= -0.05) {
       // Canvas y runs downward and the texture isn't flipped, so v grows towards the chin.

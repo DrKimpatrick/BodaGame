@@ -4,8 +4,8 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-11-02 (end of session 8). All work through session 8 is committed on `main`; sessions 6, 7 and 8
-are not pushed. Commit before starting anything big.
+**Last updated:** 2026-11-02 (end of session 9). All work through session 9 is committed on `main`; sessions 6 to 9 are
+not pushed. Commit before starting anything big.
 
 **Done and verified in the browser**
 - Rules engine (`src/roadRules/engine.ts`), 29 scenarios (`src/roadRules/data/scenarios.json`), live rules
@@ -180,7 +180,7 @@ are not pushed. Commit before starting anything big.
   in the dev console, that's React strict mode remounting the canvas; it doesn't happen in production.
 - Keep left: `src/game/roadRoute.ts` replaces the old L-shaped route, which went straight through buildings. It follows
   roads in the left lane, reaches every stop with it on the left, goes clockwise round roundabouts, and gives
-  turn-by-turn text. Tests in `roadRoute.test.ts` (27 in `test:rules`). In the running game, 472 samples of vehicles on
+  turn-by-turn text. Tests in `roadRoute.test.ts`. In the running game, 472 samples of vehicles on
   straight road: all on the left.
 - Lesson: `ui/RidingLesson.tsx` + `lessonDiagrams.tsx`, 11 steps. Each explains with the world frozen, then the player
   practises with live correction, then gets feedback. No timers. `lessonGate` (telemetry) keeps cards off during the
@@ -197,6 +197,24 @@ are not pushed. Commit before starting anything big.
 - Look: stronger warmer sun, new asphalt grey, proper road humps, contact shadows on `low`.
 - Testing gotcha: a hidden pane throttles frames to under 1 fps. Drive frames with `advance()` from the fiber module
   (find its URL in `performance.getEntriesByType('resource')`); timing then measures main-thread work, not the GPU.
+
+**Session 9 (2026-11-02): review, and showing riders first**
+- Reviewed everything since the handover began; 26 findings, all fixed. The ones players would notice: all traffic was
+  rendering white (tint check tested `emissiveIntensity === 0`, default 1), pausing reset the lesson to step 1 (now it
+  stays mounted with a `paused` prop), the anti-gridlock timer never released, cards and pauses reset adaptive resolution
+  (`<Canvas>` no longer re-renders: `FreezeFrames` sets the frame loop from a child, and `GameCanvas` is memoised), the
+  route line leaked GPU buffers (now a fixed-buffer mesh in `JobRouteGuide`), and spawn sat on a hump and zebra.
+- Demonstrations: `roadRules/lessonDemos.ts` defines nine (path + phases with caption and pedals); `DemoPilot` rides them
+  through the same controls a player uses (`pilot` in `driveInput.ts`); `roadRules/demoRun.ts` holds the running one.
+  The bike returns to where it was afterwards, and nothing counts (`lessonGate.demo`: no fuel, wear or jobs). Each lesson
+  step goes explain → watch → try. `lessonDemos.test.ts` rides every demo on the bike's real handling (`game/bikeHandling.ts`):
+  finishes, stays on the line, keeps left, clockwise, clear of the island, stops at the light.
+- Tutorials: start screen → Tutorials (`roadRules/tutorials.ts`) opens one skill on its own, using the same lesson code.
+- Gotcha: never move the bike while the world is frozen. Un-freezing re-renders `GameScene`, and the physics wrapper puts
+  the body back where it last synced. `bikeCommand.teleport` waits until the world is running.
+- Verified in the running game: all nine demos complete on real physics, with no collisions after the clear-start wait
+  (the roundabout closes to 8.3 m from the centre, island 5.2 m). Bike, fuel, condition and job unchanged afterwards.
+  Tests 49/49, `tsc` and `npm run build` pass. Lint: only older findings remain (see session 7).
 
 **Next (in priority order)**
 1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are the
@@ -231,7 +249,7 @@ are not pushed. Commit before starting anything big.
 | Settings | `src/store/useSettingsStore.ts` | Quality (auto-detected), camera, timer, gentle mode, voice, sound. |
 | 3D scene | `src/components/GameScene.tsx` | Weather lighting, rain, monitor. |
 | UI | `src/components/ui/*` | Mobile-first, Tailwind v4. |
-| Input | `src/input/driveInput.ts` | Keyboard + touch merged; actions L / V / H / M / ? / Esc; `inputGate`. |
+| Input | `src/input/driveInput.ts` | Keyboard + touch merged, or `pilot` during a demo; actions L / V / H / M / ? / Esc; `inputGate`. |
 
 ## Decisions and constraints
 
