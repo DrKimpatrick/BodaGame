@@ -30,7 +30,7 @@ import {
   mustYield,
   signalAspect,
 } from '../roadRules/world/junctions'
-import { bikeTelemetry, trafficTelemetry, worldClock } from '../roadRules/world/telemetry'
+import { bikeTelemetry, lessonGate, trafficTelemetry, worldClock } from '../roadRules/world/telemetry'
 
 const X0 = CITY_START
 const Z0 = CITY_START
@@ -813,6 +813,8 @@ function nextJunctionIndex(a: Agent): number {
  * with ordinary braking, so she can really be knocked; otherwise they brake as hard as it takes.
  */
 function riderAtFault(a: Agent, vAlong: number, vLat: number, jn: ReturnType<typeof junctionAt> | null, t: number): boolean {
+  // A learner who hasn't been taught the rules yet is always protected.
+  if (lessonGate.rulesOff) return false
   if (vAlong < -1.5) return true
   if (!jn || Math.abs(vLat) < 2 || Math.abs(vLat) < Math.abs(vAlong)) return false
   const myAxis = axisOf(a.heading)

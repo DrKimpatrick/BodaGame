@@ -2,7 +2,7 @@ import { CuboidCollider, RigidBody } from '@react-three/rapier'
 import type { ReactElement } from 'react'
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { asphaltTexture, humpTexture, murramTexture } from './realism/textures'
+import { asphaltTexture, murramTexture } from './realism/textures'
 import {
   CITY_START,
   CITY_TOTAL,
@@ -95,8 +95,8 @@ const mats = (() => {
   kerbTex.wrapS = kerbTex.wrapT = THREE.RepeatWrapping
   kerbTex.repeat.set(1, 12)
   return {
-    tarmac: new THREE.MeshStandardMaterial({ map: tarmacTex, color: '#9a9a9a', roughness: 0.9 }),
-    worn: new THREE.MeshStandardMaterial({ map: createWornTarmacTexture(), color: '#b0aca6', roughness: 0.95 }),
+    tarmac: new THREE.MeshStandardMaterial({ map: tarmacTex, color: '#ffffff', roughness: 0.92 }),
+    worn: new THREE.MeshStandardMaterial({ map: createWornTarmacTexture(), color: '#ffffff', roughness: 0.96 }),
     murram: new THREE.MeshStandardMaterial({ map: murramTex, color: '#d8c1ac', roughness: 1 }),
     shoulder: new THREE.MeshStandardMaterial({ map: shoulderTex, color: '#c9b6a6', roughness: 0.96 }),
     kerb: new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }),
@@ -115,7 +115,6 @@ const mats = (() => {
       polygonOffsetUnits: -1,
     }),
     zebra: new THREE.MeshBasicMaterial({ color: '#f2f2f0', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1.5, polygonOffsetUnits: -1 }),
-    hump: new THREE.MeshStandardMaterial({ map: humpTexture(), roughness: 0.8 }),
     potholeDeep: new THREE.MeshStandardMaterial({ color: '#1b1814', roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
     potholeRim: new THREE.MeshStandardMaterial({ color: '#3b3732', roughness: 0.96, polygonOffset: true, polygonOffsetFactor: -0.8, polygonOffsetUnits: -1 }),
   }
@@ -394,19 +393,34 @@ function Zebras() {
   return <>{items}</>
 }
 
+/** A real road hump: a low rounded bar right across the road, in weathered yellow and tarmac stripes. */
+const humpGeometry = new THREE.CylinderGeometry(1, 1, 2, 10, 1, true, 0, Math.PI).rotateZ(Math.PI / 2)
+const humpStripes = (() => {
+  const c = document.createElement('canvas')
+  c.width = 16
+  c.height = 64
+  const g = c.getContext('2d')!
+  g.fillStyle = '#2c2c2e'
+  g.fillRect(0, 0, 16, 64)
+  g.fillStyle = '#b89a2e'
+  g.fillRect(0, 0, 16, 32)
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(1, 7)
+  t.colorSpace = THREE.SRGBColorSpace
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 })
+})()
+
 function Humps() {
   const { vertical, horizontal } = useMemo(() => listSpeedHumpSites(), [])
+  // Sites give 80% of the road's half width (the ride effect fades there); the bar itself reaches the kerbs.
   return (
     <>
       {vertical.map((h) => (
-        <mesh key={h.key} position={[h.cx, ROAD_TOP_Y + HUMP_HALF_H, h.z]} scale={[h.ax, HUMP_HALF_H, HUMP_ALONG]} material={mats.hump} castShadow receiveShadow>
-          <sphereGeometry args={[1, 10, 5]} />
-        </mesh>
+        <mesh key={h.key} geometry={humpGeometry} position={[h.cx, ROAD_TOP_Y, h.z]} scale={[h.ax / 0.8, HUMP_HALF_H * 1.4, HUMP_ALONG]} material={humpStripes} castShadow receiveShadow />
       ))}
       {horizontal.map((h) => (
-        <mesh key={h.key} position={[h.x, ROAD_TOP_Y + HUMP_HALF_H, h.cz]} scale={[HUMP_ALONG, HUMP_HALF_H, h.ax]} material={mats.hump} castShadow receiveShadow>
-          <sphereGeometry args={[1, 10, 5]} />
-        </mesh>
+        <mesh key={h.key} geometry={humpGeometry} position={[h.x, ROAD_TOP_Y, h.cz]} rotation={[0, Math.PI / 2, 0]} scale={[h.ax / 0.8, HUMP_HALF_H * 1.4, HUMP_ALONG]} material={humpStripes} castShadow receiveShadow />
       ))}
     </>
   )

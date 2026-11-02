@@ -41,6 +41,7 @@ import { Roundabouts } from './realism/Roundabouts'
 import { KampalaLandmarks } from './realism/Landmarks'
 import { VehicleModel } from './realism/Vehicles'
 import { BodaStages } from './realism/StreetLife'
+import { excludeGrass } from '../game/grassMask'
 import { CHANNEL, CHANNEL_BLOCKS, forcedShopEdges, isLandmarkBlock } from '../game/kampalaMap'
 import { NakivuboChannel } from './realism/Channel'
 import { ClockTowerFlyover } from './realism/Flyover'
@@ -223,29 +224,12 @@ export function NSSFGlassTower() {
     <group>
       <mesh position={[0, 10.5, 0]} castShadow receiveShadow>
         <boxGeometry args={[5.2, 21, 4.8]} />
-        <meshPhysicalMaterial
-          color="#0284c7"
-          metalness={0.93}
-          roughness={0.1}
-          transparent
-          opacity={0.94}
-          transmission={0.38}
-          thickness={0.55}
-          envMapIntensity={1.35}
-        />
+        <meshStandardMaterial color="#0284c7" metalness={0.93} roughness={0.1} transparent opacity={0.94} envMapIntensity={1.35} />
       </mesh>
       <GlassTowerMullions width={5.2} height={21} depth={4.8} centerY={10.5} />
       <mesh position={[-2.9, 9, 0.4]} rotation={[0, 0.2, 0]} castShadow>
         <boxGeometry args={[2.4, 17, 3.6]} />
-        <meshPhysicalMaterial
-          color="#0ea5e9"
-          metalness={0.9}
-          roughness={0.14}
-          transmission={0.28}
-          thickness={0.45}
-          transparent
-          opacity={0.92}
-        />
+        <meshStandardMaterial color="#0ea5e9" metalness={0.9} roughness={0.14} transparent opacity={0.92} />
       </mesh>
       <NSSFRoofSign y={22.2} />
     </group>
@@ -602,22 +586,30 @@ function CityMapContent() {
 
   const groundGeo = useMemo(() => buildGroundGeometry(), [])
 
-  const groundMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        map: (() => {
-          const t = grassTexture().clone()
-          const span = CITY_TOTAL + GROUND_MARGIN
-          t.repeat.set(span / 9, span / 9)
-          t.needsUpdate = true
-          return t
-        })(),
-        color: '#ffffff',
-        roughness: 0.94,
-        metalness: 0.02,
-      }),
-    [],
-  )
+  const groundMat = useMemo(() => {
+    const span = CITY_TOTAL + GROUND_MARGIN
+    const t = grassTexture().clone()
+    t.repeat.set(span / 12, span / 12)
+    t.needsUpdate = true
+    const m = new THREE.MeshStandardMaterial({ map: t, color: '#ffffff', roughness: 0.96, metalness: 0 })
+    // Large soft patches of lusher and drier ground, so the repeating texture doesn't read as a pattern.
+    m.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;')
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
+        .replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+          float gBroad = sin(vGroundXZ.x * 0.031 + 1.3) * sin(vGroundXZ.y * 0.027) + 0.5 * sin(vGroundXZ.x * 0.083) * sin(vGroundXZ.y * 0.071 + 2.1);
+          float gFine = sin(vGroundXZ.x * 0.27 + gBroad) * sin(vGroundXZ.y * 0.23);
+          diffuseColor.rgb *= 0.9 + 0.13 * gBroad + 0.05 * gFine;
+          diffuseColor.r += 0.02 * max(0.0, gBroad);`,
+        )
+    }
+    return m
+  }, [])
 
   const concreteMat = useMemo(
     () =>
@@ -682,6 +674,7 @@ function CityMapContent() {
           w: xMax - xMin,
           d: zMax - zMin,
         })
+        excludeGrass(bcx, bcz, (xMax - xMin) * 0.9, (zMax - zMin) * 0.9)
       }
     }
     return lots
@@ -702,6 +695,7 @@ function CityMapContent() {
     for (let i = 0; i < NUM_BLOCKS; i++) {
       for (let j = 0; j < NUM_BLOCKS; j++) {
         const [bcx, bcz] = blockCenter(i, j)
+        if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP) excludeGrass(bcx, bcz, 34, 34)
         if (forcedShopEdges(i, j)) {
           for (const lot of shopRowsForBlock(i, j)) {
             shopLots.push(lot)
@@ -716,6 +710,7 @@ function CityMapContent() {
           const fw = 10 + rnd(i, j, 19) * 4
           const fd = 9 + rnd(i, j, 20) * 3
           if (footprintClearOfTarmac(bcx, bcz, fw / 2, fd / 2, 0)) {
+            excludeGrass(bcx, bcz, 30, 30)
             const lotSlots = 3 + Math.floor(rnd(i, j, 301) * 3)
             const lotX = bcx + (rnd(i, j, 302) < 0.5 ? 6.4 : -6.4)
             const lotZ = bcz + (rnd(i, j, 303) - 0.5) * 3.2
@@ -806,6 +801,7 @@ function CityMapContent() {
     }
 
     const bounds = shopLots.map(lotBounds)
+    for (const b of bounds) excludeGrass((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2, b.maxX - b.minX + 1.5, b.maxZ - b.minZ + 1.5)
     const clearOfShops = (x: number, z: number) =>
       !bounds.some((b) => x > b.minX - 1.6 && x < b.maxX + 1.6 && z > b.minZ - 1.6 && z < b.maxZ + 1.6)
     const blockOf = (c: number) => Math.floor((c - CITY_START - ROAD_W) / (BLOCK + ROAD_W))
@@ -876,7 +872,7 @@ function CityMapContent() {
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat} geometry={groundGeo} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat} geometry={groundGeo} userData={{ dynamic: true }} />
 
       {concreteLots.map((lot, idx) => (
         <mesh

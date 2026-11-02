@@ -1,26 +1,25 @@
 import type { ReactNode } from 'react'
 import * as THREE from 'three'
 
-/** Shared materials — one instance each, safe for many buildings. */
-export const sharedWindowGlass = new THREE.MeshPhysicalMaterial({
+/**
+ * Shared materials — one instance each, safe for many buildings. Never use `transmission` here or anywhere in the
+ * city: one transmissive material makes three.js render the whole scene a second time, every frame.
+ */
+export const sharedWindowGlass = new THREE.MeshStandardMaterial({
   color: '#b4cde8',
   metalness: 0.22,
   roughness: 0.14,
-  transmission: 0.45,
-  thickness: 0.1,
   transparent: true,
   opacity: 0.88,
   envMapIntensity: 1.05,
 })
 
-export const sharedWindowGlassLit = new THREE.MeshPhysicalMaterial({
+export const sharedWindowGlassLit = new THREE.MeshStandardMaterial({
   color: '#f0e6a8',
   metalness: 0.08,
   roughness: 0.22,
   emissive: '#2a2410',
   emissiveIntensity: 0.35,
-  transmission: 0.28,
-  thickness: 0.08,
   transparent: true,
   opacity: 0.82,
   envMapIntensity: 0.65,

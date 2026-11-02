@@ -26,7 +26,7 @@ import { playChime, playThud, playWhistle } from '../roadRules/fx/sfx'
 import { speak } from '../roadRules/fx/speech'
 import { LIVE_RULES, type LiveRuleId } from '../roadRules/liveRules'
 import { SCENARIOS } from '../roadRules/scenarios'
-import { worldClock } from '../roadRules/world/telemetry'
+import { lessonGate, worldClock } from '../roadRules/world/telemetry'
 import { useGameStore, type Weather } from './useGameStore'
 
 /**
@@ -128,6 +128,8 @@ type Store = {
 }
 
 let toastId = 1
+/** Rules this learner has already been stopped and taught about this session. */
+const explainedRules = new Set<LiveRuleId>()
 
 function setFreeze(on: boolean) {
   useGameStore.getState().setHudModalFreezesWorld(on)
@@ -244,11 +246,7 @@ export const useRoadRulesStore = create<Store>((set, get) => {
         lastDeliveryCount: useGameStore.getState().rideCompletedDeliveries,
       })
       setFreeze(false)
-      if (mode === 'learn') {
-        speak(
-          'Hello, I am Mama Sarah, your riding instructor. Pick up your passenger, keep left, and watch the signs. I will warn you before each junction.',
-        )
-      }
+      explainedRules.clear()
     },
 
     quit: () => {
@@ -258,7 +256,7 @@ export const useRoadRulesStore = create<Store>((set, get) => {
 
     presentCard: (triggers) => {
       const s = get()
-      if (!s.rr || s.overlay || s.encountersThisShift >= ENCOUNTERS_PER_SHIFT) return false
+      if (!s.rr || s.overlay || lessonGate.active || s.encountersThisShift >= ENCOUNTERS_PER_SHIFT) return false
       if (useGameStore.getState().hudModalFreezesWorld) return false
       const sc = pickScenario(SCENARIOS, s.progress.srs, new Set(s.usedThisShift), triggers, Math.random)
       if (!sc) return false
@@ -309,7 +307,7 @@ export const useRoadRulesStore = create<Store>((set, get) => {
 
     reportViolation: (id) => {
       const s = get()
-      if (!s.rr || s.overlay) return
+      if (!s.rr || s.overlay || lessonGate.rulesOff) return
       const t = worldClock.t
       const last = s.ruleCooldown[id]
       if (last != null && t - last < RULE_COOLDOWN_S) return
@@ -330,6 +328,14 @@ export const useRoadRulesStore = create<Store>((set, get) => {
         speak(`${rule.outcome} ${rule.rule}`)
         return
       }
+      // A learner's first mistake of each kind stops the road, so there is time to understand what happened.
+      if (learner && !explainedRules.has(id)) {
+        explainedRules.add(id)
+        set({ overlay: { type: 'result', title: rule.name, sign: rule.sign, outcome, pendingJail: 0 } })
+        setFreeze(true)
+        speak(`Let us stop here. ${rule.rule}`)
+        return
+      }
       pushToast({
         tone: 'bad',
         title: learner ? `Mama Sarah: ${rule.name}` : rule.name,
@@ -343,7 +349,7 @@ export const useRoadRulesStore = create<Store>((set, get) => {
 
     reportGoodMove: (id) => {
       const s = get()
-      if (!s.rr || s.overlay) return
+      if (!s.rr || s.overlay || lessonGate.rulesOff) return
       const rule = LIVE_RULES[id]
       const { state, earned } = resolveGoodMove(withWallet(s.rr))
       syncWallet(state.cash, `Good riding: ${rule.name}`)
@@ -357,7 +363,7 @@ export const useRoadRulesStore = create<Store>((set, get) => {
     },
 
     hint: (text, sign) => {
-      if (!get().rr || get().overlay) return
+      if (!get().rr || get().overlay || lessonGate.rulesOff) return
       pushToast({ tone: 'hint', title: 'Mama Sarah', body: text, sign })
       speak(text)
     },

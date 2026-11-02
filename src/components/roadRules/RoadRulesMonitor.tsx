@@ -195,7 +195,8 @@ export function RoadRulesMonitor() {
             ap.minKmh = Math.min(ap.minKmh, kmh)
             if (jn.control === 'signal' && signalAspect(jn, axis, t) !== 'green') ap.sawRed = true
           }
-          if (learner && !ap.hinted && d > 0 && d < 24 && forward) {
+          // Warn early enough to read and react: about five seconds out at the current speed.
+          if (learner && !ap.hinted && d > 0 && d < Math.max(24, Math.min(50, b.speed * 5)) && forward) {
             ap.hinted = true
             if (jn.control === 'roundabout') {
               store.hint(`${jn.name ?? 'Roundabout'} roundabout ahead. Give way to traffic from your right, then go round clockwise.`, 'roundabout')
@@ -261,7 +262,7 @@ export function RoadRulesMonitor() {
             const dz = zb.along - along
             const ahead = h === 'N' || h === 'E' ? dz : -dz
             if (Math.abs(dz) < 1 && kmh > ZEBRA_MAX_KMH) store.reportViolation('zebra')
-            if (learner && ahead > 4 && ahead < 14 && t - hinted.current.zebraAt > 25 && forward) {
+            if (learner && ahead > 4 && ahead < Math.max(14, Math.min(40, b.speed * 4)) && t - hinted.current.zebraAt > 25 && forward) {
               hinted.current.zebraAt = t
               store.hint(LIVE_RULES.zebra.hint!, 'zebra')
             }

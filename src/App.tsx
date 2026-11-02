@@ -7,6 +7,7 @@ import { ImpactFlash } from './components/ui/ImpactFlash'
 import { StageSheet } from './components/ui/StageSheet'
 import { MuteButton } from './components/ui/MuteButton'
 import { HowToRide } from './components/ui/RideGuide'
+import { RidingLesson } from './components/ui/RidingLesson'
 import { PauseMenu, StartScreen } from './components/ui/StartScreen'
 import { TouchControls } from './components/ui/TouchControls'
 import { useGameRootButtonClickSound } from './hooks/useGameRootButtonClickSound'
@@ -59,6 +60,8 @@ export default function App() {
   const start = useRoadRulesStore((s) => s.start)
   const overlay = useRoadRulesStore((s) => s.overlay)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [lessonModal, setLessonModal] = useState(false)
+  const mode = useRoadRulesStore((s) => s.mode)
   const musicOn = useSettingsStore((s) => s.music && !s.muted)
   const effectsOn = useSettingsStore((s) => s.sound && !s.muted)
   const muted = useSettingsStore((s) => s.muted)
@@ -109,16 +112,17 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'playing') return
     const g = useGameStore.getState()
-    if (paused || stageOpen || guideOpen) g.setHudModalFreezesWorld(true)
+    if (paused || stageOpen || guideOpen || lessonModal) g.setHudModalFreezesWorld(true)
     else if (!useRoadRulesStore.getState().overlay) g.setHudModalFreezesWorld(false)
-  }, [paused, stageOpen, guideOpen, phase])
+  }, [paused, stageOpen, guideOpen, lessonModal, phase])
 
   // New riders see how the controls work before their first ride.
   useEffect(() => {
-    if (phase !== 'playing' || overlay || guideSeen()) return
+    // The lesson teaches all of this itself, one step at a time.
+    if (phase !== 'playing' || overlay || mode === 'learn' || guideSeen()) return
     const id = setTimeout(() => setGuideOpen(true), 0)
     return () => clearTimeout(id)
-  }, [phase, overlay])
+  }, [phase, overlay, mode])
 
   const closeGuide = () => {
     try {
@@ -132,10 +136,10 @@ export default function App() {
   // Riding keys act only while actually riding, so Space and the arrows still work on buttons and menus.
   useEffect(() => {
     installKeyboard()
-    const riding = phase === 'playing' && !paused && !stageOpen && !guideOpen && !overlay
+    const riding = phase === 'playing' && !paused && !stageOpen && !guideOpen && !lessonModal && !overlay
     inputGate.riding = riding
     if (!riding) releaseAll()
-  }, [phase, paused, stageOpen, guideOpen, overlay])
+  }, [phase, paused, stageOpen, guideOpen, lessonModal, overlay])
 
   useEffect(() => setWebAudioMuted(!effectsOn), [effectsOn])
 
@@ -216,11 +220,12 @@ export default function App() {
         <>
           <ImpactFlash />
           <GameHud onPause={() => setPaused(true)} onOpenStage={() => setStageOpen(true)} onHelp={() => setGuideOpen(true)} />
-          {!overlay && !paused && !stageOpen && !guideOpen ? <TouchControls /> : null}
+          {!overlay && !paused && !stageOpen && !guideOpen && !lessonModal ? <TouchControls /> : null}
           <GameOverlays onMenu={toMenu} />
           {stageOpen && !overlay ? <StageSheet onClose={() => setStageOpen(false)} /> : null}
           {paused && !overlay ? <PauseMenu onResume={() => setPaused(false)} onMenu={toMenu} /> : null}
           {guideOpen && !overlay && !paused ? <HowToRide onClose={closeGuide} /> : null}
+          {mode === 'learn' && !paused ? <RidingLesson onModalChange={setLessonModal} /> : null}
         </>
       ) : null}
     </div>

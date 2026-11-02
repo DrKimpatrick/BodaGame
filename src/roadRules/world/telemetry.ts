@@ -37,6 +37,18 @@ export const trafficTelemetry = {
   yaw: new Float32Array(128),
 }
 
+/** The learner's lesson: while it runs, cards stay away, and rules stay off until they have been taught. */
+export const lessonGate = { active: false, rulesOff: false }
+
+/** What the on-road route says next (written by JobRouteGuide, read by the HUD a few times a second). */
+export const routeTelemetry = {
+  /** The lesson keeps the route off until it has been explained. */
+  hidden: false,
+  step: null as null | { action: 'left' | 'right' | 'roundabout' | 'arrive' | 'turnaround'; distance: number; road: string },
+  length: 0,
+  stopName: '',
+}
+
 export type CollisionKind = 'pedestrian' | 'vehicle' | 'building'
 
 type CollisionListener = (kind: CollisionKind) => void

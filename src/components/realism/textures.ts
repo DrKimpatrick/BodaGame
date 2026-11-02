@@ -78,21 +78,21 @@ export function grassTexture(): THREE.CanvasTexture {
   return makeTexture('grass', 512, (img, s) => {
     for (let y = 0; y < s; y++) {
       for (let x = 0; x < s; x++) {
-        const n = fbm(x, y, s, 4, 5, 1)
+        const clump = fbm(x, y, s, 5, 4, 1)
+        // Fine directional streaks, like blades seen from above, rather than speckle.
+        const blades = fbm(x, y * 0.28, s, 48, 3, 3)
+        const cross = fbm(x * 0.28, y, s, 48, 2, 5)
         const fine = hash(x, y, 9)
-        const blades = fbm(x, y, s, 64, 2, 3)
-        const soil = Math.max(0, fbm(x, y, s, 3, 4, 7) - 0.58) * 4
-        let r = 62 + n * 40 + blades * 25
-        let g = 92 + n * 55 + blades * 35
-        let b = 38 + n * 20
-        // Dry yellowish tufts
-        if (fine > 0.93) {
-          r += 35
-          g += 25
-        }
-        r = r * (1 - soil) + (138 + n * 30) * soil
-        g = g * (1 - soil) + (78 + n * 20) * soil
-        b = b * (1 - soil) + (48 + n * 12) * soil
+        const soil = Math.max(0, fbm(x, y, s, 7, 4, 7) - 0.66) * 5
+        const dry = Math.max(0, fbm(x, y, s, 9, 3, 11) - 0.5) * 1.6
+        const light = 0.72 + clump * 0.32 + (blades + cross) * 0.22 + (fine - 0.5) * 0.09
+        let r = (58 + dry * 62) * light
+        let g = (92 + dry * 26) * light
+        let b = (40 + dry * 6) * light
+        const k = Math.min(1, soil)
+        r = r * (1 - k) + (112 + clump * 26) * k
+        g = g * (1 - k) + (84 + clump * 18) * k
+        b = b * (1 - k) + (56 + clump * 12) * k
         put(img, (y * s + x) * 4, r, g, b)
       }
     }
@@ -107,10 +107,11 @@ export function asphaltTexture(): THREE.CanvasTexture {
         const n = fbm(x, y, s, 6, 5, 21)
         const speck = hash(x, y, 22)
         const patch = fbm(x, y, s, 2, 3, 23)
-        let v = 52 + n * 28
-        if (speck > 0.9) v += 30 * (speck - 0.9) * 10
-        if (speck < 0.05) v -= 14
-        if (patch > 0.68) v -= 12 // fresher tar patches
+        // Weathered grey tarmac: aged binder with lighter stone showing through, not fresh black.
+        let v = 74 + n * 30
+        if (speck > 0.9) v += 34 * (speck - 0.9) * 10
+        if (speck < 0.05) v -= 16
+        if (patch > 0.68) v -= 15 // fresher tar patches
         put(img, (y * s + x) * 4, v, v, v + 3)
       }
     }

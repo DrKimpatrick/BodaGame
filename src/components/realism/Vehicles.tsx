@@ -125,7 +125,7 @@ function Wheel({ x, z, r = 0.32, w = 0.2 }: { x: number; z: number; r?: number; 
   return (
     <group position={[x, r, z]}>
       <mesh rotation={[0, Math.PI / 2, 0]} material={M.rubber} castShadow>
-        <torusGeometry args={[r * 0.72, r * 0.28, 5, 12]} />
+        <torusGeometry args={[r * 0.72, r * 0.28, 4, 9]} />
       </mesh>
       <mesh rotation={[0, 0, Math.PI / 2]} position={[Math.sign(x) * w * 0.25, 0, 0]} material={M.rim}>
         <cylinderGeometry args={[r * 0.5, r * 0.5, w * 0.6, 8]} />

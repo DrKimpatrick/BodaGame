@@ -1,13 +1,11 @@
 import { useFrame } from '@react-three/fiber'
 import { type RefObject, useLayoutEffect, useMemo, useRef } from 'react'
-import * as THREE from 'three'
 import type { RapierRigidBody } from '@react-three/rapier'
-import { Line2, LineGeometry, LineMaterial } from 'three-stdlib'
-import {
-  manhattanRoutePoints,
-  stickyPickManhattanOrder,
-  type RideManhattanOrder,
-} from '@game/passengerJobs'
+import { Line2 } from 'three/examples/jsm/lines/Line2.js'
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
+import { computeRoute } from '@game/roadRoute'
+import { bikeTelemetry, routeTelemetry } from '../roadRules/world/telemetry'
 import { useGameStore } from '../store/useGameStore'
 
 /** Slightly above road top (~0.06) so the stroke clears tarmac without z-fighting. */
@@ -39,8 +37,8 @@ function routeLineMaterial(
 }
 
 /**
- * L-shaped route on the ground from bike to current job target (pickup or drop-off).
- * Leg order follows bike facing and switches when the other axis is a clearly better match (re-route).
+ * The way to the current job target, drawn on the road: follows the streets in the left lane (see `roadRoute.ts`),
+ * refreshed a few times a second. Publishes the next instruction for the HUD.
  */
 export function JobRouteGuide({
   rigidBodyRef,
@@ -48,14 +46,8 @@ export function JobRouteGuide({
   rigidBodyRef: RefObject<RapierRigidBody | null>
 }) {
   const lineGeom = useMemo(() => new LineGeometry(), [])
-  const matPickup = useMemo(
-    () => routeLineMaterial(0xdc2626, 0.52, 0.26, 0.4),
-    [],
-  )
-  const matDropoff = useMemo(
-    () => routeLineMaterial(0x1d4ed8, 0.6, 0.48, 0.32),
-    [],
-  )
+  const matPickup = useMemo(() => routeLineMaterial(0xef4444, 0.34, 0.9, 0.7), [])
+  const matDropoff = useMemo(() => routeLineMaterial(0x3b82f6, 0.34, 0.9, 0.7), [])
 
   const linePickup = useMemo(() => {
     const ln = new Line2(lineGeom, matPickup)
@@ -72,12 +64,7 @@ export function JobRouteGuide({
     return ln
   }, [lineGeom, matDropoff])
 
-  const flatPos = useRef(new Float32Array(9))
-
-  const orderRef = useRef<RideManhattanOrder>('xFirst')
-  const navKeyRef = useRef('')
-  const quatTmp = useMemo(() => new THREE.Quaternion(), [])
-  const forwardTmp = useMemo(() => new THREE.Vector3(), [])
+  const refreshIn = useRef(0)
 
   useLayoutEffect(() => {
     return () => {
@@ -87,65 +74,34 @@ export function JobRouteGuide({
     }
   }, [lineGeom, matPickup, matDropoff])
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     const job = useGameStore.getState().rideJob
     const rb = rigidBodyRef.current
-    if (!job || !rb) {
+    if (!job || !rb || routeTelemetry.hidden) {
       linePickup.visible = false
       lineDropoff.visible = false
+      routeTelemetry.step = null
       return
     }
+    linePickup.visible = job.phase === 'pickup'
+    lineDropoff.visible = job.phase !== 'pickup'
+    refreshIn.current -= delta
+    if (refreshIn.current > 0) return
+    refreshIn.current = 0.12
     const t = rb.translation()
-    const tx = job.phase === 'pickup' ? job.pickup.x : job.dropoff.x
-    const tz = job.phase === 'pickup' ? job.pickup.z : job.dropoff.z
-
-    const navKey = `${job.phase}-${tx.toFixed(2)}-${tz.toFixed(2)}`
-    if (navKey !== navKeyRef.current) {
-      navKeyRef.current = navKey
-      orderRef.current = 'xFirst'
-    }
-
-    const q = rb.rotation()
-    quatTmp.set(q.x, q.y, q.z, q.w)
-    forwardTmp.set(0, 0, -1).applyQuaternion(quatTmp)
-    const hx = forwardTmp.x
-    const hz = forwardTmp.z
-
-    const nextOrder = stickyPickManhattanOrder(
-      t.x,
-      t.z,
-      tx,
-      tz,
-      hx,
-      hz,
-      orderRef.current,
-    )
-    if (nextOrder !== orderRef.current) {
-      orderRef.current = nextOrder
-    }
-    const st = useGameStore.getState()
-    if (st.rideJobRouteOrder !== orderRef.current) {
-      useGameStore.setState({ rideJobRouteOrder: orderRef.current })
-    }
-
-    const pts = manhattanRoutePoints(t.x, t.z, tx, tz, ROUTE_Y, orderRef.current)
-    const fp = flatPos.current
-    let i = 0
-    for (const p of pts) {
-      fp[i++] = p[0]
-      fp[i++] = p[1]
-      fp[i++] = p[2]
-    }
-    lineGeom.setPositions(fp.subarray(0, pts.length * 3))
-    linePickup.computeLineDistances()
-
-    if (job.phase === 'pickup') {
-      linePickup.visible = true
-      lineDropoff.visible = false
-    } else {
-      linePickup.visible = false
-      lineDropoff.visible = true
-    }
+    const stop = job.phase === 'pickup' ? job.pickup : job.dropoff
+    const route = computeRoute(t.x, t.z, bikeTelemetry.yaw, stop)
+    routeTelemetry.step = route.next
+    routeTelemetry.length = route.length
+    routeTelemetry.stopName = stop.name
+    const fp = new Float32Array(route.points.length * 3)
+    route.points.forEach(([x, z], i) => {
+      fp[i * 3] = x
+      fp[i * 3 + 1] = ROUTE_Y
+      fp[i * 3 + 2] = z
+    })
+    lineGeom.setPositions(fp)
+    ;(job.phase === 'pickup' ? linePickup : lineDropoff).computeLineDistances()
   })
 
   return (

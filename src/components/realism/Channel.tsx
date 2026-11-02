@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { CuboidCollider, RigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import { blockCenter } from '../../game/cityGrid'
+import { excludeGrass } from '../../game/grassMask'
 import { CHANNEL, CHANNEL_BLOCKS } from '../../game/kampalaMap'
 import { segmentRandom } from '../../game/roadDecorPlacements'
 import { nameSign } from './nameSign'
@@ -15,6 +16,12 @@ import { StandingHuman } from './Nature'
 
 const { halfLength: L, halfWidth: W, depth: D } = CHANNEL
 const WATER_Y = -D + 0.7
+
+for (const { i, j } of CHANNEL_BLOCKS) {
+  const [x, z] = blockCenter(i, j)
+  excludeGrass(x, z, 2 * L + 1, 2 * W + 6)
+  for (const kx of [-13, 13]) excludeGrass(x + kx, z - 13.5, 4, 3.5)
+}
 
 function canvasTexture(size: number, draw: (g: CanvasRenderingContext2D) => void, repeat: [number, number]) {
   const c = document.createElement('canvas')

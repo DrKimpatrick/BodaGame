@@ -2,6 +2,7 @@ import { CylinderCollider, RigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { segmentRandom } from '../../game/roadDecorPlacements'
+import { faceAtlas, SKIN_TONES, standingPerson } from './people'
 
 /**
  * Trees and static people built from shared, pre-merged geometry with vertex colours (cheap to batch).
@@ -136,47 +137,25 @@ export function RealTree({ x, z, scale = 1, seed = 0 }: { x: number; z: number; 
 
 /* ---------- Standing person (static) ---------- */
 
-const SKINS = ['#5b3a26', '#6b4423', '#7a4b2a', '#4a2f1f', '#8d5524']
 const DRESSES = ['#b91c1c', '#7c3aed', '#0e7490', '#ca8a04', '#be185d', '#15803d', '#ea580c']
-const SHIRTS = ['#f8fafc', '#1d4ed8', '#047857', '#b45309', '#334155', '#7f1d1d']
+const SHIRTS = ['#f8fafc', '#1d4ed8', '#047857', '#b45309', '#334155', '#7f1d1d', '#e2e8f0']
 const TROUSERS = ['#1e293b', '#292524', '#3f3f46', '#57534e']
+const WRAPS = ['#facc15', '#dc2626', '#16a34a', '#7c3aed', '#f97316']
 
-function buildPerson(female: boolean, skin: string, top: string, bottom: string, hair: string) {
-  const parts: THREE.BufferGeometry[] = []
-  const cap = (r: number, len: number, x: number, y: number, z: number, color: string, rz = 0) => {
-    const g = new THREE.CapsuleGeometry(r, len, 3, 8)
-    g.rotateZ(rz)
-    g.translate(x, y, z)
-    parts.push(colored(ni(g), color))
-  }
-  cap(0.068, 0.66, 0.09, 0.46, 0, female ? skin : bottom)
-  cap(0.068, 0.66, -0.09, 0.46, 0, female ? skin : bottom)
-  const torso = new THREE.CapsuleGeometry(0.15, 0.32, 4, 10).scale(1.08, 1, 0.72).translate(0, 1.17, 0)
-  parts.push(colored(ni(torso), top))
-  if (female) {
-    const dress = new THREE.CylinderGeometry(0.17, 0.32, 0.86, 14, 1, true).translate(0, 0.55, 0)
-    parts.push(colored(ni(dress), bottom))
-  }
-  cap(0.05, 0.5, 0.21, 1.06, 0, female ? skin : top, 0.08)
-  cap(0.05, 0.5, -0.21, 1.06, 0, female ? skin : top, -0.08)
-  const head = new THREE.SphereGeometry(0.105, 14, 12).scale(0.92, 1.05, 1).translate(0, 1.57, 0.01)
-  parts.push(colored(ni(head), skin))
-  const hairG = new THREE.SphereGeometry(0.112, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 0.9, 1).translate(0, 1.6, 0)
-  parts.push(colored(ni(hairG), hair))
-  return mergeGeometries(parts)!
-}
-
-const people = Array.from({ length: 8 }, (_, k) => {
+const people = Array.from({ length: 16 }, (_, k) => {
   const female = k % 2 === 0
-  return buildPerson(
+  return standingPerson({
     female,
-    SKINS[k % SKINS.length]!,
-    female ? DRESSES[k % DRESSES.length]! : SHIRTS[k % SHIRTS.length]!,
-    female ? DRESSES[(k + 3) % DRESSES.length]! : TROUSERS[k % TROUSERS.length]!,
-    female && k % 4 === 0 ? '#facc15' : '#15100c',
-  )
+    tone: k % SKIN_TONES.length,
+    face: female ? (k >> 1) % 2 : 2 + ((k >> 1) % 2),
+    top: female ? DRESSES[k % DRESSES.length]! : SHIRTS[k % SHIRTS.length]!,
+    bottom: female ? DRESSES[(k + 3) % DRESSES.length]! : TROUSERS[k % TROUSERS.length]!,
+    hair: female && k % 4 === 0 ? WRAPS[(k >> 2) % WRAPS.length]! : '#15100c',
+    wrap: female && k % 4 === 0,
+    shoes: k % 3 === 0 ? '#3f2a1c' : '#17120e',
+  })
 })
-const personMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide })
+const personMat = new THREE.MeshStandardMaterial({ map: faceAtlas(), vertexColors: true, roughness: 0.78, side: THREE.DoubleSide })
 
 export function StandingHuman({ x, z, rotationY = 0, seed = 0 }: { x: number; z: number; rotationY?: number; seed?: number }) {
   const geo = people[Math.abs(seed) % people.length]!

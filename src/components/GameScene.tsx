@@ -22,6 +22,7 @@ import { RoadRulesMonitor } from './roadRules/RoadRulesMonitor'
 import { VIEW_SCALE } from './viewScale'
 import { bikeTelemetry } from '../roadRules/world/telemetry'
 import { VehicleShowroom } from './realism/Vehicles'
+import { GrassField } from './realism/Grass'
 import { KampalaHills } from './realism/Hills'
 import { StreetLights } from './realism/StreetLife'
 
@@ -29,7 +30,7 @@ const SHOWROOM = import.meta.env.DEV && typeof location !== 'undefined' && locat
 
 /** Light, fog and sky per shift condition. */
 const ATMOSPHERE = {
-  clear: { ambient: 0.42, sun: 1.15, sunColor: '#fff4e2', fog: '#b4c4d1', near: 90, far: 560, bg: '#9fb5c6' },
+  clear: { ambient: 0.3, sun: 2.5, sunColor: '#fff0d6', fog: '#c6d6e2', near: 110, far: 560, bg: '#a9c6df' },
   rain: { ambient: 0.34, sun: 0.38, sunColor: '#cfd8e3', fog: '#7a848f', near: 18, far: 260, bg: '#6c7580' },
   dusk: { ambient: 0.16, sun: 0.42, sunColor: '#ff9d5c', fog: '#4a4255', near: 40, far: 460, bg: '#2f2b3d' },
 } as const
@@ -59,7 +60,8 @@ function SunLight({
     if (!l) return
     // Redrawing every caster is the largest single render cost; every second frame looks the same in motion.
     l.shadow.autoUpdate = false
-    l.shadow.needsUpdate = ++frame.current % 2 === 0
+    // Odd frames, so the very first frame draws it: materials need the shadow map to exist before they render.
+    l.shadow.needsUpdate = ++frame.current % 2 === 1
     const x = Math.round(bikeTelemetry.x)
     const z = Math.round(bikeTelemetry.z)
     target.position.set(x, 0, z)
@@ -112,7 +114,7 @@ export function GameScene() {
       <fog attach="fog" args={[atm.fog, atm.near, atm.far]} />
 
       <ambientLight intensity={atm.ambient} />
-      <hemisphereLight args={['#cfe3ff', '#5a4632', weather === 'dusk' ? 0.12 : 0.28]} />
+      <hemisphereLight args={['#d6e8ff', '#7a6547', weather === 'dusk' ? 0.12 : weather === 'rain' ? 0.3 : 0.55]} />
       <SunLight key={shadowSize} shadowSize={shadowSize} intensity={atm.sun} color={atm.sunColor} direction={sunDir} />
       {weather === 'rain' ? <Rain count={quality === 'low' ? 450 : 1100} /> : null}
 
@@ -141,6 +143,7 @@ export function GameScene() {
       </Physics>
       <RoadRulesMonitor />
       <KampalaHills weather={weather} />
+      <GrassField />
       <StreetLights />
       {SHOWROOM ? <VehicleShowroom x={0} z={0} /> : null}
       <JobTargetPin />

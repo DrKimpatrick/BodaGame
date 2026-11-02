@@ -33,7 +33,7 @@ import {
 } from '../store/useGameStore'
 import { BikeDustTrail } from './BikeDustTrail'
 import { BikeExhaust } from './BikeExhaust'
-import { bikeTelemetry, emitBikeCollision, onPedestrianStrike } from '../roadRules/world/telemetry'
+import { bikeTelemetry, emitBikeCollision, lessonGate, onPedestrianStrike } from '../roadRules/world/telemetry'
 import { useSettingsStore } from '../store/useSettingsStore'
 import { BodaModel } from './BodaModel'
 import { StaticBatch } from './StaticBatch'
@@ -96,7 +96,7 @@ const CONDITION_LOSS_RESTRICTED_TICK = 1.1
 const RESTRICTED_ZONE_DAMAGE_INTERVAL_MS = 1020
 const RESTRICTED_ZONE_MIN_SPEED = 0.24
 
-const JOB_ARRIVE_DIST = 3.55
+const JOB_ARRIVE_DIST = 4.3
 const JOB_ARRIVE_SPEED = 1.45
 /** Min speed (m/s) before distance counts toward safe-riding score. */
 const RIDE_SCORE_MIN_SPEED_MS = 0.38
@@ -134,8 +134,8 @@ function stepGasBrakeCoastSpeed(params: {
 /** Placeholder humanoid (Three.js RobotExpressive); replace with your asset URL when ready. */
 
 /** Left lane just short of the centre junction, facing −Z (heading S keeps left at −X). */
-/** Entebbe Rd kerb lane (heading S, keep left), just south of the Kampala Rd junction. */
-const SPAWN: [number, number, number] = [-5.1, 0.32, 13]
+/** Entebbe Rd left lane (heading S, keep left), in the middle of a block: a clear road, away from cross traffic. */
+const SPAWN: [number, number, number] = [-5.1, 0.32, -24]
 
 function assignForwardedRef<T>(
   ref: ForwardedRef<T> | undefined,
@@ -253,6 +253,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   }, [world])
 
   const keys = useKeyboard()
+  const noShadows = useSettingsStore((s) => s.quality === 'low')
   const prevDriveHud = useRef({
     gas: false,
     brake: false,
@@ -322,9 +323,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           now + VEHICLE_STUN_MS,
         )
         const st = useGameStore.getState()
-        st.setCondition(
-          Math.max(0, st.condition - CONDITION_LOSS_VEHICLE),
-        )
+        if (!lessonGate.rulesOff) st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_VEHICLE))
         st.triggerBloodImpactFlash('vehicle')
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_VEHICLE)
         emitBikeCollision('vehicle')
@@ -341,7 +340,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         )
         buildingHitJolt.current = 1
         const st = useGameStore.getState()
-        st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_BUILDING))
+        if (!lessonGate.rulesOff) st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_BUILDING))
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_BUILDING)
         emitBikeCollision('building')
         return
@@ -360,7 +359,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
         speed.current *= 0.38
         stunnedUntil.current = now + PEDESTRIAN_STUN_MS
         const st = useGameStore.getState()
-        st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
+        if (!lessonGate.rulesOff) st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_PEDESTRIAN))
         st.triggerBloodImpactFlash('pedestrian')
         st.applyRideScoreDelta(-RIDE_SCORE_LOSS_PEDESTRIAN)
         emitBikeCollision('pedestrian')
@@ -517,7 +516,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
       potholeHitCooldownUntil.current = strikeNow + POTHOLE_STRIKE_COOLDOWN_MS
       potholeJolt.current = 1
       const st = useGameStore.getState()
-      st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_POTHOLE))
+      if (!lessonGate.rulesOff) st.setCondition(Math.max(0, st.condition - CONDITION_LOSS_POTHOLE))
     }
     potholeEnvelopePrev.current = phEnv
 
@@ -697,6 +696,12 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           </group>
         </group>
         <BikeHeadlight />
+        {noShadows ? (
+          <mesh position={[0, -0.27, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+            <planeGeometry args={[1, 2.5]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.3} depthWrite={false} />
+          </mesh>
+        ) : null}
         {isOffroad ? (
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0.95, 1.1, 24]} />

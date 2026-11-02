@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { blockCenter, roadStripCenterZ } from '../../game/cityGrid'
+import { excludeGrass } from '../../game/grassMask'
 import { FLYOVER_BLOCKS } from '../../game/kampalaMap'
 import { BodaModel } from '../BodaModel'
 import { StandingHuman } from './Nature'
@@ -34,6 +35,8 @@ function deckTop(s: number) {
   const t = (a - FLAT) / (RUN - FLAT)
   return H * (1 - t * t * (3 - 2 * t))
 }
+
+excludeGrass(X, Z, 2 * W + 3, 2 * RUN)
 
 const STATIONS = Array.from({ length: 41 }, (_, k) => -RUN + (k * 2 * RUN) / 40)
 

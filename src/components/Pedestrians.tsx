@@ -12,6 +12,7 @@ import {
 import { bikeTelemetry, emitPedestrianStrike, worldClock } from '../roadRules/world/telemetry'
 import { shouldApplyBikePedestrianInteraction } from '../store/useGameStore'
 import { useSettingsStore } from '../store/useSettingsStore'
+import { armGeometry, faceAtlas, faceCell, hairGeometry, headGeometry, legGeometry, shoeGeometry, SKIN_TONES, skirtGeometry, torsoGeometry, wrapGeometry } from './realism/people'
 
 /**
  * Kampala street crowd: human figures (women in gomesi / busuuti dresses with headwraps, men in shirts
@@ -42,12 +43,19 @@ type Walker = {
   top: THREE.Color
   bottom: THREE.Color
   hair: THREE.Color
+  /** Headwrap rather than hair. */
+  wrap: boolean
+  /** UV offset of this person's face in the atlas. */
+  faceU: number
+  faceV: number
+  shoes: THREE.Color
 }
 
 /** Knockdown state per walker: world time it happened (-1 = standing) and the frozen pose. */
 type KnockState = { at: Float32Array; x: Float32Array; z: Float32Array; yaw: Float32Array }
 
-const SKINS = ['#5b3a26', '#6b4423', '#7a4b2a', '#4a2f1f', '#8d5524', '#3f281b'].map((c) => new THREE.Color(c))
+const SKINS = SKIN_TONES.map((c) => new THREE.Color(c))
+const SHOES = ['#17120e', '#3f2a1c', '#2b2b2e', '#17120e', '#57412e'].map((c) => new THREE.Color(c))
 const DRESSES = ['#b91c1c', '#7c3aed', '#0e7490', '#ca8a04', '#be185d', '#15803d', '#ea580c', '#1d4ed8', '#9d174d'].map((c) => new THREE.Color(c))
 const SHIRTS = ['#f8fafc', '#1d4ed8', '#047857', '#b45309', '#334155', '#7f1d1d', '#e2e8f0', '#0f766e'].map((c) => new THREE.Color(c))
 const TROUSERS = ['#1e293b', '#292524', '#3f3f46', '#1f2937', '#57534e', '#78716c'].map((c) => new THREE.Color(c))
@@ -68,6 +76,9 @@ function pick<T>(arr: T[], r: number): T {
 function makeWalker(kind: Walker['kind'], ax: number, az: number, bx: number, bz: number, seed: number): Walker {
   const r = (salt: number) => segmentRandom(seed, salt, 911)
   const female = r(1) < 0.55
+  const tone = Math.min(SKINS.length - 1, Math.floor(r(7) * SKINS.length))
+  const [faceU, faceV] = faceCell(tone, female ? Math.floor(r(12) * 2) : 2 + Math.floor(r(12) * 2))
+  const wrap = female && r(10) < 0.6
   return {
     kind,
     ax,
@@ -80,10 +91,14 @@ function makeWalker(kind: Walker['kind'], ax: number, az: number, bx: number, bz
     female,
     gomesi: female && r(5) < 0.55,
     height: (female ? 0.94 : 1) * (0.94 + r(6) * 0.12),
-    skin: pick(SKINS, r(7)),
+    skin: SKINS[tone]!,
     top: female ? pick(DRESSES, r(8)) : pick(SHIRTS, r(8)),
     bottom: female ? pick(DRESSES, r(8)) : pick(TROUSERS, r(9)),
-    hair: female && r(10) < 0.7 ? pick(WRAPS, r(11)) : HAIR,
+    hair: wrap ? pick(WRAPS, r(11)) : HAIR,
+    wrap,
+    faceU,
+    faceV,
+    shoes: pick(SHOES, r(13)),
   }
 }
 
@@ -140,30 +155,44 @@ function pathState(w: Walker, t: number): { u: number; moving: boolean; dir: num
   return { u: 1 - c / travel, moving: true, dir: -1 }
 }
 
-/* ---------- Geometry (unit parts, positioned per instance) ---------- */
+/* ---------- Geometry (parts with real proportions, positioned per instance) ---------- */
 
 const PARTS = {
-  // Low segment counts: figures are seen at street distance; ~700 triangles per person.
-  legL: new THREE.CapsuleGeometry(0.068, 0.66, 2, 6).translate(0, -0.4, 0),
-  legR: new THREE.CapsuleGeometry(0.068, 0.66, 2, 6).translate(0, -0.4, 0),
-  torso: new THREE.CapsuleGeometry(0.15, 0.32, 3, 9).scale(1.08, 1, 0.72),
-  dress: new THREE.CylinderGeometry(0.17, 0.32, 0.86, 10, 1, true).translate(0, -0.43, 0),
-  armL: new THREE.CapsuleGeometry(0.05, 0.5, 2, 6).translate(0, -0.3, 0),
-  armR: new THREE.CapsuleGeometry(0.05, 0.5, 2, 6).translate(0, -0.3, 0),
-  head: new THREE.SphereGeometry(0.105, 10, 8).scale(0.92, 1.05, 1),
-  hair: new THREE.SphereGeometry(0.112, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 0.9, 1),
+  legL: legGeometry(6),
+  legR: legGeometry(6),
+  torso: torsoGeometry(false, 10),
+  dress: skirtGeometry(12),
+  armL: armGeometry(6),
+  armR: armGeometry(6),
+  head: headGeometry(12, 9),
+  hair: hairGeometry(10, 5),
+  wrap: wrapGeometry(),
   /** Gomesi puffed shoulders (2 per walker). */
-  puff: new THREE.SphereGeometry(0.085, 7, 5).scale(1.1, 0.8, 1),
+  puff: new THREE.SphereGeometry(0.066, 7, 5).scale(1.1, 0.85, 1),
+  /** Shoes (2 per walker). */
+  shoe: shoeGeometry(),
 }
 type PartName = keyof typeof PARTS
 const PART_NAMES = Object.keys(PARTS) as PartName[]
 
 const clothMat = new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide })
-const skinMat = new THREE.MeshStandardMaterial({ roughness: 0.55 })
+const skinMat = new THREE.MeshStandardMaterial({ roughness: 0.6 })
+/** The painted face: one atlas, with each person's own cell chosen by an instanced UV offset. */
+const faceMat = (() => {
+  const m = new THREE.MeshStandardMaterial({ map: faceAtlas(), roughness: 0.62 })
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aFace;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvMapUv += aFace;')
+  }
+  m.customProgramCacheKey = () => 'crowd-face'
+  return m
+})()
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0)
 const mBody = new THREE.Matrix4()
 const mPart = new THREE.Matrix4()
+const mShoe = new THREE.Matrix4()
 const mLocal = new THREE.Matrix4()
 const mRot = new THREE.Matrix4()
 const qTmp = new THREE.Quaternion()
@@ -190,7 +219,15 @@ export function Pedestrians() {
 
   const counts: Record<PartName, number> = useMemo(() => {
     const n = crowd.length
-    return { legL: n, legR: n, torso: n, dress: n, armL: n, armR: n, head: n, hair: n, puff: n * 2 }
+    return { legL: n, legR: n, torso: n, dress: n, armL: n, armR: n, head: n, hair: n, wrap: n, puff: n * 2, shoe: n * 2 }
+  }, [crowd.length])
+
+  // Face choice per drawn person, packed like the matrices.
+  const faceAttr = useMemo(() => {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(crowd.length * 2), 2)
+    a.setUsage(THREE.DynamicDrawUsage)
+    PARTS.head.setAttribute('aFace', a)
+    return a
   }, [crowd.length])
 
   useFrame(() => {
@@ -261,15 +298,17 @@ export function Pedestrians() {
       const dzC = z - camZ
       if (dxC * dxC + dzC * dzC > r2) continue
       const si = slot++
-      const sleeve = w.gomesi || (!w.female && i % 3 === 0) ? w.skin : w.top
       r.legL!.setColorAt(si, w.female ? w.skin : w.bottom)
       r.legR!.setColorAt(si, w.female ? w.skin : w.bottom)
       r.torso!.setColorAt(si, w.top)
       r.dress!.setColorAt(si, w.bottom)
-      r.armL!.setColorAt(si, sleeve)
-      r.armR!.setColorAt(si, sleeve)
-      r.head!.setColorAt(si, w.skin)
+      r.armL!.setColorAt(si, w.skin)
+      r.armR!.setColorAt(si, w.skin)
+      faceAttr.setXY(si, w.faceU, w.faceV)
       r.hair!.setColorAt(si, w.hair)
+      r.wrap!.setColorAt(si, w.hair)
+      r.shoe!.setColorAt(si * 2, w.shoes)
+      r.shoe!.setColorAt(si * 2 + 1, w.shoes)
       r.puff!.setColorAt(si * 2, w.top)
       r.puff!.setColorAt(si * 2 + 1, w.top)
       const h = w.height
@@ -277,20 +316,26 @@ export function Pedestrians() {
       mBody.compose(vTmp.set(x, 0.06 + bob + fall * 0.08, z), qTmp, sTmp.set(h, h, h))
 
       const legSwing = w.female && !w.gomesi ? swing * 0.6 : swing
-      r.legL!.setMatrixAt(si, limb(mPart, mBody, 0.09, 0.86, 0, legSwing))
-      r.legR!.setMatrixAt(si, limb(mPart, mBody, -0.09, 0.86, 0, -legSwing))
+      r.legL!.setMatrixAt(si, limb(mPart, mBody, 0.085, 0.84, 0, legSwing))
+      mLocal.makeTranslation(0, -0.79, 0.02)
+      r.shoe!.setMatrixAt(si * 2, mShoe.multiplyMatrices(mPart, mLocal))
+      r.legR!.setMatrixAt(si, limb(mPart, mBody, -0.085, 0.84, 0, -legSwing))
+      mLocal.makeTranslation(0, -0.79, 0.02)
+      r.shoe!.setMatrixAt(si * 2 + 1, mShoe.multiplyMatrices(mPart, mLocal))
       mLocal.makeTranslation(0, 1.17, 0)
       r.torso!.setMatrixAt(si, mPart.multiplyMatrices(mBody, mLocal))
       if (w.female) {
         mLocal.makeTranslation(0, 0.98, 0)
         r.dress!.setMatrixAt(si, mPart.multiplyMatrices(mBody, mLocal))
       } else r.dress!.setMatrixAt(si, ZERO)
-      r.armL!.setMatrixAt(si, limb(mPart, mBody, 0.2, 1.36, 0, -swing * 0.8, 0.08))
-      r.armR!.setMatrixAt(si, limb(mPart, mBody, -0.2, 1.36, 0, swing * 0.8, -0.08))
-      mLocal.makeTranslation(0, 1.57, 0.01)
+      r.armL!.setMatrixAt(si, limb(mPart, mBody, 0.2, 1.34, 0, -swing * 0.8, 0.09))
+      r.armR!.setMatrixAt(si, limb(mPart, mBody, -0.2, 1.34, 0, swing * 0.8, -0.09))
+      mLocal.makeTranslation(0, 1.57, 0.005)
       r.head!.setMatrixAt(si, mPart.multiplyMatrices(mBody, mLocal))
-      mLocal.makeTranslation(0, 1.6, -0.005)
-      r.hair!.setMatrixAt(si, mPart.multiplyMatrices(mBody, mLocal))
+      mLocal.makeTranslation(0, 1.6, 0)
+      mPart.multiplyMatrices(mBody, mLocal)
+      r.hair!.setMatrixAt(si, w.wrap ? ZERO : mPart)
+      r.wrap!.setMatrixAt(si, w.wrap ? mPart : ZERO)
       if (w.gomesi) {
         mLocal.makeTranslation(0.19, 1.37, 0)
         r.puff!.setMatrixAt(si * 2, mPart.multiplyMatrices(mBody, mLocal))
@@ -303,10 +348,11 @@ export function Pedestrians() {
     }
     for (const name of PART_NAMES) {
       const m = r[name]!
-      m.count = name === 'puff' ? slot * 2 : slot
+      m.count = name === 'puff' || name === 'shoe' ? slot * 2 : slot
       m.instanceMatrix.needsUpdate = true
       if (m.instanceColor) m.instanceColor.needsUpdate = true
     }
+    faceAttr.needsUpdate = true
   })
 
   return (
@@ -317,7 +363,7 @@ export function Pedestrians() {
           ref={(m) => {
             refs.current[name] = m
           }}
-          args={[PARTS[name], name === 'head' || name === 'legL' || name === 'legR' ? skinMat : clothMat, counts[name]]}
+          args={[PARTS[name], name === 'head' ? faceMat : name === 'legL' || name === 'legR' || name === 'armL' || name === 'armR' ? skinMat : clothMat, counts[name]]}
           castShadow={shadows}
           frustumCulled={false}
         />

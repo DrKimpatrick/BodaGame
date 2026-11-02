@@ -12,7 +12,10 @@ import { fmtUgx } from './format'
 /** Road encounter card: the scene, three shuffled choices and an optional 12 s timer. */
 function EncounterCard({ ov }: { ov: Extract<Overlay, { type: 'card' }> }) {
   const answer = useRoadRulesStore((s) => s.answerCard)
-  const timed = useSettingsStore((s) => s.timer)
+  const learner = useRoadRulesStore((s) => s.rr?.difficulty === 'learner')
+  const timerOn = useSettingsStore((s) => s.timer)
+  // Nobody learning the rules should be rushed.
+  const timed = timerOn && !learner
   const [left, setLeft] = useState(DECISION_TIME_S)
   const answered = useRef(false)
   const sc = ov.scenario

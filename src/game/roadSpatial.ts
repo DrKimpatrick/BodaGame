@@ -10,7 +10,7 @@ import {
   roadStripCenterX,
   roadStripCenterZ,
   type RoadKind,
-} from './cityGrid'
+} from './cityGrid.ts'
 
 /** Trees only spawn if distance to any road slab ≥ this (world units). */
 export const GREEN_ZONE_DISTANCE = 5

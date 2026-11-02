@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { driveInput, inputGate } from '../../input/driveInput'
-import { bikeTelemetry } from '../../roadRules/world/telemetry'
+import { bikeTelemetry, lessonGate } from '../../roadRules/world/telemetry'
 import { useSettingsStore } from '../../store/useSettingsStore'
 import { Button, Modal } from './primitives'
 import { useIsTouch } from './useIsTouch'
@@ -102,7 +102,12 @@ export function RideCoach() {
     if (!enabled) return
     const id = setInterval(() => {
       const s = state.current
-      if (!inputGate.riding) {
+      if (lessonGate.active) {
+        // The lesson does the teaching; afterwards there's no need to say how to pull away.
+        s.moved = true
+        s.last.set('cornerAdvice', s.now)
+      }
+      if (!inputGate.riding || lessonGate.active) {
         setTip(null)
         return
       }

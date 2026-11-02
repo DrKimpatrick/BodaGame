@@ -13,8 +13,8 @@ import { collapsedMaterial, collapseKey, materialKey, normalise, withColor, type
  * `userData.dynamic` (animated parts). Physics colliders are separate objects, so they are unaffected.
  */
 
-/** Batch cell size (m): ~4×4 cells over the ~650 m city; smaller cells multiply draw calls (≈20 materials each). */
-const CHUNK = 180
+/** Batch cell size (m): ~3×3 cells over the ~650 m city; smaller cells multiply draw calls (≈40 materials each). */
+const CHUNK = 260
 
 function isDynamic(o: THREE.Object3D, root: THREE.Object3D): boolean {
   for (let p: THREE.Object3D | null = o; p && p !== root; p = p.parent) {
@@ -59,6 +59,7 @@ export function StaticBatch({
   useLayoutEffect(() => {
     const root = ref.current
     if (!root) return
+    const buildStart = performance.now()
     root.updateMatrixWorld(true)
     const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert()
     type Bucket = { material: THREE.Material; cast: boolean; receive: boolean; geos: THREE.BufferGeometry[]; collapsed: boolean; meshes: THREE.Mesh[] }
@@ -110,16 +111,34 @@ export function StaticBatch({
       for (const sg of b.geos) if (sg !== g) sg.dispose()
     }
     onBuilt?.()
+    if (import.meta.env.DEV && hidden.length > 500) console.info(`[StaticBatch] merged in ${Math.round(performance.now() - buildStart)} ms`)
     // Only swap if merging worked; otherwise the originals keep rendering.
     if (merged.length === 0) return
     const holder = new THREE.Group()
     holder.name = 'static-batch'
     for (const m of merged) holder.add(m)
     root.add(holder)
+    // Take the originals out of the scene altogether. Hidden meshes would still be walked every frame by the matrix
+    // update and the renderer (tens of thousands of objects: several milliseconds a frame on a fast laptop).
+    const removed: { object: THREE.Object3D; parent: THREE.Object3D }[] = []
+    const gone = new Set<THREE.Object3D>(hidden)
+    const parents = new Set<THREE.Object3D>()
     for (const mesh of hidden) {
-      mesh.visible = false
-      mesh.matrixAutoUpdate = false
-      mesh.matrixWorldAutoUpdate = false
+      if (mesh.parent) {
+        removed.push({ object: mesh, parent: mesh.parent })
+        parents.add(mesh.parent)
+      }
+    }
+    // One pass per parent: `remove()` per mesh is quadratic on the groups that hold thousands of children.
+    for (const p of parents) p.children = p.children.filter((c) => !gone.has(c))
+    for (const r of removed) r.object.parent = null
+    // Then the groups left empty. Physics objects are `Object3D`s, not `Group`s, so those stay.
+    for (let k = 0; k < removed.length; k++) {
+      const parent = removed[k]!.parent
+      if (parent !== root && parent.type === 'Group' && parent.children.length === 0 && parent.parent) {
+        removed.push({ object: parent, parent: parent.parent })
+        parent.parent.remove(parent)
+      }
     }
     mergedRef.current = merged
     if (import.meta.env.DEV && hidden.length > 500) console.info(`[StaticBatch] ${hidden.length} meshes → ${merged.length} batches`)
@@ -130,11 +149,7 @@ export function StaticBatch({
         m.geometry.dispose()
         if (m.material !== undefined && (m.material as THREE.Material).vertexColors) (m.material as THREE.Material).dispose()
       }
-      for (const mesh of hidden) {
-        mesh.visible = true
-        mesh.matrixAutoUpdate = true
-        mesh.matrixWorldAutoUpdate = true
-      }
+      for (let k = removed.length - 1; k >= 0; k--) removed[k]!.parent.add(removed[k]!.object)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseColors, chunked])

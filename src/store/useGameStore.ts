@@ -14,7 +14,7 @@ import {
 export const COLLISION_GRACE_MS = 2200
 
 /** Bike spawn XZ (matches `Boda`); used to defer ped knock / condition until you leave the intersection. */
-export const BIKE_SPAWN_XZ = { x: -5.1, z: 13 } as const
+export const BIKE_SPAWN_XZ = { x: -5.1, z: -24 } as const
 /** Min horizontal distance from spawn before bike↔pedestrian knock & condition loss can apply. */
 export const BIKE_SPAWN_PED_CLEAR_M = 2.85
 

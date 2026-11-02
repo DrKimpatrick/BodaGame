@@ -70,7 +70,7 @@ export default function GameCanvas({ onReady }: { onReady: () => void }) {
       frameloop={frozen ? 'demand' : 'always'}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance', stencil: false }}
       onCreated={({ gl, scene, camera, raycaster }) => {
-        gl.shadowMap.type = THREE.PCFSoftShadowMap
+        gl.shadowMap.type = THREE.PCFShadowMap
         gl.toneMapping = THREE.ACESFilmicToneMapping
         gl.toneMappingExposure = 1.05
         if (import.meta.env.DEV) Object.assign(window, { __wowGl: gl, __wowScene: scene, __wowCam: camera, __wowRay: raycaster })

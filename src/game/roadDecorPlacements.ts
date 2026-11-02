@@ -1,5 +1,5 @@
-import { ewHalf, ewKind, NUM_BLOCKS, nsHalf, nsKind, roadStripCenterX, roadStripCenterZ } from './cityGrid'
-import { SIDEWALK_WIDTH } from './roadSpatial'
+import { ewHalf, ewKind, NUM_BLOCKS, nsHalf, nsKind, roadStripCenterX, roadStripCenterZ } from './cityGrid.ts'
+import { SIDEWALK_WIDTH } from './roadSpatial.ts'
 
 export function segmentRandom(a: number, b: number, salt: number) {
   const t = Math.sin(a * 12.9898 + b * 78.233 + salt * 43.758) * 43758.5453123

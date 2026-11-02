@@ -4,7 +4,7 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-11-02 (end of session 7). All work through session 7 is committed on `main`; sessions 6 and 7
+**Last updated:** 2026-11-02 (end of session 8). All work through session 8 is committed on `main`; sessions 6, 7 and 8
 are not pushed. Commit before starting anything big.
 
 **Done and verified in the browser**
@@ -166,14 +166,45 @@ are not pushed. Commit before starting anything big.
 - Dev hooks: `__wowTeleport` resets speed now. Yaw 0 = −Z, π = +Z, −π/2 = +X, π/2 = −X. Traffic faces (sin yaw, cos yaw).
 - Measuring gotcha: long `requestAnimationFrame` loops in tests can hit the tool's 45 s limit when frames are slow.
 
+**Session 8 (2026-11-02): performance, the lesson, faces, grass, keep-left**
+- Biggest performance finds: (1) real-time `transmission` on a few glass materials made three.js render the whole
+  scene twice every frame, at full resolution with MSAA. It's gone: **never use `transmission` in this game**.
+  (2) `StaticBatch` left 37,000 hidden meshes in the scene (51,000 objects, 4.2 ms a frame just to walk); it now takes
+  them out (3,400 objects, 0.35 ms). (3) Batch cells 180 → 260 m. (4) Cheaper wheels and standing people.
+- Measured (dev build, main-thread work per frame, Apple Silicon): riding on high 12.8 → 4.2 ms, 1,281 → 483 calls,
+  3.56 M → 1.75 M triangles. Heaviest view on low 611 → 303 calls, 2.16 M → 1.21 M triangles. Production loads in 2.3 s.
+  Real frames, production build, Apple Silicon, 1087×1198 canvas on a 120 Hz display, riding 0–68 km/h for 6 s: 120 fps,
+  worst frame 12 ms, none over 20 ms.
+- WebGL errors: the route line used three-stdlib's `Line2`, which fails on this three.js version on every draw. It now
+  uses three's own `examples/jsm/lines`. Checked by testing `getError` after each draw: none. If `Context Lost` shows
+  in the dev console, that's React strict mode remounting the canvas; it doesn't happen in production.
+- Keep left: `src/game/roadRoute.ts` replaces the old L-shaped route, which went straight through buildings. It follows
+  roads in the left lane, reaches every stop with it on the left, goes clockwise round roundabouts, and gives
+  turn-by-turn text. Tests in `roadRoute.test.ts` (27 in `test:rules`). In the running game, 472 samples of vehicles on
+  straight road: all on the left.
+- Lesson: `ui/RidingLesson.tsx` + `lessonDiagrams.tsx`, 11 steps. Each explains with the world frozen, then the player
+  practises with live correction, then gets feedback. No timers. `lessonGate` (telemetry) keeps cards off during the
+  lesson and rules, fines and bike wear off until they are taught; drivers treat the rider as never at fault meanwhile.
+  After it, a learner's first mistake of each kind stops the road and explains. Cards are never timed for learners,
+  toasts last by word count, and hints come about 5 s ahead. Spawn moved mid-block, away from Kampala Rd's cross traffic.
+- People: `realism/people.ts`. Faces painted in code into one atlas (4 skin tones, 4 faces), sculpted head and neck, real
+  body proportions, shoes, headwraps. Walkers pick a face through an instanced UV offset (`aFace`). This is stylised, not
+  photographic; photoreal people would need rigged 3D models and a licence check. The near plane clips a face closer
+  than 0.5 m: only a test camera gets that close.
+- Grass: `realism/Grass.tsx`, tufts wrapping round the camera in the vertex shader (one draw call, no per-frame JS),
+  kept on real grass by `game/grassMask.ts` (register anything paved or built with `excludeGrass`). Better ground
+  texture, with large-scale colour variation in a shader on the ground material, which stays out of batching.
+- Look: stronger warmer sun, new asphalt grey, proper road humps, contact shadows on `low`.
+- Testing gotcha: a hidden pane throttles frames to under 1 fps. Drive frames with `advance()` from the fiber module
+  (find its URL in `performance.getEntriesByType('resource')`); timing then measures main-thread work, not the GPU.
+
 **Next (in priority order)**
-1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are
-   the ones to test (~610 calls / 2.2 M triangles on `low`). If slow: lower `TREE_SHARE.low`, skip shop window
-   details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low. Triangles are the remaining
-   concern; most are in the merged city.
-2. Confirm with the player that roads no longer vanish; if they do, get the location and weather.
-3. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
-4. Optional: a rideable flyover (see session 6).
+1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are the
+   ones to test (~300 calls / 1.2 M triangles on `low`). GPU load on a phone is unmeasured.
+2. Have a new rider try the lesson, and adjust its wording and pace from what they find hard.
+3. Confirm with the player that roads no longer vanish; if they do, get the location and weather.
+4. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
+5. Optional: a rideable flyover (see session 6).
 
 ## How to run and test
 

@@ -2,6 +2,7 @@ import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import { blockCenter, BLOCK } from '../../game/cityGrid'
+import { excludeGrass } from '../../game/grassMask'
 import { LANDMARK_BLOCKS } from '../../game/kampalaMap'
 import { segmentRandom } from '../../game/roadDecorPlacements'
 import { BodaModel } from '../BodaModel'
@@ -42,6 +43,16 @@ const lawn = (() => {
 
 /** Landmark plots stop short of the pavement and open drain of even the widest road beside them. */
 const PLOT = BLOCK - 10
+
+// Paved plots have no grass; the parks do.
+for (const b of [LANDMARK_BLOCKS.taxiPark, LANDMARK_BLOCKS.market, LANDMARK_BLOCKS.owino, LANDMARK_BLOCKS.mulago, LANDMARK_BLOCKS.kisekka]) {
+  const [x, z] = blockCenter(b.i, b.j)
+  excludeGrass(x, z, PLOT + 1, PLOT + 1)
+}
+for (const b of [LANDMARK_BLOCKS.independence, LANDMARK_BLOCKS.square, LANDMARK_BLOCKS.makerere]) {
+  const [x, z] = blockCenter(b.i, b.j)
+  excludeGrass(x, z, 15, 15)
+}
 
 /** Independence Monument: a figure raising a child to the sky on a tall plinth, in a paved park. */
 function IndependencePark() {

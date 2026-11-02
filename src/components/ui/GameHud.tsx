@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { DELIVERIES_PER_SHIFT } from '../../roadRules/constants'
-import { bikeTelemetry } from '../../roadRules/world/telemetry'
+import { bikeTelemetry, routeTelemetry } from '../../roadRules/world/telemetry'
 import { emitDriveAction } from '../../input/driveInput'
-import { manhattanTravelMeters } from '../../game/passengerJobs'
+import { routeInstruction } from '../../game/roadRoute'
 import { CONDITION_WARN_AT, isBikeBrokenDown, useGameStore } from '../../store/useGameStore'
 import { useRoadRulesStore } from '../../store/useRoadRulesStore'
 import { useSettingsStore } from '../../store/useSettingsStore'
@@ -68,21 +68,29 @@ function ShiftChip() {
   )
 }
 
+const ROUTE_ICON = { left: '↰', right: '↱', roundabout: '🔃', arrive: '🅿️', turnaround: '↩️' } as const
+
 function JobBanner() {
   const job = useGameStore((s) => s.rideJob)
-  const bx = useGameStore((s) => s.bikeMapX)
-  const bz = useGameStore((s) => s.bikeMapZ)
+  // Re-rendered about ten times a second by the bike's map position, which refreshes the route text too.
+  useGameStore((s) => s.bikeMapX)
+  useGameStore((s) => s.bikeMapZ)
   if (!job) return null
+  const step = routeTelemetry.step
+  if (!step) return null
   const target = job.phase === 'pickup' ? job.pickup : job.dropoff
-  const dist = Math.round(manhattanTravelMeters(bx, bz, target.x, target.z))
   return (
-    <div className="flex max-w-[min(92vw,420px)] items-center gap-2 rounded-2xl bg-black/60 px-3 py-2 ring-1 ring-white/10 backdrop-blur-md">
-      <span className={`h-3 w-3 shrink-0 rounded-full ${job.phase === 'pickup' ? 'bg-rose-500' : 'bg-sky-400'}`} />
-      <p className="min-w-0 truncate text-[13px] font-bold text-zinc-100">
-        {job.phase === 'pickup' ? 'Pick up at' : 'Drop off at'} <span className="text-white">{target.name}</span>
-        <span className="text-zinc-400"> · {dist} m</span>
-      </p>
-      <span className="shrink-0 font-mono text-[12px] font-black text-emerald-300">{fmtUgx(job.payoutUgx)}</span>
+    <div className="flex max-w-[min(94vw,460px)] items-center gap-2.5 rounded-2xl bg-black/65 px-3 py-2 ring-1 ring-white/10 backdrop-blur-md">
+      <span className="shrink-0 text-2xl leading-none" aria-hidden>
+        {ROUTE_ICON[step.action]}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[14px] font-extrabold leading-tight text-white">{routeInstruction(step, target.name)}</p>
+        <p className="truncate text-[11px] font-bold text-zinc-400">
+          <span className={`mr-1 inline-block h-2 w-2 rounded-full ${job.phase === 'pickup' ? 'bg-rose-500' : 'bg-sky-400'}`} />
+          {job.phase === 'pickup' ? 'Pick up at' : 'Drop off at'} {target.name} · {Math.round(routeTelemetry.length)} m · <span className="font-mono text-emerald-300">{fmtUgx(job.payoutUgx)}</span>
+        </p>
+      </div>
     </div>
   )
 }
@@ -166,7 +174,8 @@ function Toasts() {
   const dismiss = useRoadRulesStore((s) => s.dismissToast)
   useEffect(() => {
     if (toasts.length === 0) return
-    const timers = toasts.map((t) => setTimeout(() => dismiss(t.id), t.tone === 'bad' ? 7000 : 4500))
+    // Long enough to read at a comfortable pace while also riding: about 2.5 words a second, and never under 6 s.
+    const timers = toasts.map((t) => setTimeout(() => dismiss(t.id), Math.max(6000, (`${t.title} ${t.body}`.split(/\s+/).length / 2.5) * 1000)))
     return () => timers.forEach(clearTimeout)
   }, [toasts, dismiss])
   return (
