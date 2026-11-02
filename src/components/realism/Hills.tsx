@@ -29,6 +29,60 @@ function hillHeight(h: HillDef, dx: number, dz: number) {
   return h.height * c * c
 }
 
+/** Same relief the terrain mesh uses, so roads and terrain agree. */
+function hillRelief(hi: number, dx: number, dz: number) {
+  return Math.sin(dx * 0.05 + hi) * Math.cos(dz * 0.06 + hi * 2) * 3
+}
+
+const ROAD_STEPS = 90
+const ROAD_HALF_W = 3.6
+
+/** The winding road up a hill: from its foot, round the slopes, to just below the summit. Local (dx, dz). */
+function hillRoadPoints(hi: number): [number, number][] {
+  const start = segmentRandom(hi, 1, 9301) * Math.PI * 2
+  const turns = 1.6 + segmentRandom(hi, 2, 9302) * 0.8
+  const dir = hi % 2 ? 1 : -1
+  return Array.from({ length: ROAD_STEPS + 1 }, (_, k) => {
+    const t = k / ROAD_STEPS
+    const a = start + dir * t * turns * Math.PI * 2 + Math.sin(t * 19 + hi) * 0.1
+    const r = HILL_RADIUS * (0.99 - t * 0.72) + Math.sin(t * 31 + hi * 2) * 3
+    return [Math.cos(a) * r, Math.sin(a) * r]
+  })
+}
+
+/** Laterite and tarmac ribbons draped just above the terrain; they share the terrain's single mesh. */
+function buildHillRoad(h: HillDef, hi: number): THREE.BufferGeometry {
+  const c = hillCentre(h)
+  const pts = hillRoadPoints(hi)
+  const colour = new THREE.Color(hi % 3 === 0 ? '#5d5852' : '#a55a38')
+  const pos: number[] = []
+  const col: number[] = []
+  const idx: number[] = []
+  pts.forEach(([dx, dz], k) => {
+    const [ax, az] = pts[Math.max(0, k - 1)]!
+    const [bx, bz] = pts[Math.min(ROAD_STEPS, k + 1)]!
+    const len = Math.hypot(bx - ax, bz - az) || 1
+    const nx = -(bz - az) / len
+    const nz = (bx - ax) / len
+    for (const s of [-1, 1]) {
+      const px = dx + nx * s * ROAD_HALF_W
+      const pz = dz + nz * s * ROAD_HALF_W
+      pos.push(c.x + px, hillHeight(h, px, pz) + hillRelief(hi, px, pz) - 0.6 + 1.6, c.z + pz)
+      col.push(colour.r, colour.g, colour.b)
+    }
+    if (k > 0) {
+      const a = (k - 1) * 2
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+    }
+  })
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  geo.setIndex(idx)
+  geo.computeVertexNormals()
+  return geo.toNonIndexed()
+}
+
 function buildTerrain(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
   const green = new THREE.Color('#4d7a35')
@@ -49,7 +103,7 @@ function buildTerrain(): THREE.BufferGeometry {
         const a = (s / segs) * Math.PI * 2
         const dx = Math.cos(a) * rr
         const dz = Math.sin(a) * rr
-        const n = Math.sin(dx * 0.05 + hi) * Math.cos(dz * 0.06 + hi * 2) * 3
+        const n = hillRelief(hi, dx, dz)
         const y = hillHeight(h, dx, dz) + (r > 0 && r < rings ? n : 0) - 0.6
         pos.push(c.x + dx, y, c.z + dz)
         const patch = segmentRandom(hi * 31 + r, s, 9101)
@@ -71,6 +125,7 @@ function buildTerrain(): THREE.BufferGeometry {
     geo.setIndex(idx)
     geo.computeVertexNormals()
     parts.push(geo.toNonIndexed())
+    parts.push(buildHillRoad(h, hi))
   })
   // Rolling ground ring beyond the city fence so the hills sit on land, not in the void.
   const ring = new THREE.RingGeometry(330, 1500, 64, 6)
@@ -208,12 +263,14 @@ function Houses() {
     const out: { x: number; y: number; z: number; s: number; r: number; c: THREE.Color }[] = []
     HILLS.forEach((h, hi) => {
       const c = hillCentre(h)
+      const road = hillRoadPoints(hi)
       for (let k = 0; k < perHill; k++) {
         const a = segmentRandom(hi, k, 9201) * Math.PI * 2
         const rr = Math.sqrt(segmentRandom(hi, k, 9202)) * HILL_RADIUS * 0.92
         const dx = Math.cos(a) * rr
         const dz = Math.sin(a) * rr
         if (h.landmark && rr < 40) continue // leave the summit to the landmark
+        if (road.some(([rx, rz]) => Math.hypot(rx - dx, rz - dz) < 9)) continue // and the road clear
         out.push({
           x: c.x + dx,
           y: hillHeight(h, dx, dz) - 0.6,

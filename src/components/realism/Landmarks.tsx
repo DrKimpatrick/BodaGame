@@ -4,6 +4,8 @@ import * as THREE from 'three'
 import { blockCenter, BLOCK } from '../../game/cityGrid'
 import { LANDMARK_BLOCKS } from '../../game/kampalaMap'
 import { segmentRandom } from '../../game/roadDecorPlacements'
+import { BodaModel } from '../BodaModel'
+import { nameSign } from './nameSign'
 import { RealTree, StandingHuman } from './Nature'
 import { grassTexture, plasterTexture } from './textures'
 import { VehicleModel } from './Vehicles'
@@ -328,29 +330,6 @@ function Owino() {
 
 const ivory = new THREE.MeshStandardMaterial({ color: '#f4efe2', roughness: 0.7 })
 const gateStone = new THREE.MeshStandardMaterial({ color: '#c8bfae', roughness: 0.85 })
-const nameSignCache = new Map<string, THREE.MeshStandardMaterial>()
-function nameSign(text: string, bg = '#14532d', fg = '#f8fafc') {
-  const key = text + bg
-  let m = nameSignCache.get(key)
-  if (!m) {
-    const c = document.createElement('canvas')
-    c.width = 512
-    c.height = 96
-    const g = c.getContext('2d')!
-    g.fillStyle = bg
-    g.fillRect(0, 0, 512, 96)
-    g.fillStyle = fg
-    g.font = 'bold 40px Georgia, serif'
-    g.textAlign = 'center'
-    g.textBaseline = 'middle'
-    g.fillText(text, 256, 50)
-    const t = new THREE.CanvasTexture(c)
-    t.colorSpace = THREE.SRGBColorSpace
-    m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.7 })
-    nameSignCache.set(key, m)
-  }
-  return m
-}
 
 /** Makerere University: the gate on the road and the white Main Building with its clock tower behind. */
 function Makerere() {
@@ -473,6 +452,116 @@ function Mulago() {
   )
 }
 
+const arcadeWall = new THREE.MeshStandardMaterial({ color: '#d9cfbb', map: plasterTexture(), roughness: 0.9 })
+const SHUTTERS = ['#1d4ed8', '#15803d', '#b91c1c', '#475569'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.3 }))
+const tyreMat = new THREE.MeshStandardMaterial({ color: '#17171a', roughness: 0.9 })
+const exhaustMat = new THREE.MeshStandardMaterial({ color: '#a8acb3', roughness: 0.35, metalness: 0.8 })
+
+/** One wing of the arcade: two floors of lock-up shops, each with a coloured shutter, under a balcony slab. */
+function ArcadeWing({ x, z, yaw, bays }: { x: number; z: number; yaw: number; bays: number }) {
+  const bay = 3.4
+  const w = bays * bay
+  return (
+    <group position={[x, 0, z]} rotation={[0, yaw, 0]}>
+      <mesh position={[0, 3.5, 0]} material={arcadeWall} castShadow>
+        <boxGeometry args={[w, 7, 5]} />
+      </mesh>
+      <mesh position={[0, 3.3, 3]} material={M.concrete} castShadow>
+        <boxGeometry args={[w, 0.18, 1.2]} />
+      </mesh>
+      <mesh position={[0, 7.1, 0.6]} material={M.roofIron} castShadow>
+        <boxGeometry args={[w + 0.4, 0.2, 6.6]} />
+      </mesh>
+      {Array.from({ length: bays }, (_, k) => {
+        const bx = (k - (bays - 1) / 2) * bay
+        return (
+          <group key={k} position={[bx, 0, 2.53]}>
+            <mesh position={[0, 1.45, 0]} material={SHUTTERS[k % SHUTTERS.length]}>
+              <boxGeometry args={[2.7, 2.6, 0.06]} />
+            </mesh>
+            <mesh position={[0, 5.0, 0]} material={SHUTTERS[(k + 2) % SHUTTERS.length]}>
+              <boxGeometry args={[2.7, 2.5, 0.06]} />
+            </mesh>
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+/** A stack of tyres, the first thing every spare-parts dealer puts out on the pavement. */
+function TyreStack({ x, z, n }: { x: number; z: number; n: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      {Array.from({ length: n }, (_, k) => (
+        <mesh key={k} position={[0, 0.1 + k * 0.17, 0]} rotation={[Math.PI / 2, 0, 0]} material={tyreMat} castShadow>
+          <torusGeometry args={[0.26, 0.09, 5, 10]} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/** Kisekka Market: Kampala's spare-parts market on Nakivubo Rd. Arcades around a yard of tyres, parts and bodas under repair. */
+function Kisekka() {
+  const { i, j } = LANDMARK_BLOCKS.kisekka
+  const [cx, cz] = blockCenter(i, j)
+  const half = PLOT / 2
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]} material={M.concrete} receiveShadow>
+        <planeGeometry args={[PLOT, PLOT]} />
+      </mesh>
+      {/* U of arcades, open to Nakivubo Rd on the south */}
+      <ArcadeWing x={0} z={half - 2.5} yaw={Math.PI} bays={11} />
+      <ArcadeWing x={-half + 2.5} z={-2.5} yaw={Math.PI / 2} bays={8} />
+      <ArcadeWing x={half - 2.5} z={-2.5} yaw={-Math.PI / 2} bays={8} />
+      <RigidBody type="fixed" colliders={false} userData={{ kind: 'building' }}>
+        <CuboidCollider args={[18.7, 3.5, 2.5]} position={[0, 3.5, half - 2.5]} />
+        <CuboidCollider args={[2.5, 3.5, 13.6]} position={[-half + 2.5, 3.5, -2.5]} />
+        <CuboidCollider args={[2.5, 3.5, 13.6]} position={[half - 2.5, 3.5, -2.5]} />
+      </RigidBody>
+      {/* Name board on posts at the yard's mouth, readable from Nakivubo Rd */}
+      {[-3.8, 3.8].map((x) => (
+        <mesh key={x} position={[x, 2.3, -half + 2.2]} material={M.timber} castShadow>
+          <boxGeometry args={[0.25, 4.6, 0.25]} />
+        </mesh>
+      ))}
+      <mesh position={[0, 4.2, -half + 2.05]} rotation={[0, Math.PI, 0]} material={nameSign('KISEKKA MARKET', '#b91c1c')}>
+        <planeGeometry args={[8, 1.5]} />
+      </mesh>
+      {/* Yard: tyre stacks, parts tables, exhaust racks, bikes and the mechanics working on them */}
+      {Array.from({ length: 14 }, (_, k) => (
+        <TyreStack
+          key={k}
+          x={k % 2 ? -11.5 + segmentRandom(k, 1, 4601) * 2 : 9.5 + segmentRandom(k, 1, 4601) * 2}
+          z={-13 + (k >> 1) * 3.4}
+          n={3 + Math.floor(segmentRandom(k, 2, 4602) * 5)}
+        />
+      ))}
+      {Array.from({ length: 4 }, (_, k) => (
+        <group key={k} position={[(k - 1.5) * 5.2, 0, 9]}>
+          <mesh position={[0, 0.8, 0]} material={M.stallTop} castShadow>
+            <boxGeometry args={[3.8, 0.1, 1.5]} />
+          </mesh>
+          {Array.from({ length: 5 }, (_, n) => (
+            <mesh key={n} position={[-1.5 + n * 0.75, 1.0, 0]} rotation={[Math.PI / 2, 0, n]} material={exhaustMat}>
+              <cylinderGeometry args={[0.07, 0.11, 0.9, 6]} />
+            </mesh>
+          ))}
+          <StandingHuman x={0.5} z={-1.3} rotationY={0} seed={k + 900} />
+        </group>
+      ))}
+      {Array.from({ length: 6 }, (_, k) => (
+        <group key={k} position={[(k - 2.5) * 2.6, 0, -2 + (k % 2) * 3.4]} rotation={[0, 0.5 + segmentRandom(k, 3, 4603) * 0.6, 0]}>
+          <BodaModel spin={false} low />
+          {k % 2 === 0 ? <StandingHuman x={1} z={0.3} rotationY={-Math.PI / 2} seed={k + 920} /> : null}
+        </group>
+      ))}
+    </group>
+  )
+}
+
 export function KampalaLandmarks() {
   return (
     <group>
@@ -483,6 +572,7 @@ export function KampalaLandmarks() {
       <Owino />
       <Makerere />
       <Mulago />
+      <Kisekka />
     </group>
   )
 }

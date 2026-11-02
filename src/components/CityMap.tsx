@@ -41,7 +41,9 @@ import { Roundabouts } from './realism/Roundabouts'
 import { KampalaLandmarks } from './realism/Landmarks'
 import { VehicleModel } from './realism/Vehicles'
 import { BodaStages } from './realism/StreetLife'
-import { isLandmarkBlock } from '../game/kampalaMap'
+import { CHANNEL, CHANNEL_BLOCKS, forcedShopEdges, isLandmarkBlock } from '../game/kampalaMap'
+import { NakivuboChannel } from './realism/Channel'
+import { ClockTowerFlyover } from './realism/Flyover'
 import { grassTexture } from './realism/textures'
 import { RoadSign } from './RoadSign'
 import { STREETS_EW, STREETS_NS } from '../game/streetNames'
@@ -108,6 +110,36 @@ const landmarkPoints: [number, number][] = [
   LANDMARK_STANBIC,
   LANDMARK_NSSF,
 ]
+
+/** The city's grass, with openings for Nakivubo channel so it has real depth. UVs match a plain plane. */
+function buildGroundGeometry() {
+  const span = CITY_TOTAL + GROUND_MARGIN
+  const half = span / 2
+  const shape = new THREE.Shape([
+    new THREE.Vector2(-half, -half),
+    new THREE.Vector2(half, -half),
+    new THREE.Vector2(half, half),
+    new THREE.Vector2(-half, half),
+  ])
+  for (const { i, j } of CHANNEL_BLOCKS) {
+    const [cx, cz] = blockCenter(i, j)
+    const { halfLength: l, halfWidth: w } = CHANNEL
+    // The mesh lies flat with rotation -90° about X, so world +Z is local -Y.
+    shape.holes.push(
+      new THREE.Path([
+        new THREE.Vector2(cx - l, -cz - w),
+        new THREE.Vector2(cx - l, -cz + w),
+        new THREE.Vector2(cx + l, -cz + w),
+        new THREE.Vector2(cx + l, -cz - w),
+      ]),
+    )
+  }
+  const geo = new THREE.ShapeGeometry(shape)
+  const pos = geo.attributes.position!
+  const uv = geo.attributes.uv!
+  for (let k = 0; k < pos.count; k++) uv.setXY(k, (pos.getX(k) + half) / span, (pos.getY(k) + half) / span)
+  return geo
+}
 
 function minDistToLandmark(x: number, z: number) {
   let m = Infinity
@@ -568,6 +600,8 @@ function CityMapContent() {
     [acaciaMallMap, gardenCityMap],
   )
 
+  const groundGeo = useMemo(() => buildGroundGeometry(), [])
+
   const groundMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -668,6 +702,13 @@ function CityMapContent() {
     for (let i = 0; i < NUM_BLOCKS; i++) {
       for (let j = 0; j < NUM_BLOCKS; j++) {
         const [bcx, bcz] = blockCenter(i, j)
+        if (forcedShopEdges(i, j)) {
+          for (const lot of shopRowsForBlock(i, j)) {
+            shopLots.push(lot)
+            retailList.push(<ShopBuilding key={lot.key} lot={lot} />)
+          }
+          continue
+        }
         if (minDistToLandmark(bcx, bcz) < LANDMARK_BLOCK_SKIP || isLandmarkBlock(i, j)) continue
 
         const namedMid = NAMED_MIDRISE_BLOCKS[`${i},${j}`]
@@ -835,9 +876,7 @@ function CityMapContent() {
 
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat}>
-        <planeGeometry args={[CITY_TOTAL + GROUND_MARGIN, CITY_TOTAL + GROUND_MARGIN]} />
-      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={groundMat} geometry={groundGeo} />
 
       {concreteLots.map((lot, idx) => (
         <mesh
@@ -901,6 +940,8 @@ function CityMapContent() {
       <RoadSignage />
       <Roundabouts />
       <KampalaLandmarks />
+      <NakivuboChannel />
+      <ClockTowerFlyover />
       <BodaStages />
 
       <group>

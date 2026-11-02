@@ -1,4 +1,5 @@
 import { ewHalf, NUM_BLOCKS, nsHalf, roadStripCenterX, roadStripCenterZ } from '../../game/cityGrid'
+import { forcedShopEdges } from '../../game/kampalaMap'
 import { segmentRandom } from '../../game/roadDecorPlacements'
 import { SHOP_SIGN_COUNT } from './textures'
 
@@ -54,7 +55,7 @@ export function shopRowsForBlock(i: number, j: number): ShopLot[] {
   // One facing pair per block (N+S or E+W) so rows never collide at the corners. Blocks on Kampala Road
   // always face it.
   const onKampalaRoad = j === KAMPALA_ROAD_STRIP - 1 || j === KAMPALA_ROAD_STRIP
-  const pair = onKampalaRoad || segmentRandom(i, j, 7100) < 0.5 ? ['s', 'n'] : ['w', 'e']
+  const pair: readonly string[] = forcedShopEdges(i, j) ?? (onKampalaRoad || segmentRandom(i, j, 7100) < 0.5 ? ['s', 'n'] : ['w', 'e'])
   for (const e of edges) {
     if (!pair.includes(e.id)) continue
     const colonial = (e.id === 'n' && j === KAMPALA_ROAD_STRIP - 1) || (e.id === 's' && j === KAMPALA_ROAD_STRIP)

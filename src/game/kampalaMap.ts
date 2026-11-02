@@ -69,10 +69,37 @@ export const LANDMARK_BLOCKS = {
   owino: { i: 4, j: 4, name: 'Owino (St Balikuddembe) Market' },
   makerere: { i: 3, j: 10, name: 'Makerere University' },
   mulago: { i: 5, j: 11, name: 'Mulago Hospital' },
+  kisekka: { i: 3, j: 4, name: 'Kisekka Market' },
 } as const
 
+/** Nakivubo channel: open and walled, just south of Owino, passing under Luwum St and Entebbe Rd in culverts. */
+export const CHANNEL = { halfLength: 17, halfWidth: 4, depth: 3 } as const
+export const CHANNEL_BLOCKS: readonly { i: number; j: number }[] = [
+  { i: 4, j: 3 },
+  { i: 5, j: 3 },
+  { i: 6, j: 3 },
+]
+
+/** Clock Tower flyover: runs north–south through these two blocks, crossing Queensway beside the roundabout. */
+export const FLYOVER_BLOCKS: readonly { i: number; j: number }[] = [
+  { i: 6, j: 1 },
+  { i: 6, j: 2 },
+]
+
+export type ShopEdge = 'n' | 's' | 'e' | 'w'
+
+/**
+ * Blocks that hold a linear feature keep shop rows only on these edges, so the rows never touch it:
+ * channel blocks front Nakivubo Rd and leave the channel open to Mukwano Rd; flyover blocks flank the deck.
+ */
+export function forcedShopEdges(i: number, j: number): readonly ShopEdge[] | undefined {
+  if (CHANNEL_BLOCKS.some((b) => b.i === i && b.j === j)) return ['n']
+  if (FLYOVER_BLOCKS.some((b) => b.i === i && b.j === j)) return ['w', 'e']
+  return undefined
+}
+
 export function isLandmarkBlock(i: number, j: number): boolean {
-  return Object.values(LANDMARK_BLOCKS).some((b) => b.i === i && b.j === j)
+  return Object.values(LANDMARK_BLOCKS).some((b) => b.i === i && b.j === j) || forcedShopEdges(i, j) !== undefined
 }
 
 /**

@@ -21,6 +21,9 @@ and the road-rule checks), so this is a **scaled, recognisable Kampala**, not a 
 | Owino (St Balikuddembe) Market | Large, crowded market south of the taxi parks, known for second-hand clothes ("mivumba") under tarps and umbrellas. | Block of tight tarp-roofed stalls with clothes heaps and shoppers. |
 | Makerere University | Founded 1922 on Makerere Hill; the white Main Building with its clock tower is the best-known image; main gate on University Rd near Wandegeya. | Gate with a name board and a white Main Building with clock tower, near Wandegeya roundabout. |
 | Mulago Hospital | Uganda's national referral hospital on Mulago Hill, north of the centre. | Tall white ward block with a red cross, gate and waiting relatives. |
+| Kisekka Market | Uganda's main auto parts centre, downtown on the Nakivubo Road side towards Old Kampala; traders were moved there by the city council in the early 1990s. A 2010 fire gutted over 500 stalls, and redevelopment has been contested. | Arcades of lock-up shops around a yard of tyres, exhaust tables and bodas under repair, on Nakivubo Rd. |
+| Nakivubo Channel | Kampala's main storm drain, taking run-off from the central area, including Nakasero and Owino Market. Plans to line and deck it over are disputed and blamed for flooding, so its current state varies by section. | Open walled channel just south of Owino, passing under the cross roads in culverts: the channel as riders have long known it. |
+| Clock Tower flyover | Phase 1 of the Kampala Flyover Project, commissioned March 2025: a 584 m flyover at Clock Tower and a Nsambya underpass. The Kitgum House flyover is a later phase; no source confirmed it is built. | About 93 m elevated road crossing Queensway beside the Clock Tower roundabout, not rideable. No Kitgum House flyover or underpass. The tower stays on its island; in reality it was rebuilt nearby. |
 | Boda stages | Riders wait at named stages, often with a simple shelter and a painted board. | Shelters with tin roofs, benches and yellow stage boards at busy corners. |
 | Kampala Road buildings | Colonial-era and early modernist buildings (Patel Press 1924, Bank of Uganda complex, Amber House 1953), many being replaced by malls and towers. | Shop rows with plaster, signboards and verandahs; mid-rise towers; existing photo-textured landmarks (Mapeera, Stanbic, NSSF). |
 
@@ -39,7 +42,9 @@ Open drains, red murram verges, faded markings and patched potholes reflect comm
 
 - Real distances are compressed about 3:1 so a shift takes minutes, not hours.
 - Roads follow a grid (with four road types); real Kampala also has winding hill roads.
-- Hills are a backdrop (the city itself is flat), so slopes don't affect riding.
+- Hills are a backdrop (the city itself is flat), so slopes don't affect riding. Their winding roads are scenery;
+  their paths and surfaces are invented, not traced from real roads.
+- Flyover ramps are steeper than the real thing (about 15°) because distances are compressed.
 - Fares, fines and jail terms remain game values.
 
 ## Sources
@@ -57,6 +62,12 @@ Open drains, red murram verges, faded markings and patched potholes reflect comm
 - [Kampala (New World Encyclopedia)](https://www.newworldencyclopedia.org/entry/kampala)
 - [Kampala Road's historic buildings (Monitor)](https://www.monitor.co.ug/uganda/magazines/life/kampala-road-s-historic-buildings-1560526)
 - [How Kampala was designed by colonialists (Monitor)](https://www.monitor.co.ug/uganda/magazines/people-power/how-kampala-was-designed-by-colonialists-1547454)
+- [Kisekka Market to get new look (Monitor)](https://www.monitor.co.ug/uganda/business/commodities/kisekka-market-to-get-new-look-1563572)
+- [Traders build shopping mall as Kisekka Market rises from rubble (Monitor)](https://www.monitor.co.ug/uganda/news/national/traders-build-shopping-mall-as-kisekka-market-rises-from-rubble-1762272)
+- [Fire guts Kisekka Market (New Vision)](https://www.newvision.co.ug/news/1283771/guts-kisekka-market)
+- [Nakivubo Channel (Wikipedia)](https://en.wikipedia.org/wiki/Nakivubo_Channel)
+- [KCCA blames downtown flooding on Nakivubo Channel works (Observer)](https://observer.ug/news/kcca-blames-downtown-flooding-on-nakivubo-channel-works/)
+- [Museveni commissions Kampala Flyover Project (Ministry of ICT)](https://ict.go.ug/media/news/president-museveni-commissions-kampala-flyover-project)
 
 No photos were copied into the game: they were used only as visual reference, because their copyright belongs
 to the photographers. Everything in the city is modelled in code.

@@ -4,8 +4,9 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-10-25 (end of session 5). All work through session 5 is committed on `main`
-(commit `7d448e7`, not pushed). Commit before starting anything big.
+**Last updated:** 2026-11-02 (end of session 6). All work through session 6 is committed on `main`; session 6
+is not pushed (session 5, `1f4a1ad`, matched the local `origin/main` ref, so it looks pushed). Commit before
+starting anything big.
 
 **Done and verified in the browser**
 - Rules engine (`src/roadRules/engine.ts`), 29 scenarios (`src/roadRules/data/scenarios.json`), live rules
@@ -99,11 +100,34 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 - Tests 20/20, `tsc`, `npm run build` pass; lint clean on changed files. High quality at Owino: ~930 draw
   calls / 2.8 M triangles (shadow pass included).
 
+**Session 6 (2026-11-02): flyover, Kisekka, Nakivubo channel, hill roads**
+- Nakivubo channel (`realism/Channel.tsx`): blocks {4,3} {5,3} {6,3}, just south of Owino. It has real depth:
+  the city ground is now a `ShapeGeometry` with openings (`buildGroundGeometry` in `CityMap.tsx`). Walls, silt,
+  rubbish, scrolling water, culverts under Luwum St and Entebbe Rd, rails with colliders, footbridge, kiosks.
+- Clock Tower flyover (`realism/Flyover.tsx`): blocks {6,1} {6,2}, crossing Queensway beside the roundabout. It
+  is scenery: riders pass under it, the ramp feet are barred with no-entry signs, and eight instanced cars loop
+  on the deck. Making it rideable needs work in the rules (`isOnRoad` says the deck is off-road) and traffic AI.
+- Kisekka Market (`Kisekka` in `realism/Landmarks.tsx`): block {3,4} on Nakivubo Rd, arcades around a yard of
+  tyres, exhaust tables and bodas under repair.
+- Hill roads: `buildHillRoad` in `realism/Hills.tsx`, laterite or tarmac ribbons in the terrain's mesh; houses
+  keep clear of them.
+- `forcedShopEdges` (`kampalaMap.ts`) keeps shop rows on the edges that don't touch a linear feature (channel
+  blocks front Nakivubo Rd; flyover blocks flank the deck). `nameSign` moved to `realism/nameSign.ts`.
+- Dev-hook gotcha: `__wowTeleport` can fail silently while the bike is rolling. Stop first, then check
+  `__wow.telemetry.bikeTelemetry`. Facing: yaw 0 = −Z, π = +Z, −π/2 = +X, π/2 = −X.
+- Verified in the browser: ridden under the flyover and across the Entebbe Rd culvert with no collision; no
+  runtime errors. Tests 20/20, `tsc`, `npm run build` pass; lint clean on `CityMap.tsx` and `realism/`.
+- Performance, measured on `low` against the session 5 commit at the same spots (calls / triangles, including
+  the shadow pass): worst view looking north from the flyover foot 963 / 2.34 M before, 972 / 2.42 M after;
+  spawn 409 / 980 k before, 427 / 1.03 M after. Session 6 adds at most 22 calls and 116 k triangles. The older
+  "worst view on low" figures above are out of date: 2.3–2.4 M was already reached before this session.
+
 **Next (in priority order)**
-1. Real low-end Android device pass. If slow: lower `TREE_SHARE.low`, `DRAW_RADIUS.low`, skip shop window
-   details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low.
-2. More Kampala: a flyover near the Clock Tower, Kisekka market, Nakivubo channel, hill roads.
-3. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
+1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are
+   the ones to test (~970 calls / 2.4 M triangles on `low`). If slow: lower `TREE_SHARE.low`, `DRAW_RADIUS.low`,
+   skip shop window details on low, reduce traffic `LANES_PER_STRIP`, or thin the Owino crowd on low.
+2. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
+3. Optional: a rideable flyover (see session 6).
 
 ## How to run and test
 
