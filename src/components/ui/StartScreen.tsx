@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import { shallow } from 'zustand/shallow'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { HowToRide } from './RideGuide'
+import { timeAgo, type SavedRide } from '../../roadRules/saveFormat'
+import { clearAllRides, clearRide, latestRide, loadRide } from '../../store/savedRide'
 import { TUTORIALS } from '../../roadRules/tutorials'
 import { BILL, DELIVERIES_PER_SHIFT, START_CASH } from '../../roadRules/constants'
 import { hasCertificateRequirements, useRoadRulesStore, type GameMode } from '../../store/useRoadRulesStore'
@@ -32,6 +36,33 @@ const MODES: { id: GameMode; title: string; tag: string; body: string; icon: str
   },
 ]
 
+/** On a shared phone, someone may want a clean slate. Two taps, so it can't happen by accident. */
+function ForgetProgress() {
+  const forget = useRoadRulesStore((s) => s.forgetProgress)
+  const [stage, setStage] = useState<'idle' | 'sure' | 'done'>('idle')
+  return (
+    <div className="pt-1">
+      <p className="text-xs leading-snug text-zinc-500">Your progress is saved on this device only, with no account. Clearing this browser's data removes it.</p>
+      <button
+        type="button"
+        disabled={stage === 'done'}
+        onClick={() => {
+          if (stage === 'idle') {
+            setStage('sure')
+            return
+          }
+          clearAllRides()
+          forget()
+          setStage('done')
+        }}
+        className="mt-1 min-h-11 text-sm font-bold text-rose-300 hover:underline disabled:text-zinc-500 disabled:no-underline"
+      >
+        {stage === 'idle' ? 'Forget my progress on this device' : stage === 'sure' ? 'Tap again to forget everything' : 'Progress forgotten'}
+      </button>
+    </div>
+  )
+}
+
 export function SettingsPanel() {
   const s = useSettingsStore()
   return (
@@ -42,6 +73,9 @@ export function SettingsPanel() {
       <Toggle label="Music" checked={s.music} onChange={(v) => s.set({ music: v })} />
       <Toggle label="Sound effects" hint="Engine, horn, crashes and clicks" checked={s.sound} onChange={(v) => s.set({ sound: v })} />
       <Toggle label="Riding tips" hint="Live advice and the key reminder while you ride" checked={s.coach} onChange={(v) => s.set({ coach: v })} />
+      <Toggle label="Steering pointer" hint="Arrows on the road showing where you're heading (T)" checked={s.pointer} onChange={(v) => s.set({ pointer: v })} />
+      <Toggle label="Speed beside the bike" hint="As well as on the dial" checked={s.speedByBike} onChange={(v) => s.set({ speedByBike: v })} />
+      <ForgetProgress />
       <Toggle
         label="Gentle mode"
         hint="Children go to relatives instead of dying. Money and jail stakes stay."
@@ -69,18 +103,24 @@ export function SettingsPanel() {
 }
 
 function TutorialsPanel({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
+  const done = useRoadRulesStore((s) => s.progress.tutorialsDone)
+  const count = TUTORIALS.filter((t) => done.includes(t.id)).length
   return (
     <Modal labelledBy="tutorials-title" wide>
       <h2 id="tutorials-title" className="text-2xl font-black">Tutorials</h2>
       <p className="mt-1 text-[15px] leading-relaxed text-zinc-300">
         Pick a skill. Mama Sarah rides it first so you can see exactly what to do, then you try it yourself. Nothing is timed, and nothing costs you anything.
       </p>
+      {count > 0 ? <p className="mt-1 text-sm font-bold text-emerald-300">{count} of {TUTORIALS.length} practised</p> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         {TUTORIALS.map((t) => (
           <button key={t.id} type="button" onClick={() => onPick(t.id)} className="flex min-h-16 items-center gap-3 rounded-2xl bg-white/6 p-3 text-left ring-1 ring-white/10 hover:bg-white/12">
             <span className="text-2xl" aria-hidden>{t.icon}</span>
             <span className="min-w-0">
-              <span className="block font-extrabold text-white">{t.title}</span>
+              <span className="block font-extrabold text-white">
+                {t.title}
+                {done.includes(t.id) ? <span className="ml-1.5 text-emerald-300" aria-label="practised">✓</span> : null}
+              </span>
               <span className="block text-[13px] leading-snug text-zinc-400">{t.blurb}</span>
             </span>
           </button>
@@ -93,8 +133,32 @@ function TutorialsPanel({ onPick, onClose }: { onPick: (id: string) => void; onC
   )
 }
 
-export function StartScreen({ onStart, onTutorial, startOnTutorials = false }: { onStart: (mode: GameMode) => void; onTutorial: (id: string) => void; startOnTutorials?: boolean }) {
-  const [mode, setMode] = useState<GameMode>('learn')
+const MODE_NAME: Record<GameMode, string> = { learn: 'Lesson', shift: 'Shift', free: 'Free ride' }
+
+/** One line saying where this ride had got to. */
+function whereStopped(ride: SavedRide, lessonStep: { step: number; steps: number; title: string; done: boolean }): string {
+  if (ride.mode === 'learn' && !lessonStep.done && lessonStep.steps > 0) return `Step ${lessonStep.step + 1} of ${lessonStep.steps}: ${lessonStep.title}`
+  if (ride.mode === 'shift' && ride.rr) return `Shift ${ride.rr.shift}, trip ${ride.deliveriesThisShift + 1} · ${fmtUgx(ride.money)}`
+  return `Riding freely · ${fmtUgx(ride.money)}`
+}
+
+export function StartScreen({
+  onStart,
+  onResume,
+  onTutorial,
+  startOnTutorials = false,
+}: {
+  onStart: (mode: GameMode) => void
+  onResume: (ride: SavedRide) => void
+  onTutorial: (id: string) => void
+  startOnTutorials?: boolean
+}) {
+  const [latest] = useState(() => latestRide())
+  const [mode, setMode] = useState<GameMode>(() => latest?.mode ?? 'learn')
+  const [saves, setSaves] = useState(() => ({ learn: loadRide('learn'), shift: loadRide('shift'), free: loadRide('free') }))
+  const [confirmRestart, setConfirmRestart] = useState(false)
+  const [now] = useState(() => Date.now())
+  const lessonStep = useStoreWithEqualityFn(useRoadRulesStore, (s) => ({ step: s.progress.lessonStep, steps: s.progress.lessonSteps, title: s.progress.lessonStepTitle, done: s.progress.lessonDone }), shallow)
   const [panel, setPanel] = useState<null | 'book' | 'quiz' | 'cert' | 'settings' | 'guide' | 'tutorials'>(startOnTutorials ? 'tutorials' : null)
   const progress = useRoadRulesStore((s) => s.progress)
   const certReady = hasCertificateRequirements(progress)
@@ -141,6 +205,19 @@ export function StartScreen({ onStart, onTutorial, startOnTutorials = false }: {
         </header>
 
         <main className="mt-8 flex-1 lg:mt-0">
+          {latest ? (
+            <button
+              type="button"
+              onClick={() => onResume(latest)}
+              className="mb-3 flex w-full items-center gap-3 rounded-2xl bg-emerald-600 p-4 text-left text-white shadow-lg ring-1 ring-emerald-300/40 transition hover:bg-emerald-500"
+            >
+              <span className="text-3xl" aria-hidden>▶️</span>
+              <span className="min-w-0">
+                <span className="block text-[12px] font-extrabold uppercase tracking-widest text-emerald-100">Continue · {MODE_NAME[latest.mode]} · {timeAgo(latest.savedAt, now)}</span>
+                <span className="block truncate text-[17px] font-black">{whereStopped(latest, lessonStep)}</span>
+              </span>
+            </button>
+          ) : null}
           <div className="grid gap-3">
             {MODES.map((m) => (
               <button
@@ -175,9 +252,33 @@ export function StartScreen({ onStart, onTutorial, startOnTutorials = false }: {
             </div>
           ) : null}
 
-          <Button className="mt-5 w-full text-lg" onClick={() => onStart(mode)}>
-            {mode === 'learn' ? 'Start lesson' : mode === 'shift' ? 'Start shift' : 'Ride'}
-          </Button>
+          {saves[mode] ? (
+            <>
+              <Button className="mt-5 w-full text-lg" onClick={() => onResume(saves[mode]!)}>
+                Continue where you stopped
+              </Button>
+              <Button
+                tone="ghost"
+                className="mt-2 w-full"
+                onClick={() => {
+                  if (!confirmRestart) {
+                    setConfirmRestart(true)
+                    return
+                  }
+                  clearRide(mode)
+                  setSaves((s) => ({ ...s, [mode]: null }))
+                  setConfirmRestart(false)
+                  onStart(mode)
+                }}
+              >
+                {confirmRestart ? 'Tap again to start over and lose this progress' : 'Start over'}
+              </Button>
+            </>
+          ) : (
+            <Button className="mt-5 w-full text-lg" onClick={() => onStart(mode)}>
+              {mode === 'learn' ? 'Start lesson' : mode === 'shift' ? 'Start shift' : 'Ride'}
+            </Button>
+          )}
           <p className="mt-3 text-center text-xs text-zinc-500">
             Laptop: W accelerate, S or Space brake, A D steer (or the arrow keys) · M mute · ? how to ride. Phone and tablet: on-screen buttons.
           </p>

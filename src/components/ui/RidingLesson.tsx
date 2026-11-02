@@ -176,7 +176,7 @@ function buildSteps(n: Names): Step[] {
       diagram: <KeepLeftDiagram />,
       body: (
         <>
-          <p>Steer with <b>{n.steer}</b>. Use short, gentle presses: a small press makes a small change. Holding it down swings you across the road.</p>
+          <p>Steer with <b>{n.steer}</b>. Use short, gentle presses: a small press makes a small change. Holding it down swings you across the road. The arrows on the road show where you're heading, so watch them bend as you steer.</p>
           <p>Keep the middle line on your right and stay in your lane.</p>
           <p>Watch me first. Then it's your turn: ride <b>80 metres</b> on the left. I only count the metres you ride on the correct side.</p>
         </>
@@ -362,21 +362,29 @@ type Props = {
   paused: boolean
   /** A single tutorial from the menu, rather than the whole lesson. */
   tutorial: string | null
+  /** Carrying on from where this player stopped, rather than starting again. */
+  resuming: boolean
   onModalChange: (open: boolean) => void
   onDemoChange: (running: boolean) => void
   onMoreTutorials: () => void
 }
 
-export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, onMoreTutorials }: Props) {
+export function RidingLesson({ paused, tutorial, resuming, onModalChange, onDemoChange, onMoreTutorials }: Props) {
   const isTouch = useIsTouch()
   const overlay = useRoadRulesStore((s) => s.overlay)
   const steps = useMemo(
     () => buildSteps(isTouch ? { gas: 'GAS', brake: 'BRAKE', steer: 'the ◀ ▶ buttons' } : { gas: 'W or ↑', brake: 'S, ↓ or Space', steer: 'A and D, or ← and →' }),
     [isTouch],
   )
-  const [index, setIndex] = useState(() => (tutorial ? Math.max(0, steps.findIndex((st) => st.id === tutorial)) : 0))
+  const saved = useRoadRulesStore.getState().progress
+  const [index, setIndex] = useState(() => {
+    if (tutorial) return Math.max(0, steps.findIndex((st) => st.id === tutorial))
+    return resuming ? Math.max(0, Math.min(steps.length - 1, saved.lessonStep)) : 0
+  })
   const [phase, setPhase] = useState<Phase>({ kind: 'explain' })
-  const [finished, setFinished] = useState(false)
+  const [finished, setFinished] = useState(() => !tutorial && resuming && saved.lessonDone)
+  /** Shows the welcome-back line, until they move on from the step they stopped at. */
+  const [welcomeBack, setWelcomeBack] = useState(!tutorial && resuming && !saved.lessonDone && saved.lessonStep > 0)
   const [live, setLive] = useState<{ progress: number; say?: string; caption?: string; keys?: { gas: boolean; brake: boolean; left: boolean; right: boolean } }>({ progress: 0 })
   const step = steps[index]!
   const task = useRef<Task | null>(null)
@@ -393,6 +401,19 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
     },
     [onModalChange, onDemoChange],
   )
+
+  // Remember where the lesson has got to. A tutorial doesn't move the player's place in it.
+  const saveLessonStep = useRoadRulesStore((s) => s.saveLessonStep)
+  const setLessonDone = useRoadRulesStore((s) => s.setLessonDone)
+  const markSkillDone = useRoadRulesStore((s) => s.markSkillDone)
+  useEffect(() => {
+    if (!tutorial && !finished) saveLessonStep(index, steps[index]!.title, steps.length)
+  }, [tutorial, finished, index, steps, saveLessonStep])
+  useEffect(() => {
+    if (!tutorial && !resuming) setLessonDone(false)
+    // Only on arrival: a fresh lesson clears any earlier "finished" mark.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Rules, cards and the route stay off until each has been taught, and during every demonstration.
   useEffect(() => {
@@ -421,6 +442,7 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
       return
     }
     if (index + 1 >= steps.length) {
+      setLessonDone(true)
       setFinished(true)
       return
     }
@@ -430,7 +452,9 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
 
   const startPractice = () => {
     stopSpeaking()
+    setWelcomeBack(false)
     if (!step.task) {
+      if (step.demo) markSkillDone(step.id)
       next()
       return
     }
@@ -441,6 +465,7 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
 
   const watch = () => {
     stopSpeaking()
+    setWelcomeBack(false)
     const job = useGameStore.getState().rideJob
     const demo = step.demo ? buildDemo(step.demo, { t: worldClock.t, stop: job ? (job.phase === 'pickup' ? job.pickup : job.dropoff) : null }) : null
     if (!demo) {
@@ -454,6 +479,7 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
 
   const skipLesson = () => {
     stopSpeaking()
+    // Skipping isn't finishing: the lesson stays where it is, ready to carry on another day.
     setFinished(true)
   }
 
@@ -508,11 +534,12 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
       })
       if (r.done) {
         task.current = null
+        markSkillDone(step.id)
         setPhase({ kind: 'result', text: r.done })
       }
     }, 100)
     return () => clearInterval(id)
-  }, [phase.kind, overlay, paused])
+  }, [phase.kind, overlay, paused, step.id, markSkillDone])
 
   if (finished || overlay || paused) return null
 
@@ -521,6 +548,11 @@ export function RidingLesson({ paused, tutorial, onModalChange, onDemoChange, on
   if (phase.kind === 'explain') {
     return (
       <Modal labelledBy="lesson-title" wide>
+        {welcomeBack ? (
+          <p className="mb-2 rounded-xl bg-emerald-950/70 px-3 py-2 text-[14px] font-bold text-emerald-200 ring-1 ring-emerald-400/30">
+            👋 Welcome back. This is where you stopped last time, so let's carry on.
+          </p>
+        ) : null}
         <p className="text-[12px] font-extrabold uppercase tracking-widest text-[#f5c518]">
           {tutorial ? 'Tutorial' : `Lesson · Step ${index + 1} of ${steps.length}`}
         </p>

@@ -38,7 +38,7 @@ export function HowToRide({ onClose }: { onClose: () => void }) {
           Slows you firmly, then holds the bike still at a red light. Brake early and in a straight line. A boda has no reverse: if you stop against a wall, steer on the spot to turn away, then pull off.
         </Control>
         <Control title="Steering" touch="◀ ▶" keys={<><Key>A</Key> <Key>D</Key> or <Key>←</Key> <Key>→</Key></>}>
-          Short presses make small corrections. The faster you go, the wider you turn, so a tight corner needs a slow bike.
+          Short presses make small corrections. The faster you go, the wider you turn, so a tight corner needs a slow bike. The arrows on the road show where you're heading.
         </Control>
       </div>
       <div className="mt-3 rounded-2xl border-l-4 border-[#f5c518] bg-[#f5c518]/10 p-3">
@@ -58,6 +58,7 @@ export function HowToRide({ onClose }: { onClose: () => void }) {
           <span><Key>L</Key> headlight</span>
           <span><Key>V</Key> camera</span>
           <span><Key>H</Key> horn</span>
+          <span><Key>T</Key> arrows</span>
           <span><Key>M</Key> mute</span>
           <span><Key>?</Key> this guide</span>
           <span><Key>Esc</Key> pause</span>

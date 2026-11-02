@@ -4,8 +4,8 @@ Read this first if you are picking up the work. Keep the **START HERE** block cu
 
 ## START HERE
 
-**Last updated:** 2026-11-02 (end of session 9). All work through session 9 is committed on `main`; sessions 6 to 9 are
-not pushed. Commit before starting anything big.
+**Last updated:** 2026-11-02 (session 10). Sessions 6 to 9 are committed on `main` but not pushed; session 10 is not
+committed yet. Commit before starting anything big.
 
 **Done and verified in the browser**
 - Rules engine (`src/roadRules/engine.ts`), 29 scenarios (`src/roadRules/data/scenarios.json`), live rules
@@ -28,7 +28,7 @@ not pushed. Commit before starting anything big.
   (`components/GameCanvas.tsx`); WebGL context-loss recovery; DPR caps per quality; no CDN downloads
   (local environment light-formers, local cloud sprite).
 - `tsc`, `npm run build` pass. Lint: only findings that already existed in the original code remain
-  (BikeDustTrail, BikeExhaust, Boda, JobRouteGuide, RoadTraffic, BuildingFacadeWindows, BuildingPerimeterFence).
+  (Boda, JobRouteGuide, RoadTraffic, BuildingFacadeWindows, BuildingPerimeterFence).
 
 **Session 2 (2026-10-25)**
 - Dusk shift verified (headlight hint, lights rule, toggle). Fixed a double-counted drop-off that skipped a
@@ -62,7 +62,7 @@ not pushed. Commit before starting anything big.
   icon `public/icon.svg`. Removed ~55 MB of unreferenced old media from `public/` (still in git history).
 - Measured: production load 2.8 s on this Mac; worst-case view ~590 draw calls / 1.0 M triangles on `low`,
   ~1,180 / 2.3 M on `high`. Tests 16/16, `tsc` and `npm run build` pass; lint clean except the findings that
-  were in the original code (BikeDustTrail, BikeExhaust, Boda, JobRouteGuide, RoadTraffic refs,
+  were in the original code (Boda, JobRouteGuide, RoadTraffic refs,
   BuildingFacadeWindows, BuildingPerimeterFence).
 
 **Session 4 (2026-10-25): Ugandan roads and Kampala Road**
@@ -157,7 +157,7 @@ not pushed. Commit before starting anything big.
   vehicle 3.2 m; riding head-on against traffic knocked her in 3 of 4 tries; brake held 2 s moved 0 m; 10 of 10
   roundabout samples clockwise; passenger pickup and drop-off work on the wider roads; mute suspends audio and pauses
   music. Riding here: ~61 fps, median 17 ms, worst 24 ms (Apple Silicon Mac, dev build, small pane). Tests 20/20, `tsc`,
-  `npm run build` pass. Lint: only older findings remain (BikeDustTrail, BikeExhaust, Boda `speed` refs, JobRouteGuide,
+  `npm run build` pass. Lint: only older findings remain (Boda `speed` refs, JobRouteGuide,
   BuildingFacadeWindows, BuildingPerimeterFence).
 - On `low` (calls / triangles, including the shadow pass where there is one): heaviest view 972 / 2.42 M → 611 / 2.16 M;
   spawn 427 / 1.03 M → 280 / 0.99 M. `VIEW_SCALE.low` is now 0.5.
@@ -210,19 +210,50 @@ not pushed. Commit before starting anything big.
   step goes explain → watch → try. `lessonDemos.test.ts` rides every demo on the bike's real handling (`game/bikeHandling.ts`):
   finishes, stays on the line, keeps left, clockwise, clear of the island, stops at the light.
 - Tutorials: start screen → Tutorials (`roadRules/tutorials.ts`) opens one skill on its own, using the same lesson code.
-- Gotcha: never move the bike while the world is frozen. Un-freezing re-renders `GameScene`, and the physics wrapper puts
-  the body back where it last synced. `bikeCommand.teleport` waits until the world is running.
+- Gotcha, corrected in session 10: the snap-back blamed on moving the bike while frozen was really unstable props on the
+  bike's `RigidBody` (see session 10). The frozen guard is gone.
 - Verified in the running game: all nine demos complete on real physics, with no collisions after the clear-start wait
   (the roundabout closes to 8.3 m from the centre, island 5.2 m). Bike, fuel, condition and job unchanged afterwards.
   Tests 49/49, `tsc` and `npm run build` pass. Lint: only older findings remain (see session 7).
 
+**Session 10 (2026-11-02): where you stopped, smoke, steering arrows, speed**
+- Saved rides with no account: `roadRules/saveFormat.ts` (pure, checked field by field, tested), `store/savedRide.ts`
+  (one key per mode), autosave every 4 s plus on leaving. Lesson step and practised tutorials live in progress. The start
+  screen shows Continue, per-mode Start over, and Forget progress in Settings. Saves stay on the device, so the play log
+  (`stopped`, `resumed`, `lesson_step`, `lesson_done`) is local too: seeing where all players stop needs a backend.
+- Physics wrapper gotcha: `useUpdateRigidBodyOptions` compares flattened props, so a new inline object or array on the
+  bike's `RigidBody` counts as a change on every render and puts the body back where it last synced. They are constants now.
+- A new canvas (quality change, lost graphics context) builds a new bike. It carries over from `bikeTelemetry` when
+  `placed` is true, read at creation rather than through `bikeCommand.teleport`, which the old bike could consume while
+  being torn down. `GameCanvas` resets `placed` for each new ride. Before this, a phone losing its context sent the
+  rider back to the spawn point.
+- Smoke: `realism/Smoke.tsx` + `smokePool.ts`, one draw call. `BikeExhaust`/`BikeDustTrail` are gone: their world-space
+  puffs were children of the moving body (transform applied twice) and each puff was a draw call. `BikeSmoke` emits from
+  the silencer and rear tyre; `TrafficInstances` adds fumes, near the camera only, none from bicycles.
+- `SteerPointer`: five instanced chevrons along the curve the bike will follow. They start 6 m ahead because the rider
+  hides the road before that, and curvature is capped so a full-lock turn at walking pace doesn't circle the rider. Setting + T key.
+- `SpeedByBike` in `GameHud`: speed beside the rider as well as on the dial, with its own setting.
+- In dev the WebGL context is lost once soon after each load and the scene rebuilds, and the JS heap reaches 1.3 to 3.9 GB.
+  Production showed neither in two runs (0 contexts lost). Cause in dev not pinned down.
+- Production JS heap in a ride: about 610 to 630 MB on `high`, about 500 MB on `low` (Mac, Chrome). Too much for a cheap phone.
+- Verified in the running game: resume from a fresh page and from the menu; quality change, real context loss (forced)
+  and back; a new ride still starts at spawn; a demo teleports and returns; lesson resume with welcome back; `stopped`
+  logged on leaving; Forget progress; a broken shift save doesn't stop the menu; arrows curve the right way each side;
+  T and both settings work; speed readout clear of touch controls at 375×812. Fumes confirmed from particle data, not
+  seen clearly on screen. Not checked: game over clearing a save (one line in `App.tsx`), real phones, offline.
+- Tests 56/56, `tsc` and `npm run build` pass. Lint: only older findings remain.
+
 **Next (in priority order)**
 1. Real low-end Android device pass (needs a phone: not done). Views looking north across the whole city are the
    ones to test (~300 calls / 1.2 M triangles on `low`). GPU load on a phone is unmeasured.
-2. Have a new rider try the lesson, and adjust its wording and pace from what they find hard.
-3. Confirm with the player that roads no longer vanish; if they do, get the location and weather.
-4. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
-5. Optional: a rideable flyover (see session 6).
+2. Cut memory: find what holds 500 MB on `low`. Likely start: geometry kept in JS after upload (not yet measured).
+3. Dark streaks on `street` roads, e.g. at (−29, 104). Not shadows (they stay with the sun's shadows off). Likely the fixed
+   texture repeat in `RoadNetwork.tsx` stretching over long, narrow segments. Not confirmed, not fixed.
+4. Have a new rider try the lesson, and adjust its wording and pace from what they find hard.
+5. Confirm with the player that roads no longer vanish; if they do, get the location and weather.
+6. Legal check of rules and the `v2-draft` scenarios; official sign artwork.
+7. Check offline play: a production run logged a script fetch error, possibly `sw.js`. Not investigated.
+8. Optional: a rideable flyover (see session 6).
 
 ## How to run and test
 

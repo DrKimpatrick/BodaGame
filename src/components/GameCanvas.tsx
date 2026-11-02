@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { isBikeBrokenDown, isTankEmpty, useGameStore } from '../store/useGameStore'
 import { useSettingsStore } from '../store/useSettingsStore'
 import { GameScene } from './GameScene'
-import { sceneStatus } from '../roadRules/world/telemetry'
+import { bikeTelemetry, sceneStatus } from '../roadRules/world/telemetry'
 
 /** Resolution caps: phones often report DPR 3; rendering at that size costs 9× the pixels. */
 const DPR = { low: [0.75, 1], medium: [0.85, 1.25], high: [1, 1.5] } as const
@@ -61,6 +61,10 @@ const GameCanvas = memo(function GameCanvas({ onReady }: { onReady: () => void }
   const quality = useSettingsStore((s) => s.quality)
   // Bumped after a lost WebGL context (GPU memory pressure on phones): remounts a fresh canvas.
   const [contextNonce, setContextNonce] = useState(0)
+  // A new ride. Only a rebuilt canvas within the same ride carries the bike over (see Boda).
+  useState(() => {
+    bikeTelemetry.placed = false
+  })
 
   return (
     <Canvas

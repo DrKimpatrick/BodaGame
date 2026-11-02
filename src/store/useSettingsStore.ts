@@ -24,6 +24,10 @@ export type Settings = {
   muted: boolean
   /** Live riding tips and the key reminder. */
   coach: boolean
+  /** Arrows on the road showing where the bike is heading. */
+  pointer: boolean
+  /** The speed beside the bike, as well as on the dial. */
+  speedByBike: boolean
 }
 
 type SettingsStore = Settings & {
@@ -65,6 +69,8 @@ const defaults: Settings = {
   music: true,
   muted: false,
   coach: true,
+  pointer: true,
+  speedByBike: true,
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
@@ -77,8 +83,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
 useSettingsStore.subscribe((s) => {
   try {
-    const { quality, camera, timer, gentle, voice, sound, music, muted, coach } = s
-    localStorage.setItem(KEY, JSON.stringify({ quality, camera, timer, gentle, voice, sound, music, muted, coach }))
+    const { quality, camera, timer, gentle, voice, sound, music, muted, coach, pointer, speedByBike } = s
+    localStorage.setItem(KEY, JSON.stringify({ quality, camera, timer, gentle, voice, sound, music, muted, coach, pointer, speedByBike }))
   } catch {
     /* storage blocked */
   }

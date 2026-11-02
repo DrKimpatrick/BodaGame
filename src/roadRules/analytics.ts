@@ -7,7 +7,7 @@
 export type RREvent = {
   sessionId: string
   at: number
-  type: 'card' | 'violation' | 'good_move' | 'shift_end' | 'game_over' | 'quiz'
+  type: 'card' | 'violation' | 'good_move' | 'shift_end' | 'game_over' | 'quiz' | 'lesson_step' | 'lesson_done' | 'stopped' | 'resumed'
   scenarioId?: string
   chosenOption?: string
   correct?: boolean
@@ -56,6 +56,17 @@ export function logEvent(e: RREvent): void {
       /* storage full or blocked: keep in memory */
     }
   }, 1_000)
+}
+
+/** Writes now rather than a moment later: for when the page is closing and a timer would never fire. */
+export function flushEvents(): void {
+  if (flushTimer) clearTimeout(flushTimer)
+  flushTimer = null
+  try {
+    localStorage.setItem(KEY, JSON.stringify(load()))
+  } catch {
+    /* storage full or blocked: keep in memory */
+  }
 }
 
 export function allEvents(): readonly RREvent[] {

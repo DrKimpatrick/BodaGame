@@ -13,6 +13,8 @@ import { TouchControls } from './components/ui/TouchControls'
 import { useGameRootButtonClickSound } from './hooks/useGameRootButtonClickSound'
 import { inputGate, installKeyboard, onDriveAction, releaseAll } from './input/driveInput'
 import { stopDemo } from './roadRules/demoRun'
+import type { SavedRide } from './roadRules/saveFormat'
+import { clearRide, saveRide } from './store/savedRide'
 import { playHorn } from './roadRules/fx/sfx'
 import { stopSpeaking } from './roadRules/fx/speech'
 import { sceneStatus } from './roadRules/world/telemetry'
@@ -23,6 +25,7 @@ import { useSettingsStore } from './store/useSettingsStore'
 type Phase = 'menu' | 'loading' | 'playing'
 
 const GUIDE_SEEN_KEY = 'wow-ride-guide-seen'
+const SAVE_EVERY_MS = 4000
 
 function guideSeen() {
   try {
@@ -73,6 +76,8 @@ export default function App() {
   const muted = useSettingsStore((s) => s.muted)
   const readyRef = useRef(false)
   const pendingMode = useRef<GameMode>('learn')
+  const pendingRide = useRef<SavedRide | null>(null)
+  const [resuming, setResuming] = useState(false)
   const markReady = useCallback(() => {
     readyRef.current = true
   }, [])
@@ -83,9 +88,11 @@ export default function App() {
     return () => clearTimeout(id)
   }, [])
 
-  const begin = (mode: GameMode, tutorialId: string | null = null) => {
+  const begin = (mode: GameMode, tutorialId: string | null = null, ride: SavedRide | null = null) => {
     unlockWebAudioFromUserGesture()
     setTutorial(tutorialId)
+    setResuming(!!ride)
+    pendingRide.current = ride
     setOpenTutorials(false)
     pendingMode.current = mode
     readyRef.current = false
@@ -101,7 +108,8 @@ export default function App() {
       const waited = performance.now() - t0
       if ((readyRef.current && waited > 300) || waited > 45000) {
         clearInterval(id)
-        start(pendingMode.current)
+        if (pendingRide.current) useRoadRulesStore.getState().resume(pendingRide.current)
+        else start(pendingMode.current)
         setPhase('playing')
       }
     }, 120)
@@ -109,6 +117,11 @@ export default function App() {
   }, [phase, start])
 
   const toMenu = () => {
+    // A tutorial is a detour: it doesn't replace the ride this player has saved.
+    if (phase === 'playing' && !tutorial) {
+      saveRide()
+      useRoadRulesStore.getState().logStopped()
+    }
     stopSpeaking()
     releaseAll()
     useRoadRulesStore.getState().quit()
@@ -119,6 +132,31 @@ export default function App() {
     pauseAllMusic()
     setPhase('menu')
   }
+
+  // Keep the player's place: every few seconds, and whenever the page is hidden or closed.
+  useEffect(() => {
+    if (phase !== 'playing' || tutorial) return
+    const id = setInterval(saveRide, SAVE_EVERY_MS)
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') saveRide()
+    }
+    const onLeave = () => {
+      saveRide()
+      useRoadRulesStore.getState().logStopped()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', onLeave)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onLeave)
+    }
+  }, [phase, tutorial])
+
+  // A ride that has ended has nothing to come back to.
+  useEffect(() => {
+    if (overlay?.type === 'gameover') clearRide(useRoadRulesStore.getState().mode)
+  }, [overlay])
 
   // World freezes while the pause menu or fuel sheet is open (cards freeze it from the store).
   useEffect(() => {
@@ -174,6 +212,7 @@ export default function App() {
         else if (a === 'headlight') useGameStore.getState().toggleHeadlight()
         else if (a === 'camera') useSettingsStore.getState().cycleCamera()
         else if (a === 'horn') playHorn()
+        else if (a === 'pointer') useSettingsStore.setState((s) => ({ pointer: !s.pointer }))
       }),
     [phase],
   )
@@ -226,7 +265,7 @@ export default function App() {
           </Suspense>
         </div>
       ) : null}
-      {phase === 'menu' ? <StartScreen onStart={begin} onTutorial={(id) => begin('learn', id)} startOnTutorials={openTutorials} /> : null}
+      {phase === 'menu' ? <StartScreen onStart={(m) => begin(m)} onResume={(ride) => begin(ride.mode, null, ride)} onTutorial={(id) => begin('learn', id)} startOnTutorials={openTutorials} /> : null}
       {phase === 'loading' ? <LoadingScreen /> : null}
       {phase === 'playing' ? (
         <>
@@ -242,6 +281,7 @@ export default function App() {
               key={sessionId}
               paused={paused || stageOpen || guideOpen}
               tutorial={tutorial}
+              resuming={resuming}
               onModalChange={setLessonModal}
               onDemoChange={setLessonDemo}
               onMoreTutorials={() => {

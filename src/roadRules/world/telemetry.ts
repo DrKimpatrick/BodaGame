@@ -14,6 +14,10 @@ export const bikeTelemetry = {
   z: 0,
   /** Yaw in radians; forward is (−sin yaw, −cos yaw). */
   yaw: 0,
+  /** The bike has been running on this ride, so x, z and yaw are where the rider really is. */
+  placed: false,
+  /** How fast the bike is turning now (rad/s), positive to the left. */
+  yawRate: 0,
   /** Forward speed (m/s). A boda has no reverse, so it is never negative. */
   speed: 0,
   /** Headlight switched on. */

@@ -39,7 +39,7 @@ export function releaseAll(): void {
   touchSteer.value = 0
 }
 
-type Action = 'headlight' | 'camera' | 'horn' | 'pause' | 'mute' | 'help'
+type Action = 'headlight' | 'camera' | 'horn' | 'pause' | 'mute' | 'help' | 'pointer'
 type ActionListener = (a: Action) => void
 const actionListeners = new Set<ActionListener>()
 
@@ -71,6 +71,7 @@ const ACTIONMAP: Record<string, Action> = {
   Escape: 'pause',
   KeyP: 'pause',
   KeyM: 'mute',
+  KeyT: 'pointer',
   Slash: 'help',
   F1: 'help',
 }

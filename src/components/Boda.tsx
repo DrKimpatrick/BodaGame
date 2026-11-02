@@ -32,8 +32,7 @@ import {
   RIDE_SCORE_POINTS_PER_WORLD_M,
   useGameStore,
 } from '../store/useGameStore'
-import { BikeDustTrail } from './BikeDustTrail'
-import { BikeExhaust } from './BikeExhaust'
+import { BikeSmoke } from './BikeSmoke'
 import { bikeCommand, bikeTelemetry, emitBikeCollision, lessonGate, onPedestrianStrike } from '../roadRules/world/telemetry'
 import { useSettingsStore } from '../store/useSettingsStore'
 import { BodaModel } from './BodaModel'
@@ -89,6 +88,14 @@ const JOB_ARRIVE_SPEED = 1.45
 const RIDE_SCORE_MIN_SPEED_MS = 0.38
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+/**
+ * Constants, not written inline: the physics wrapper compares these props between renders, and a new object or array
+ * counts as a change, which makes it put the body back where it last synced. That would undo a teleport.
+ */
+const BIKE_USER_DATA = { kind: 'bike' }
+const ROTATE_ABOUT_Y: [boolean, boolean, boolean] = [false, true, false]
+const MOVE_ON_GROUND: [boolean, boolean, boolean] = [true, false, true]
 
 function stepGasBrakeCoastSpeed(params: {
   dt: number
@@ -370,6 +377,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     }
   })
 
+  // Changing the graphics quality or losing the graphics context rebuilds the whole scene, and this new bike with it.
+  // The rider carries on from where the last bike was, not from the start of the road.
+  const carryOver = useRef(bikeTelemetry.placed ? { x: bikeTelemetry.x, z: bikeTelemetry.z, yaw: bikeTelemetry.yaw } : null)
+
   useFrame((_, delta) => {
     assignForwardedRef(forwardRefLatest.current, rb.current)
 
@@ -378,10 +389,10 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
 
     const dt = Math.min(delta, 0.05)
 
-    // Only once the world is running: while it's frozen, un-freezing would put the body back where it last synced.
-    const tp = useGameStore.getState().hudModalFreezesWorld ? null : bikeCommand.teleport
+    const tp = carryOver.current ?? bikeCommand.teleport
     if (tp) {
-      bikeCommand.teleport = null
+      if (tp === carryOver.current) carryOver.current = null
+      else bikeCommand.teleport = null
       body.setTranslation({ x: tp.x, y: SPAWN[1], z: tp.z }, true)
       yaw.current = tp.yaw
       speed.current = 0
@@ -441,7 +452,9 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     const wet = useGameStore.getState().weather === 'rain'
     const grip = wet ? 0.58 : 1
     const speedAbsEarly = Math.abs(speed.current)
-    yaw.current += steerSmoothed.current * turnRate(speedAbsEarly, TURN_GRIP * (wet ? 0.75 : 1)) * dt
+    const yawRate = steerSmoothed.current * turnRate(speedAbsEarly, TURN_GRIP * (wet ? 0.75 : 1))
+    yaw.current += yawRate * dt
+    bikeTelemetry.yawRate = yawRate
 
     const canRide = fuelLeft > 0 && !brokenDown
     throttle.current += ((gas && canRide ? 1 : 0) - throttle.current) * (1 - Math.exp(-THROTTLE_RESPONSE * dt))
@@ -534,6 +547,7 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
     bikeTelemetry.x = t.x
     bikeTelemetry.z = t.z
     bikeTelemetry.yaw = yaw.current
+    bikeTelemetry.placed = true
     bikeTelemetry.speed = speed.current
 
     const nextOffroad = isDeepOffRoad(t.x, t.z)
@@ -666,17 +680,18 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
   })
 
   return (
+    <>
     <RigidBody
       ref={rb}
       position={SPAWN}
       colliders={false}
-      enabledRotations={[false, true, false]}
-      enabledTranslations={[true, false, true]}
+      enabledRotations={ROTATE_ABOUT_Y}
+      enabledTranslations={MOVE_ON_GROUND}
       gravityScale={0}
       linearDamping={0.22}
       angularDamping={2.5}
       mass={2.8}
-      userData={{ kind: 'bike' }}
+      userData={BIKE_USER_DATA}
       ccd
       onCollisionEnter={onBikeCollision}
     >
@@ -706,12 +721,8 @@ export const Boda = forwardRef<RapierRigidBody, BodaProps>(function Boda(
           </mesh>
         ) : null}
       </group>
-      <BikeExhaust rigidBodyRef={rb} speedRef={speed} />
-      <BikeDustTrail
-        rigidBodyRef={rb}
-        speedRef={speed}
-        offroadRef={offroadRef}
-      />
     </RigidBody>
+    <BikeSmoke offroadRef={offroadRef} />
+    </>
   )
 })

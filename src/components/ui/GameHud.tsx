@@ -135,6 +135,20 @@ function Speedo() {
   )
 }
 
+/** The speed where the rider is already looking. */
+function SpeedByBike() {
+  const on = useSettingsStore((s) => s.speedByBike)
+  const kmh = useGameStore((s) => s.speedKmh)
+  if (!on) return null
+  const over = kmh > bikeTelemetry.limitKmh + 3
+  return (
+    <div className="pointer-events-none absolute bottom-[20vh] left-[calc(50%+11vh)] flex items-baseline gap-1 rounded-full bg-black/55 px-3 py-1 backdrop-blur-md">
+      <span className={`font-mono text-xl font-black tabular-nums ${over ? 'text-rose-400' : 'text-white'}`}>{kmh}</span>
+      <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-300">km/h</span>
+    </div>
+  )
+}
+
 function BikeStatus({ onOpenStage }: { onOpenStage: () => void }) {
   // Whole percents: fuel changes every frame while riding, the display only once per percent.
   const fuel = useGameStore((s) => Math.round(s.fuel))
@@ -288,6 +302,7 @@ export function GameHud({ onPause, onOpenStage, onHelp }: { onPause: () => void;
       <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] [@media(pointer:coarse)]:bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+9rem)] [@media(pointer:coarse)_and_(max-height:500px)]:bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+7rem)]">
         <BikeStatus onOpenStage={onOpenStage} />
       </div>
+      <SpeedByBike />
       <KeyStrip />
       <RideCoach />
     </div>

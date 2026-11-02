@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { logEvent, newSessionId } from '../roadRules/analytics'
+import { logEvent, newSessionId, flushEvents } from '../roadRules/analytics'
 import { DELIVERIES_PER_SHIFT, ENCOUNTERS_PER_SHIFT, START_CASH } from '../roadRules/constants'
 import {
   addFare,
@@ -26,7 +26,8 @@ import { playChime, playThud, playWhistle } from '../roadRules/fx/sfx'
 import { speak } from '../roadRules/fx/speech'
 import { LIVE_RULES, type LiveRuleId } from '../roadRules/liveRules'
 import { SCENARIOS } from '../roadRules/scenarios'
-import { lessonGate, worldClock } from '../roadRules/world/telemetry'
+import type { SavedRide } from '../roadRules/saveFormat'
+import { bikeCommand, bikeTelemetry, lessonGate, worldClock } from '../roadRules/world/telemetry'
 import { useGameStore, type Weather } from './useGameStore'
 
 /**
@@ -67,12 +68,19 @@ type Progress = {
   quizScores: { at: number; score: number; total: number }[]
   certificateName: string | null
   cleanShifts: number
+  /** Where the lesson stopped: the step to return to, its title, and how many there are. */
+  lessonStep: number
+  lessonStepTitle: string
+  lessonSteps: number
+  lessonDone: boolean
+  /** Skills practised to the end, in a tutorial or in the lesson. */
+  tutorialsDone: string[]
 }
 
 const PROGRESS_KEY = 'wow-progress-v1'
 
 function loadProgress(): Progress {
-  const empty: Progress = { srs: {}, bestShift: 0, quizScores: [], certificateName: null, cleanShifts: 0 }
+  const empty: Progress = { srs: {}, bestShift: 0, quizScores: [], certificateName: null, cleanShifts: 0, lessonStep: 0, lessonStepTitle: '', lessonSteps: 0, lessonDone: false, tutorialsDone: [] }
   try {
     const raw = localStorage.getItem(PROGRESS_KEY)
     return raw ? { ...empty, ...(JSON.parse(raw) as Partial<Progress>) } : empty
@@ -113,6 +121,14 @@ type Store = {
   lastDeliveryCount: number
 
   start: (mode: GameMode) => void
+  /** Carry on a saved ride: as `start`, then everything as it was, with the bike back where it stopped. */
+  resume: (ride: SavedRide) => void
+  saveLessonStep: (step: number, title: string, steps: number) => void
+  setLessonDone: (done: boolean) => void
+  markSkillDone: (id: string) => void
+  /** Notes in the play log where this player stopped. */
+  logStopped: () => void
+  forgetProgress: () => void
   quit: () => void
   presentCard: (triggers: ScenarioTrigger[]) => boolean
   answerCard: (optionIndex: number | null) => void
@@ -247,6 +263,72 @@ export const useRoadRulesStore = create<Store>((set, get) => {
       })
       setFreeze(false)
       explainedRules.clear()
+    },
+
+    resume: (ride) => {
+      get().start(ride.mode)
+      useGameStore.setState({
+        money: ride.money,
+        fuel: ride.fuel,
+        condition: ride.condition,
+        headlight: ride.headlight,
+        weather: ride.weather,
+        rideCompletedDeliveries: ride.rideCompletedDeliveries,
+        // Timers ran on the old page's clock, so this leg's timing starts afresh.
+        rideLegStartedAtMs: performance.now(),
+        ...(ride.rideJob ? { rideJob: ride.rideJob, rideJobSerial: ride.rideJobSerial } : {}),
+      })
+      bikeCommand.teleport = ride.bike
+      set({
+        rr: ride.rr,
+        usedThisShift: ride.usedThisShift,
+        encountersThisShift: ride.encountersThisShift,
+        deliveriesThisShift: ride.deliveriesThisShift,
+        lastDeliveryCount: ride.rideCompletedDeliveries,
+        lastCardAt: worldClock.t,
+      })
+      logEvent({ ...eventBase(get), type: 'resumed', detail: ride.mode })
+    },
+
+    saveLessonStep: (lessonStep, lessonStepTitle, lessonSteps) => {
+      const before = get().progress
+      if (before.lessonStep === lessonStep && before.lessonStepTitle === lessonStepTitle) return
+      const progress = { ...before, lessonStep, lessonStepTitle, lessonSteps }
+      saveProgress(progress)
+      logEvent({ ...eventBase(get), type: 'lesson_step', detail: `${lessonStep + 1}/${lessonSteps} ${lessonStepTitle}` })
+      set({ progress })
+    },
+
+    setLessonDone: (lessonDone) => {
+      const progress = { ...get().progress, lessonDone, ...(lessonDone ? {} : { lessonStep: 0, lessonStepTitle: '' }) }
+      saveProgress(progress)
+      if (lessonDone) logEvent({ ...eventBase(get), type: 'lesson_done' })
+      set({ progress })
+    },
+
+    markSkillDone: (id) => {
+      const before = get().progress
+      if (before.tutorialsDone.includes(id)) return
+      const progress = { ...before, tutorialsDone: [...before.tutorialsDone, id] }
+      saveProgress(progress)
+      set({ progress })
+    },
+
+    logStopped: () => {
+      const s = get()
+      const g = useGameStore.getState()
+      const where = s.mode === 'learn' && !s.progress.lessonDone ? `lesson step ${s.progress.lessonStep + 1}: ${s.progress.lessonStepTitle}` : s.mode
+      logEvent({ ...eventBase(get), type: 'stopped', detail: `${where}, ${g.rideCompletedDeliveries} trips, at ${Math.round(bikeTelemetry.x)},${Math.round(bikeTelemetry.z)}` })
+      flushEvents()
+    },
+
+    forgetProgress: () => {
+      try {
+        localStorage.removeItem(PROGRESS_KEY)
+      } catch {
+        /* storage blocked: nothing was kept anyway */
+      }
+      set({ progress: loadProgress() })
     },
 
     quit: () => {

@@ -12,6 +12,7 @@ import { Pedestrians } from './Pedestrians'
 import { RoadTraffic } from './RoadTraffic'
 import { HorizonSky } from './HorizonSky'
 import { getSunDirection } from './sky'
+import { SteerPointer } from './SteerPointer'
 import { ThirdPersonCamera } from './ThirdPersonCamera'
 import { JobRouteGuide } from './JobRouteGuide'
 import { JobTargetPin } from './JobTargetPin'
@@ -24,6 +25,7 @@ import { VIEW_SCALE } from './viewScale'
 import { bikeTelemetry } from '../roadRules/world/telemetry'
 import { VehicleShowroom } from './realism/Vehicles'
 import { GrassField } from './realism/Grass'
+import { SmokeField } from './realism/Smoke'
 import { KampalaHills } from './realism/Hills'
 import { StreetLights } from './realism/StreetLife'
 
@@ -146,6 +148,8 @@ export function GameScene() {
       <DemoPilot />
       <KampalaHills weather={weather} />
       <GrassField />
+      <SmokeField />
+      <SteerPointer />
       <StreetLights />
       {SHOWROOM ? <VehicleShowroom x={0} z={0} /> : null}
       <JobTargetPin />

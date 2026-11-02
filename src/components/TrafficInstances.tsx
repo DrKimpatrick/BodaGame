@@ -7,7 +7,8 @@ import { useSettingsStore } from '../store/useSettingsStore'
 import { collapsedMaterial, collapseKey, materialKey, normalise, withColor, type ColoredMaterial } from './batchGeometry'
 import { contactShadowMaterial } from './realism/contactShadow'
 import { VehicleModel } from './realism/Vehicles'
-import { vehicleCollider, vehiclePaint, type VehicleKind } from './realism/vehicleSpecs'
+import { emitSmoke, type Puff } from './realism/smokePool'
+import { vehicleCollider, vehicleNose, vehiclePaint, type VehicleKind } from './realism/vehicleSpecs'
 
 /**
  * All moving traffic as instanced meshes: one set of draw calls per vehicle type rather than per vehicle (it was
@@ -21,6 +22,26 @@ const ROAD_Y = 0.06
 /** How far traffic is drawn (m), and how far behind the camera (its shadow can still fall into view). */
 const DRAW_RADIUS = { low: 150, medium: 200, high: 260 } as const
 const DRAW_BEHIND = 25
+/** Only vehicles this close make fumes: a faint wisp is invisible further off. */
+const FUME_RADIUS = { low: 22, medium: 32, high: 42 } as const
+const PETROL: Puff = { size: 0.14, grow: 0.65, alpha: 0.16, life: 1, r: 0.72, g: 0.73, b: 0.75 }
+/** Buses and lorries run on diesel: a little darker and a little more of it. */
+const DIESEL: Puff = { size: 0.2, grow: 0.95, alpha: 0.26, life: 1.2, r: 0.3, g: 0.3, b: 0.31 }
+const BODA: Puff = { size: 0.08, grow: 0.42, alpha: 0.16, life: 0.65, r: 0.74, g: 0.75, b: 0.77 }
+
+function fumeFor(kind: VehicleKind): { puff: Puff; perSecond: number } | null {
+  switch (kind) {
+    case 'bicycle':
+      return null
+    case 'bus':
+    case 'trailer':
+      return { puff: DIESEL, perSecond: 5 }
+    case 'motorbike':
+      return { puff: BODA, perSecond: 4 }
+    default:
+      return { puff: PETROL, perSecond: 3 }
+  }
+}
 
 type KindSet = {
   meshes: THREE.InstancedMesh[]
@@ -105,13 +126,19 @@ export function TrafficInstances({ kinds }: { kinds: readonly VehicleKind[] }) {
       if (proto) made.set(kind, bake(proto, kind, kinds.filter((k) => k === kind).length, quality === 'low'))
     }
     // Baking is a one-off that must read the mounted prototypes; swapping them out straight after is the point.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSets(made)
   }, [sets, distinct, kinds, quality])
 
   const forward = useMemo(() => new THREE.Vector3(), [])
-  useFrame(({ camera }) => {
+  const fumes = useMemo(() => kinds.map(fumeFor), [kinds])
+  const noses = useMemo(() => kinds.map(vehicleNose), [kinds])
+  /** Staggered, so vehicles don't puff in step. */
+  const fumeDue = useRef<Float32Array | null>(null)
+  useFrame(({ camera }, delta) => {
     if (!sets) return
+    const fumeR2 = FUME_RADIUS[quality] * FUME_RADIUS[quality]
+    const due = (fumeDue.current ??= Float32Array.from(kinds, (_, i) => (i * 0.37) % 1))
+    const dt = Math.min(delta, 0.05)
     const radius = DRAW_RADIUS[quality]
     const r2 = radius * radius
     camera.getWorldDirection(forward)
@@ -131,6 +158,18 @@ export function TrafficInstances({ kinds }: { kinds: readonly VehicleKind[] }) {
       const yaw = trafficTelemetry.yaw[i]!
       const s = Math.sin(yaw)
       const c = Math.cos(yaw)
+      const fume = fumes[i]
+      if (fume && dx * dx + dz * dz < fumeR2) {
+        due[i]! += dt * fume.perSecond
+        if (due[i]! >= 1) {
+          due[i]! -= 1
+          const vx = trafficTelemetry.vx[i]!
+          const vz = trafficTelemetry.vz[i]!
+          // From the tail pipe, low down on the driver's side, carried along a little by the vehicle.
+          const back = noses[i]!
+          emitSmoke(x - s * back + c * 0.35, ROAD_Y + 0.28, z - c * back - s * 0.35, vx * 0.55 - s * 0.4, 0.16 + Math.random() * 0.14, vz * 0.55 - c * 0.4, fume.puff)
+        }
+      }
       const o = set.count * 16
       const e = set.matrices.array as Float32Array
       // Rotation about Y plus translation, written directly: no per-frame allocation.
